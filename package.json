@@ -17,6 +17,7 @@
     "format:check": "prettier --check .",
     "auth": "tsx scripts/auth.ts",
     "bootstrap-sheet": "tsx scripts/bootstrap-sheet.ts",
+    "inspect-sheets": "tsx scripts/inspect-sheets.ts",
     "import-history": "tsx scripts/import-history.ts",
     "cron": "tsx apps/cron/index.ts",
     "bot": "tsx apps/bot/index.ts"
