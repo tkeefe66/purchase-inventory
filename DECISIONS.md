@@ -348,6 +348,69 @@ We're consolidating into a single `All Purchases` master tab via a one-time migr
 
 ---
 
+## 2026-05-01 — Tightened Domain semantics + new `Type` column (P) + `Reasoning` column (Q)
+
+**Context:** First migration dry-run revealed Haiku was over-classifying as `Outdoor` based on "outdoor people use this" reasoning — e.g. Gatorade got tagged Outdoor because outdoor-active people drink it on hikes. Tom flagged this as the wrong mental model.
+
+**The reframe — what `Domain` actually means:**
+
+`Domain` is *"which expert agent cares about this item for advisory purposes,"* **not** *"which activity context is this used in."* The platform's moat is a clean inventory of **non-consumables** (durable gear) that domain agents reason over to give expert advice. The outdoor agent doesn't need to know about Gatorade purchases when answering "what should I bring on this trip?" — it needs to know about tents, sleeping bags, base layers.
+
+**Decision 1: Add column P `Type`** with three values:
+
+- **`Gear`** — durable owned items (clothing, equipment, electronics, tools). The agent's grounding for "what do I own?" inventory queries.
+- **`Consumable`** — food, drink, supplements, sunscreen, batteries, anything used up. Tracked for spend; ignored by default agent inventory queries.
+- **`Service`** — memberships, subscriptions, repairs, maintenance, race entries, ski tickets, experiences. May be agent-relevant (e.g. "you're an REI member, you get the discount") but distinct from gear inventory.
+
+Three values is intentionally tight. Tom can edit any cell to add new values via the data-validation dropdown later if needed (e.g. `Media` for books) — start simple.
+
+**Decision 2: Tighten Outdoor classification rules:**
+
+- `Outdoor` = durable outdoor *gear* (clothing, equipment, electronics specific to outdoor activities) + outdoor-specific *services* (REI Membership). Period.
+- Consumables — even outdoor-branded ones like Honey Stinger waffles or energy gels — go to `Other` regardless of how outdoor-active people use them.
+- "When in doubt → Other." Wrong-`Other` is fixable in seconds via the dropdown; wrong-`Outdoor` pollutes agent reasoning.
+- The Haiku prompt explicitly calls out Gatorade as the canonical anti-pattern.
+
+**Edge case rulings (locked here so we don't re-litigate):**
+
+| Item | Type | Domain | Why |
+|---|---|---|---|
+| Energy gels, trail food, Gatorade | Consumable | Other | Used up; not part of gear inventory. |
+| Sunscreen, bug spray, lip balm | Consumable | Other | Same. |
+| Replacement bike tube | Gear | Outdoor | Durable spare; part of bike kit. |
+| Replacement tent pole | Gear | Outdoor | Same logic. |
+| Climbing chalk | Consumable | Other | Used up over time. (Tom can flip later if he wants chalk in his climbing kit inventory.) |
+| Batteries (AA, lithium camera) | Consumable | Other | Used up. |
+| Headlamp | Gear | Outdoor | Durable. |
+| Bike (any) | Gear | Outdoor | Durable. |
+| REI Membership | Service | Outdoor | Outdoor-specific service. |
+| Strava annual subscription | Service | Outdoor | Outdoor-specific software service. |
+| Race entry, ski lift ticket | Service | Outdoor | One-time outdoor experience. |
+| Bike tune-up at LBS | Service | Outdoor | Maintenance on outdoor gear. |
+| Books, magazines | Gear | Other | Durable items but not agent-advised on as gear; classify as Other unless future Photography/cookbook context promotes it. |
+
+**Decision 3: Add column Q `Reasoning`:**
+
+One-sentence explanation Haiku writes alongside each Amazon classification. Helps the admin understand *why* something landed where it did and quickly spot bad classifications. Trade-off accepted: ~30% more output tokens, ~$0.15 extra cost per migration run, +1 column of sheet visual noise. Worth it for explainability while the system is being tuned. REI rows leave `Reasoning` blank since their classification is mechanical.
+
+**Decision 4: Admin correction workflow.**
+
+Three layers:
+
+1. **Direct sheet edit (always available, primary mechanism).** `bootstrap-sheet.ts` installs data-validation dropdowns on **Status (M), Domain (N), and Type (P)**, all reject-on-invalid. Admin clicks a cell, picks new value, done.
+2. **Bulk reclassification script (build when needed).** When a pattern of misclassifications shows up (e.g. "all my workout shirts should be Outdoor/Gear"), write a small `scripts/reclassify.ts` that takes filters and applies updates. YAGNI until first request.
+3. **Telegram slash command (Phase 2+).** `/reclassify <item> <field>=<value>` for in-the-field corrections from the bot.
+
+**How to apply (deltas to other artifacts):**
+
+- `CLAUDE.md`: schema row updated to "17 columns A–Q".
+- `PLAN.md`: schema table gains rows for P and Q; Task 0.4 lists the three dropdowns; Task 0.5 spec mentions the tightened Domain rules + Type field + Reasoning field.
+- `scripts/bootstrap-sheet.ts`: TOTAL_COLS = 17; EXPECTED_HEADERS gains `Type` and `Reasoning`; adds dropdown requests for col N (Domain enum) and col P (Type enum) in the same batch as the existing col M dropdown; conditional-formatting range extended to A:Q.
+- `scripts/migrate-to-master.ts`: `MasterRow` interface gains `type` + `reasoning`; Haiku JSON schema gains `type: enum["Gear","Consumable","Service"]` + `reasoning: string`; system prompt rewritten with the strict Outdoor definition and the edge-case table above as worked examples; `writeMasterRows` writes 17 columns; sample printer shows `type` field.
+- Dedup key unchanged. Status enum unchanged. Domain enum unchanged in values, only in *meaning*.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale

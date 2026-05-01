@@ -137,10 +137,12 @@ ledger/                              # current name: outdoor-inventory; rename o
 | K   | Source              | `REI`, `Amazon`, future retailers |
 | L   | Order ID            | Dedup key |
 | M   | Status              | `active` (default), `retired`, `returned`, `lost`, `broken`, `sold`, `donated`, `excluded`. `retired` = "still own it but not actively using." `excluded` = "don't include in inventory analysis." |
-| **N** | **Domain**          | `Outdoor`, `Kitchen`, `Photography`, `Home`, `Tech`, `Wardrobe`, `Auto`, `Other` |
+| **N** | **Domain**          | `Outdoor`, `Kitchen`, `Photography`, `Home`, `Tech`, `Wardrobe`, `Auto`, `Other`. Means *"which expert agent cares about this item for advisory purposes,"* not *"which activity context is this used in."* See DECISIONS.md (2026-05-01 entry on tightened Domain semantics). |
 | **O** | **Product URL**     | Link to the retailer's product page, extracted from the email. Often blank for Amazon (links missing or volatile). Blank for historical CSV imports unless provided. Used by the admin (Tom) to click through and verify items; not used in dedup or by the agent. |
+| **P** | **Type**            | `Gear`, `Consumable`, `Service`. **Gear** = durable owned items the domain agents reason about (clothing, equipment, electronics). **Consumable** = food, drink, supplements, sunscreen, batteries, anything used up. **Service** = memberships, subscriptions, repairs, experiences, race entries. Default agent inventory queries filter to `type=Gear`. |
+| **Q** | **Reasoning**       | One-sentence explanation Haiku writes when it classifies an Amazon row, e.g. *"Camera tripod — durable photo-equipment item."* For REI rows, blank (direct mapping, no LLM judgement involved). Informational only; not used by the agent. Helps the admin understand why something landed where it did. |
 
-**Dedup key:** `(Order ID, Item Name, Color, Size)` — same item bought again in a different order is allowed; same item in same order twice with same color/size is not. `Product URL` is *not* part of the dedup key.
+**Dedup key:** `(Order ID, Item Name, Color, Size)` — same item bought again in a different order is allowed; same item in same order twice with same color/size is not. `Product URL`, `Type`, and `Reasoning` are *not* part of the dedup key.
 
 ### `Needs Review` columns
 
@@ -232,13 +234,15 @@ DRY_RUN=false                        # Set true to print proposed actions withou
 **What it does:**
 1. Connects to the sheet
 2. Reads header row of `All Purchases` tab
-3. Adds missing column headers: `Source` (K), `Order ID` (L), `Status` (M), `Domain` (N), `Product URL` (O)
-4. Applies a **data-validation dropdown** to column M (Status) covering the full enum: `active`, `retired`, `returned`, `lost`, `broken`, `sold`, `donated`, `excluded`. Reject-on-invalid so manual edits can't typo a status.
-5. Adds a **conditional-formatting rule** that visually mutes (gray text / light fill) any row where `Status != active`, so the admin can see at a glance which rows the agent is actively "remembering."
-6. Creates `Needs Review` tab if absent, with headers
-7. Idempotent — re-running detects existing schema, validation, and formatting and is a no-op
+3. Adds missing column headers: `Source` (K), `Order ID` (L), `Status` (M), `Domain` (N), `Product URL` (O), `Type` (P), `Reasoning` (Q)
+4. Applies a **data-validation dropdown** to column M (Status): `active`, `retired`, `returned`, `lost`, `broken`, `sold`, `donated`, `excluded`. Reject-on-invalid so manual edits can't typo a status.
+5. Applies a **data-validation dropdown** to column N (Domain): `Outdoor`, `Other`, `Kitchen`, `Photography`, `Home`, `Tech`, `Wardrobe`, `Auto`. Future domains can be added by editing the script.
+6. Applies a **data-validation dropdown** to column P (Type): `Gear`, `Consumable`, `Service`.
+7. Adds a **conditional-formatting rule** that visually mutes (gray text / light fill) any row where `Status != active`, so the admin can see at a glance which rows the agent is actively "remembering."
+8. Creates `Needs Review` tab if absent, with headers
+9. Idempotent — re-running detects existing schema, validation, and formatting and is a no-op
 
-**Acceptance:** Runs against the real sheet; second run prints "all schema present." Admin can open the sheet, click any cell in column M, and pick a Status from a dropdown. Rows with `Status != active` are visually muted.
+**Acceptance:** Runs against the real sheet; second run prints "all schema present." Admin can open the sheet, click any cell in cols M/N/P and pick from a dropdown. Rows with `Status != active` are visually muted.
 
 ### Task 0.5: Sheet-to-sheet historical migration (Haiku-enriched)
 
@@ -257,8 +261,10 @@ DRY_RUN=false                        # Set true to print proposed actions withou
    - Date `4/30/2026` → `2026-04-30`.
    - Price `$79.95` → `79.95`.
    - `Source = "Amazon"`, `Order ID` preserved from source, `Status = "active"`, `Product URL = ""`.
-   - Sends item name + Amazon's existing Category to Claude Haiku 4.5 with the seed vocabulary in a prompt-cached system message; Haiku returns `{ domain: "Outdoor" | "Other", category, subCategory, brand }`. Prefer REI vocabulary; allow new categories where nothing fits.
-5. Writes the merged result to a new `All Purchases` tab (15 cols A–O per the canonical schema).
+   - Sends item name + Amazon's existing Category to Claude Haiku 4.5 with the seed vocabulary in a prompt-cached system message; Haiku returns `{ domain, category, subCategory, brand, type, reasoning }`. Prefer REI vocabulary; allow new categories where nothing fits.
+   - **Tightened Domain semantics**: `Outdoor` only for *durable* outdoor gear (clothing, equipment, electronics) AND outdoor-specific services (REI Membership). Consumables (food, drink, supplements, sunscreen — even outdoor-branded ones like energy gels) → `Other`. When in doubt → `Other`. Anti-pattern Haiku must avoid: classifying Gatorade as Outdoor "because outdoor people drink it."
+   - **Type field**: `Gear` for durable items, `Consumable` for things used up, `Service` for memberships/subscriptions/repairs/race entries.
+5. Writes the merged result to a new `All Purchases` tab (17 cols A–Q per the canonical schema). REI rows leave the `Reasoning` cell blank (no LLM judgement involved); Amazon rows include Haiku's one-sentence rationale.
 6. **Dry-run by default** — prints sample classified rows + summary stats without writing. Re-run with `--apply` to write.
 7. **Idempotent on `--apply`:** if `All Purchases` already exists with data, aborts with a clear message rather than appending duplicates. To re-migrate, delete `All Purchases` and re-run.
 
@@ -267,8 +273,8 @@ DRY_RUN=false                        # Set true to print proposed actions withou
 **Existing tabs (`REI All Purchases`, `Amazon Purchases`, `REI Summary`) are not modified** — left as a rollback safety net. Tom can rename/delete after the master tab is verified.
 
 **Acceptance:**
-- Dry-run prints 5–10 sample converted rows (mix of REI + Amazon) for human eyeballing of classification quality.
-- After `--apply`: `All Purchases` tab exists with 15-col schema, ~393 data rows (82 REI + 311 Amazon), `Source` populated, `Domain` populated, `Status` populated.
+- Dry-run prints sample converted rows (mix of REI + Amazon, mix of Gear/Consumable/Service, mix of Outdoor/Other) for human eyeballing of classification quality.
+- After `--apply`: `All Purchases` tab exists with 17-col schema, ~393 data rows (82 REI + 311 Amazon), `Source` / `Domain` / `Status` / `Type` populated, Amazon rows have a `Reasoning` sentence.
 - `npm run bootstrap-sheet` (Task 0.4) then runs cleanly against the new tab and applies validation + formatting + creates `Needs Review`.
 
 ---

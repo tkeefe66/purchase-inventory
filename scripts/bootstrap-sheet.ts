@@ -17,6 +17,8 @@ const EXPECTED_HEADERS = [
   'Status',
   'Domain',
   'Product URL',
+  'Type',
+  'Reasoning',
 ];
 
 const STATUS_ENUM = [
@@ -30,6 +32,19 @@ const STATUS_ENUM = [
   'excluded',
 ];
 
+const DOMAIN_ENUM = [
+  'Outdoor',
+  'Other',
+  'Kitchen',
+  'Photography',
+  'Home',
+  'Tech',
+  'Wardrobe',
+  'Auto',
+];
+
+const TYPE_ENUM = ['Gear', 'Consumable', 'Service'];
+
 const NEEDS_REVIEW_HEADERS = [
   'Date Detected',
   'Source',
@@ -40,8 +55,10 @@ const NEEDS_REVIEW_HEADERS = [
   'Resolved',
 ];
 
-const STATUS_COL_INDEX = 12; // M = 13th column, 0-indexed = 12
-const TOTAL_COLS = EXPECTED_HEADERS.length; // 15
+const STATUS_COL_INDEX = 12; // M
+const DOMAIN_COL_INDEX = 13; // N
+const TYPE_COL_INDEX = 15; // P
+const TOTAL_COLS = EXPECTED_HEADERS.length; // 17
 const CONDITIONAL_FORMAT_FORMULA = '=$M2<>"active"';
 
 async function main(): Promise<void> {
@@ -146,26 +163,34 @@ async function main(): Promise<void> {
   // === Plan + apply: data validation, conditional formatting, Needs Review tab ===
   const requests: sheets_v4.Schema$Request[] = [];
 
-  // Status column data validation (idempotent — setDataValidation replaces).
-  requests.push({
-    setDataValidation: {
-      range: {
-        sheetId: targetSheetId,
-        startRowIndex: 1, // skip header row
-        startColumnIndex: STATUS_COL_INDEX,
-        endColumnIndex: STATUS_COL_INDEX + 1,
-      },
-      rule: {
-        condition: {
-          type: 'ONE_OF_LIST',
-          values: STATUS_ENUM.map((v) => ({ userEnteredValue: v })),
+  // Data-validation dropdowns on Status (M), Domain (N), and Type (P).
+  // setDataValidation replaces any existing rule on the range — naturally idempotent.
+  const dropdowns: Array<{ label: string; col: number; values: string[] }> = [
+    { label: 'M Status', col: STATUS_COL_INDEX, values: STATUS_ENUM },
+    { label: 'N Domain', col: DOMAIN_COL_INDEX, values: DOMAIN_ENUM },
+    { label: 'P Type', col: TYPE_COL_INDEX, values: TYPE_ENUM },
+  ];
+  for (const d of dropdowns) {
+    requests.push({
+      setDataValidation: {
+        range: {
+          sheetId: targetSheetId,
+          startRowIndex: 1, // skip header row
+          startColumnIndex: d.col,
+          endColumnIndex: d.col + 1,
         },
-        strict: true,
-        showCustomUi: true,
+        rule: {
+          condition: {
+            type: 'ONE_OF_LIST',
+            values: d.values.map((v) => ({ userEnteredValue: v })),
+          },
+          strict: true,
+          showCustomUi: true,
+        },
       },
-    },
-  });
-  console.log(`Plan: data validation on column M (Status enum: ${STATUS_ENUM.join(', ')})`);
+    });
+    console.log(`Plan: data validation on column ${d.label} (${d.values.join(', ')})`);
+  }
 
   // Conditional formatting — only add if not already present.
   const existingRules = targetTab.conditionalFormats ?? [];
