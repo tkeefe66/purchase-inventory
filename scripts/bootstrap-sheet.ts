@@ -34,13 +34,16 @@ const STATUS_ENUM = [
 
 const DOMAIN_ENUM = [
   'Outdoor',
-  'Other',
-  'Kitchen',
   'Photography',
+  'Kitchen',
   'Home',
   'Tech',
   'Wardrobe',
   'Auto',
+  'Fitness',
+  'Health',
+  'Media',
+  'Other',
 ];
 
 const TYPE_ENUM = ['Gear', 'Consumable', 'Service'];

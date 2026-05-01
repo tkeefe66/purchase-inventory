@@ -411,6 +411,69 @@ Three layers:
 
 ---
 
+## 2026-05-01 — Domain set expanded to 11; consumables-by-domain rule (supersedes part of prior entry)
+
+**Context:** Second migration dry-run with the previous 2-domain (Outdoor/Other) setup revealed a structural limitation. With only Outdoor and Other, the catchall got crowded and the model couldn't position items for *future* domain agents (camera mentor, kitchen advisor, fitness coach, etc.). Tom asked to "nail out all the categories now so as it updates there is better architecture."
+
+Separately, Tom corrected my read of consumables: domain-specific consumables (climbing chalk, ski wax, camera batteries) **should** stay in their domain, not get banished to a generic catchall. The reason: the future "Phase 5.5+" proactive-nudge use case ("ski season is coming, you have ~25% wax left, restock?") requires the domain agent to *see* its own consumables. A consumable hidden in `Other` is invisible to the domain agent.
+
+**Decision 1: Expand Domain enum to 11 values.**
+
+The existing 8 (`Outdoor`, `Other`, `Kitchen`, `Photography`, `Home`, `Tech`, `Wardrobe`, `Auto`) gain three new ones based on observed Amazon-purchase patterns:
+
+| Domain | What goes here | Future agent |
+|---|---|---|
+| **Outdoor** | Hiking, backpacking, camping, climbing, MTB, skiing, paddling, surfing, trail-running gear; outdoor-specific services (REI Membership, race entries, ski tickets); outdoor-specific consumables (energy gels, ski wax, chalk, bear spray, sunscreen for trips). | Outdoor mentor (Phase 2+) |
+| **Photography** | Cameras, lenses, tripods, bags, lighting; photography software/courses; consumables for photo gear (camera batteries, memory cards, sensor swabs, lens cleaning fluid). | Camera mentor |
+| **Kitchen** | Cookware, bakeware, appliances (Instant Pot, blender), utensils; **food and drink consumables** consumed at home (oils, spices, coffee beans, pasta, baking ingredients, **all home-consumed beverages including Gatorade and protein shakes — Category="Drinks"**). | Kitchen / pantry advisor |
+| **Home** | Furniture, bedding, bath, decor, lighting (non-outdoor), DIY/repair tools; home consumables (dish soap, paper towels, laundry detergent, light bulbs, household batteries). | Home advisor |
+| **Tech** | Computers, monitors, keyboards, audio gear, networking, smart-home, generic electronics, software subscriptions (non-outdoor). | Tech advisor |
+| **Wardrobe** | Casual / dress / work clothing, dress shoes, accessories like watches & belts (non-outdoor, non-athletic). | Wardrobe stylist |
+| **Auto** | Car parts, maintenance, accessories, car-specific tools. | Car advisor |
+| **Fitness** *(new)* | Gym equipment, yoga gear, weights, athletic clothing not specifically outdoor (workout shirts, gym shorts). | Fitness coach |
+| **Health** *(new)* | Generic body-care consumables: vitamins, supplements, OTC meds, generic personal-care items (toothpaste, generic lip balm). NOT activity-specific consumables (those go to Outdoor / Fitness). | Health advisor |
+| **Media** *(new)* | Books, magazines, courses, music/video subscriptions. | Reading / learning advisor |
+| **Other** | True catchall — pet supplies, garden, gifts, hobbies that don't fit a domain. | — |
+
+**Decision 2: Domain-specific consumables stay in their domain (supersedes the "consumables → Other" rule from the prior entry).**
+
+The reframed principle:
+
+> **Domain = which agent cares about this item for advice OR proactive consumable nudges.** *(Not just "which agent owns the gear inventory.")*
+> **Type = durable owned (`Gear`) vs used-up (`Consumable`) vs paid-non-physical (`Service`).**
+
+Consumables go to the domain whose agent would benefit from tracking them. Examples:
+
+- Climbing chalk → `Outdoor / Consumable` (outdoor agent nudges before climbing season)
+- Ski wax → `Outdoor / Consumable` (outdoor agent nudges before ski season)
+- Energy gels, Honey Stinger waffles → `Outdoor / Consumable` (outdoor agent tracks for trip prep)
+- Sunscreen / bug spray for outdoor trips → `Outdoor / Consumable`
+- Camera batteries, memory cards, sensor swabs → `Photography / Consumable`
+- Olive oil, spices, coffee beans, pasta → `Kitchen / Consumable`
+- Gatorade, protein shake (home-consumed) → `Kitchen / Drinks / Consumable`
+- Vitamins, OTC meds, generic toothpaste → `Health / Consumable` (no specific domain owns these)
+- Dish soap, laundry detergent, paper towels, household batteries → `Home / Consumable`
+
+The `Health` domain is now narrower: it's the catchall for body-care consumables that *no other domain* owns. Activity-specific consumables (used during outdoor trips, gym workouts, photography shoots, etc.) belong to that activity's domain.
+
+**Decision 3: `Drinks` becomes the Category for all home-consumed beverages.**
+
+Tom uses Amazon to recurring-order Gatorade and protein shakes for home consumption (not as workout fuel). Both are `Kitchen / Drinks / Consumable`. Future home-drink purchases (juice, sparkling water, soda, beer, etc.) follow the same pattern. Coffee beans stay under `Kitchen / Coffee` (or similar) — Drinks is specifically the prepared-beverage category.
+
+**Decision 4: REI Type heuristic widened to catch wipes / fuel / wax / cleaner / lubricant.**
+
+Previous version of `inferReiType()` in `migrate-to-master.ts` only matched snacks/nutrition/membership and missed obvious consumables in REI's "Camping Gear → Kitchen & Cleanup" sub-category (e.g. dish wipes). Updated heuristic also matches: `wipes`, `fuel`, `wax`, `cleaner`, `lubricant`, `sealant`, `repellent`, `repellant`, `polish`, `chalk`. Catches the long tail; admin can still flip individual rows in the sheet via the Type dropdown.
+
+**How to apply (deltas to other artifacts):**
+
+- `CLAUDE.md`: schema row already says "17 columns A–Q"; no change needed (Domain values aren't enumerated there).
+- `PLAN.md`: schema table row N updated to enumerate all 11 domains and reference this entry for consumable semantics.
+- `scripts/bootstrap-sheet.ts`: `DOMAIN_ENUM` adds `Fitness`, `Health`, `Media` (8 → 11 values).
+- `scripts/migrate-to-master.ts`: `Domain` TypeScript type union expanded to all 11 values; JSON schema `domain` enum likewise; system prompt rewritten with per-domain definitions + consumables-by-domain rule + worked examples (including the Drinks / Gatorade case as the canonical illustration). `inferReiType()` widened per Decision 4. Distribution + sample print updated to handle the larger domain set.
+- DECISIONS.md prior entry's "consumables → Other" rule is **superseded** by Decision 2 above.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale
