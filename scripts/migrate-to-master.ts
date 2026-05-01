@@ -7,7 +7,8 @@ const HAIKU_MODEL = 'claude-haiku-4-5';
 const TARGET_TAB = 'All Purchases';
 const REI_TAB = 'REI All Purchases';
 const AMAZON_TAB = 'Amazon Purchases';
-const CONCURRENCY = 10;
+const CONCURRENCY = parseInt(process.env.MIGRATE_CONCURRENCY ?? '3', 10);
+const MAX_RETRIES = 5;
 const SAMPLE_SIZE = 8;
 
 const STATUS_VALUES = [
@@ -376,21 +377,23 @@ async function classifyOneAmazonRow(
 
 Return the four fields.`;
 
-  const resp = await anthropic.messages.create({
-    model: HAIKU_MODEL,
-    max_tokens: 512,
-    system: [
-      {
-        type: 'text',
-        text: systemPrompt,
-        cache_control: { type: 'ephemeral' },
+  const resp = await callWithRetry(() =>
+    anthropic.messages.create({
+      model: HAIKU_MODEL,
+      max_tokens: 512,
+      system: [
+        {
+          type: 'text',
+          text: systemPrompt,
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
+      messages: [{ role: 'user', content: userMessage }],
+      output_config: {
+        format: { type: 'json_schema', schema: CLASSIFY_SCHEMA },
       },
-    ],
-    messages: [{ role: 'user', content: userMessage }],
-    output_config: {
-      format: { type: 'json_schema', schema: CLASSIFY_SCHEMA },
-    },
-  });
+    }),
+  );
 
   cacheStats.creation += resp.usage.cache_creation_input_tokens ?? 0;
   cacheStats.reads += resp.usage.cache_read_input_tokens ?? 0;
@@ -429,6 +432,25 @@ Return the four fields.`;
     domain: parsed.domain,
     productUrl: '',
   };
+}
+
+async function callWithRetry<T>(fn: () => Promise<T>): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const isRetryable =
+        err instanceof Anthropic.RateLimitError ||
+        err instanceof Anthropic.InternalServerError ||
+        (err instanceof Anthropic.APIError && err.status === 529);
+      if (!isRetryable || attempt === MAX_RETRIES - 1) throw err;
+      const delayMs = Math.min(1000 * 2 ** attempt, 30000) + Math.floor(Math.random() * 500);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  throw lastErr;
 }
 
 function amazonRowFallback(
