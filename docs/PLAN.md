@@ -138,7 +138,7 @@ ledger/                              # current name: outdoor-inventory; rename o
 | L   | Order ID            | Dedup key |
 | M   | Status              | `active` (default), `retired`, `returned`, `lost`, `broken`, `sold`, `donated`, `excluded`. `retired` = "still own it but not actively using." `excluded` = "don't include in inventory analysis." |
 | **N** | **Domain**          | `Outdoor`, `Photography`, `Kitchen`, `Home`, `Tech`, `Wardrobe`, `Auto`, `Fitness`, `Health`, `Media`, `Other` (11 values). Means *"which expert agent cares about this item for advice OR proactive consumable nudges."* Domain-specific consumables (climbing chalk, ski wax, camera batteries, olive oil, vitamins, dish soap) stay in their natural domain so the relevant agent can track repurchase needs. See DECISIONS.md (2026-05-01 entry: "Domain set expanded to 11; consumables-by-domain rule"). |
-| **O** | **Product URL**     | Link to the retailer's product page, extracted from the email. Often blank for Amazon (links missing or volatile). Blank for historical CSV imports unless provided. Used by the admin (Tom) to click through and verify items; not used in dedup or by the agent. |
+| **O** | **Product URL**     | Link the admin clicks to verify an item. Populated three ways, in priority order: (1) real product URL extracted from the email by the parser when present; (2) **fallback** via `lib/url-fallback.ts` — Amazon w/ Order ID → `amazon.com/gp/your-account/order-details?orderID=…`, Amazon w/o ID → Amazon search by item name, REI → REI search by item name; (3) blank only as a last resort. **Always non-empty for new ingested rows.** Used by the admin to click through and verify items; not used in dedup or by the agent. |
 | **P** | **Type**            | `Gear`, `Consumable`, `Service`. **Gear** = durable owned items the domain agents reason about (clothing, equipment, electronics). **Consumable** = food, drink, supplements, sunscreen, batteries, anything used up. **Service** = memberships, subscriptions, repairs, experiences, race entries. Default agent inventory queries filter to `type=Gear`. |
 | **Q** | **Reasoning**       | One-sentence explanation Haiku writes when it classifies an Amazon row, e.g. *"Camera tripod — durable photo-equipment item."* For REI rows, blank (direct mapping, no LLM judgement involved). Informational only; not used by the agent. Helps the admin understand why something landed where it did. |
 
@@ -291,11 +291,11 @@ Same as previously specified — fetch unprocessed messages from `rei@notices.re
 
 ### Task 1.2: REI parser
 
-**Files:** `lib/parsers/rei.ts`, `lib/parsers/types.ts`
+**Files:** `lib/parsers/rei.ts`, `lib/parsers/types.ts`, `lib/url-fallback.ts` (already exists)
 
 Pure cheerio parser. Returns `ParsedOrder` with line items. Returns null for non-receipt emails. Tested against ≥3 saved fixtures.
 
-Each `ParsedItem` includes an optional `productUrl` field. The REI parser extracts the `<a href>` on the product name / image for each line item; if absent, the field is left blank. URL is the canonical retailer product page only (no tracking parameters stripped — leave as-is).
+Each `ParsedItem` includes a `productUrl` field that is **always non-empty** for valid items. The parser tries to extract the `<a href>` on the product name / image for each line item. If absent, the parser calls `buildFallbackProductUrl({ source: 'REI', itemName })` from `lib/url-fallback.ts`, which produces an REI search URL. Real URLs preserve all tracking parameters (leave as-is).
 
 ### Task 1.3: Amazon parser
 
@@ -305,7 +305,7 @@ Tier 1: regex/cheerio against shipment-confirmation (primary, more stable) and o
 Tier 2: Claude Haiku 4.5 fallback with strict JSON schema if regex returns nothing or low confidence.
 Tier 3: low-confidence Claude → return null + reason for Needs Review.
 
-Each `ParsedItem` includes an optional `productUrl`. Amazon shipment emails *sometimes* include `amazon.com/gp/product/<ASIN>` style links per line item — extract when present, leave blank when not. Do not synthesize a URL from the ASIN if not seen in the email body. Haiku fallback also returns `productUrl` in its JSON schema as an optional field.
+Each `ParsedItem` includes a `productUrl` field that is **always non-empty** for valid items. Amazon shipment emails *sometimes* include `amazon.com/gp/product/<ASIN>` style links per line item — extract when present. When absent, call `buildFallbackProductUrl({ source: 'Amazon', orderId, itemName })` from `lib/url-fallback.ts`, which produces an order-detail URL when an Order ID is known (preferred) or an Amazon search URL otherwise. Do not synthesize a real product URL from the ASIN if not seen in the email body — that's distinct from the search/order-detail fallback. Haiku fallback also returns `productUrl` in its JSON schema as an optional field; if Haiku returns an empty productUrl, the wrapper applies the same fallback.
 
 `claude.ts` uses prompt caching for the system prompt + JSON schema (per global CLAUDE.md, all Anthropic apps cache).
 

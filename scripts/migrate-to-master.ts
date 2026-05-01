@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { google, sheets_v4 } from 'googleapis';
 import Anthropic from '@anthropic-ai/sdk';
 import { parse as parseDate, isValid } from 'date-fns';
+import { buildFallbackProductUrl } from '../lib/url-fallback.js';
 
 const HAIKU_MODEL = 'claude-haiku-4-5';
 const TARGET_TAB = 'All Purchases';
@@ -260,7 +261,7 @@ function mapReiRow(row: string[]): MasterRow | null {
     orderId: '',
     status,
     domain: 'Outdoor',
-    productUrl: '',
+    productUrl: buildFallbackProductUrl({ source: 'REI', itemName }),
     type: itemType,
     reasoning: '',
   };
@@ -603,7 +604,7 @@ Return the four fields.`;
     orderId,
     status: 'active',
     domain: parsed.domain,
-    productUrl: '',
+    productUrl: buildFallbackProductUrl({ source: 'Amazon', orderId, itemName }),
     type: parsed.type,
     reasoning: parsed.reasoning,
   };
@@ -653,7 +654,7 @@ function amazonRowFallback(
     orderId,
     status: 'active',
     domain: 'Other',
-    productUrl: '',
+    productUrl: buildFallbackProductUrl({ source: 'Amazon', orderId, itemName }),
     type: 'Gear',
     reasoning: '(classification fallback — Haiku call failed or returned invalid output)',
   };

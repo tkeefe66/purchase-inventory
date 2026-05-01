@@ -411,6 +411,39 @@ Three layers:
 
 ---
 
+## 2026-05-01 — Product URL is always non-empty; fallback to search/order-detail URLs
+
+**Context:** After Phase 0 migration completed, Tom flagged that reviewing 393 rows without clickable links was painful. The schema already reserved column O for `Product URL`, but historical-import rows had no URL data so the column was uniformly blank. We needed a synthesized URL good enough for "click and verify what this item actually is."
+
+**Decision:** **Product URL (col O) is always non-empty for valid items.** Populated in priority order:
+
+1. **Real product URL extracted from the source email** — preserved verbatim by the parser (REI: `<a href>` on product image/name; Amazon: `amazon.com/gp/product/<ASIN>` links when present in shipment emails).
+2. **Fallback URL** via `lib/url-fallback.ts` → `buildFallbackProductUrl({ source, orderId, itemName })`:
+   - Amazon + Order ID known → `https://www.amazon.com/gp/your-account/order-details?orderID=<ID>` (lands on the actual order page when logged in)
+   - Amazon w/o Order ID → `https://www.amazon.com/s?k=<URL-encoded item name>` (Amazon search)
+   - REI → `https://www.rei.com/search?q=<URL-encoded item name>` (REI search; their catalog is small enough that name-search lands on the right product ~90% of the time)
+3. Empty string only as a last resort (e.g. degenerate row with no item name).
+
+**Why this two-tier approach:**
+
+- A real URL is always preferable when available — direct, stable, captures any retailer-specific tracking.
+- The fallback covers the "we don't have a real URL" case (historical migration, Amazon emails that omit per-line product links) without resorting to scraping (forbidden per CLAUDE.md) or paying an LLM to web-search every item (~$10+ for 393 rows, variable quality).
+- Search/order-detail URLs aren't precise but they're zero-cost, deterministic, and click-through-able — which is exactly what's needed for human review.
+
+**How to apply (already done for current state, locked for future):**
+
+- `lib/url-fallback.ts`: pure function `buildFallbackProductUrl({ source, orderId?, itemName }) → string`. Exports `Source` type alias. Imported by migration, backfill, and (per Phase 1 spec) parsers.
+- `scripts/backfill-urls.ts`: one-time script that reads `All Purchases`, fills empty col O via the fallback util. Idempotent — won't overwrite existing URLs. Already run; populated all 393 historical rows.
+- `scripts/migrate-to-master.ts`: now calls `buildFallbackProductUrl` when constructing both REI and Amazon master rows (and in the Haiku-fallback path), so any future re-migration ships URLs.
+- `lib/parsers/rei.ts` (Phase 1, Task 1.2): extract real URL from email; if absent, call fallback util. `productUrl` becomes a required (non-optional) field on `ParsedItem`.
+- `lib/parsers/amazon.ts` (Phase 1, Task 1.3): same pattern. Haiku fallback's JSON schema keeps `productUrl` optional, but the wrapper applies fallback if Haiku returns empty.
+- `PLAN.md` sheet schema row O updated; Tasks 1.2 + 1.3 updated to reference the fallback helper.
+- This decision **does not** affect dedup (`(Order ID, Item Name, Color, Size)` unchanged) or any other column.
+
+**Implication for future retailers** (Patagonia, Backcountry, MEC, etc.): each new parser must either extract a real URL or the fallback util needs a corresponding case added. Default fallback: `https://<retailer-domain>/search?q=<item name>`.
+
+---
+
 ## 2026-05-01 — Domain set expanded to 11; consumables-by-domain rule (supersedes part of prior entry)
 
 **Context:** Second migration dry-run with the previous 2-domain (Outdoor/Other) setup revealed a structural limitation. With only Outdoor and Other, the catchall got crowded and the model couldn't position items for *future* domain agents (camera mentor, kitchen advisor, fitness coach, etc.). Tom asked to "nail out all the categories now so as it updates there is better architecture."
