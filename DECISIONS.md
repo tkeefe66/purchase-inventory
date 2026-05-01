@@ -1,0 +1,312 @@
+# DECISIONS.md — Inventory Platform
+
+> Append-only log of design and product decisions. When a future Claude session questions "why did we do X?" — read this. Do not overwrite history; if a decision changes, add a new dated entry referencing the prior one.
+
+---
+
+## 2026-04-30 → 2026-05-01 — Initial planning session
+
+### The big reframe
+
+**Original spec (in source product doc):** "Outdoor inventory app" — a single-purpose Node.js + Railway service that parses REI + Amazon emails into a Google Sheet.
+
+**Reframed during this session:** A **purchase-ingest + categorization platform** that powers domain-specialist AI agents. Outdoor is the first domain; Kitchen, Photography, etc. follow on the same architecture.
+
+**Why:** Tom asked "could this be bigger?" The platform framing is a better product because:
+- The ingest pipeline is reusable infrastructure for every future domain
+- Domain-bounded specialist agents beat one giant generalist (smaller context, focused tool sets, domain-specific external integrations)
+- Adding a new domain becomes a 1-2 week effort, not a rebuild
+- Personal-context-x-domain-expertise is the unique value vs. generic chatbots
+
+**Discipline rule established:** *Architect for the platform; ship one domain at a time.* Outdoor must be at Phase 6 (or Phase 5) in `PLAN.md` before any second-domain work begins. This is to prevent the "great architecture, nothing shipped" failure mode.
+
+---
+
+### Q&A — locked decisions
+
+The following 28+ questions were resolved during this session. Format: question (paraphrased) → answer + rationale.
+
+#### Backfill & historical data
+
+**1. First-run scope.** Tom will provide a CSV of historical REI + Amazon purchases. The cron will only process *future* emails. Backfill is a one-time `scripts/import-history.ts` invocation, not an email re-parse. *Why: avoids the blast-radius problem of double-adding historical purchases that are still sitting in the inbox.*
+
+**2. Dedup approach.** Within the cron, dedup by `(Order ID, Item Name, Color, Size)`. Tom asked "isn't searching for product enough?" — answer: not quite, because legitimately re-buying the same item next year would otherwise be blocked. Order ID makes "I bought the same thing in a separate order" a non-collision.
+
+**3. Categories.** Use existing sheet category vocabulary; classifier is allowed to create new categories when nothing fits. Existing data is preserved.
+
+#### Email matching
+
+**4. REI sender.** `rei@notices.rei.com`.
+
+**5/6. Amazon senders.** Use BOTH `auto-confirm@amazon.com` (order confirmation, primary source for price/total) AND `ship-confirm@amazon.com` (shipment confirmation, primary source for line items — more stable format). *Why: order confirmation has the price truth; shipment confirmation has the cleaner item list.*
+
+**7. Non-receipt emails.** No hardcoded ignore-list. If the parser determines an email isn't a receipt, skip silently. Don't apply the label so we can revisit later if needed.
+
+#### Parser strategy
+
+**8. Amazon parser.** Tier 1 regex/cheerio → Tier 2 Claude Haiku 4.5 fallback when regex fails or returns low confidence → Tier 3 Needs Review tab if Claude is also low-confidence. *Why: regex is free and works for the happy path; Claude handles the long tail of template variations; Needs Review prevents silent data loss.*
+
+**9. REI parser.** Pure cheerio, no LLM. *Why: REI templates are stable enough; LLM cost not justified.*
+
+**10. Needs Review tab.** Yes — separate tab in the same sheet for low-confidence / failed parses. Manual review workflow.
+
+#### Data shape & accuracy
+
+**11. Price.** Line-item price only. No shipping or tax allocation. *Why: matches what's already in the sheet.*
+
+**12. Discounts.** Post-discount price (what the card was actually charged).
+
+**13. Item lifecycle.** A new column `Status` (col M) tracks item state: `active` (default), `returned`, `lost`, `broken`, `sold`, `donated`, `excluded`. Tom had been using a separate "excluded" column on REI rows; this consolidates. *Why: one source of truth; the agent can filter by `status=active` when answering "what do I own."*
+
+**14. Year column.** Derived from `Date Purchased` in **Mountain time** (`America/Denver`).
+
+**15. Dedup key.** `(Order ID, Item Name, Color, Size)` — not just `(Order ID, Item Name)`. *Why: legitimately ordering two colors of the same item in one order shouldn't collide.*
+
+**16. Brand allowlist.** Yes, seed from existing sheet's Brand column. Use as primary signal, fall back to LLM extraction.
+
+**17. Color/Size for Amazon.** Often blank. Only fill when parser is confident. *Why: Amazon item titles rarely follow a parseable pattern; better blank than wrong.*
+
+#### Operations
+
+**18. Dry-run mode.** Yes — `--dry-run` flag prints proposed actions without writing.
+
+**19. Reprocess command.** Yes — `--reprocess --since=<date>` bypasses the label filter.
+
+**20. Notifications + conversational interface.** Telegram for both: failure alerts, daily digest, AND conversational interface to the inventory ("I want to talk to the agent about my gear and use my inventory as knowledge"). *This is the trigger for the entire Phase 2+ agent work.*
+
+**21. OAuth consent screen.** Must be **published** (not Testing). *Why: refresh tokens for unpublished apps expire after 7 days, killing the cron silently.* Tom will need help with this when we get there.
+
+**22. Cron schedule.** 6am AND 6pm Mountain time. Twice daily.
+
+**23. Future retailer extensibility.** Yes — parser interface designed so adding Patagonia / Backcountry / MEC etc. is a 1-file addition.
+
+#### Vision
+
+**24. Day-to-day usage / PM framing.** Tom wants: "store what I buy, track spending, and have an agent I can talk to when I want to buy something — it knows what I own which is way easier than telling a general LLM." → *This is the moat. The agent without inventory grounding is just ChatGPT. The inventory without an agent is just a spreadsheet.*
+
+**25. Web UI.** In for v1. Scoped down to **read-only dashboard** (filter by category/brand/year/status, spending chart). Editing deferred. *Why: editable UI requires conflict handling with the cron; not v1 scope.*
+
+**26. Test fixtures.** Tom will forward 5–10 representative emails (REI single, REI multi, Amazon order, Amazon shipment, Amazon multi-shipment) which we save as `.html` files in `tests/fixtures/`. Tests run against those files for parser regression detection.
+
+**27. CI.** Build directly in working directory, no worktree. *Why: greenfield project, no isolation benefit.*
+
+**28. Bigger / smaller framing.** Recognized that the original spec was a monolith disguised as modular code. Reframed to a domain-extensible platform. Outdoor only in v1.
+
+---
+
+### Architecture decisions following the reframe
+
+**A1. Project structure: `lib/` + `domains/<name>/` + `apps/`.**
+- `lib/` is pure infrastructure (Sheets, Gmail, parsers, Claude wrapper, dedup, router scaffold). Knows nothing about specific domains.
+- `domains/<name>/` is a self-contained module: classifier, inventory queries, agent prompt + tools, integrations.
+- `apps/` (cron, bot, web) wires `lib/` and `domains/` together.
+- Architectural rule: `domains/foo/` cannot import from `domains/bar/`.
+
+*Why:* Adding a new domain is a folder-add operation. No churn in existing code.
+
+**A2. Sheet schema: add `Domain` column N.**
+- Master tab `All Purchases` with one `Domain` column rather than per-domain tabs
+- Allowed Domain values in v1: `Outdoor`, `Other`. Future: `Kitchen`, `Photography`, `Home`, `Tech`, `Wardrobe`, `Auto`.
+- Categorizer is two-stage: domain routing (which folder owns this item?) → in-domain category (what kind of thing is it within that domain?).
+
+*Why:* Single source of truth, easy to reclassify later, simpler queries.
+
+**A3. Agent model selection.**
+- **Claude Haiku 4.5** for the Amazon parser fallback (cost-sensitive, structured-output task)
+- **Claude Sonnet 4.6** for the outdoor agent (reasoning over inventory + weather + trail data)
+- Prompt caching always on per global CLAUDE.md guidance
+
+**A4. AllTrails MCP availability.**
+- Tom has AllTrails connected to his Claude.ai account (newly added)
+- The Telegram bot runs on Railway, not in Tom's Claude.ai session — so the AllTrails MCP may not be reachable from the deployed agent
+- **Decision deferred to start of Phase 4**: check at that time. If MCP isn't reachable, fall back to OpenStreetMap (Overpass API) hiking data or Strava Routes API. Both are free.
+
+**A5. Free-camping data source.**
+- **Recommended primary:** Recreation.gov API (free, official, US federal land — covers a lot of free dispersed camping on USFS / BLM land)
+- Secondary candidates investigated at Phase 5: iOverlander (community-sourced data export), The Dyrt (some free listings), USFS Motor Vehicle Use Maps for dispersed camping.
+
+**A6. Phasing.**
+| Phase | Scope |
+|---|---|
+| 0 | Bootstrap (project, sheet schema, OAuth, historical CSV import) |
+| 1 | Platform skeleton + outdoor inventory ingest (no agent yet) |
+| 2 | Outdoor agent v1 (Telegram, no external integrations) |
+| 3 | Outdoor + Weather |
+| 4 | Outdoor + AllTrails (or fallback) |
+| 5 | Outdoor + Free camping |
+| 6 | Web UI (read-only, all domains) |
+| 7+ | Second domain (deferred until Phase 6 in daily use ≥1 month) |
+
+7-day soak test between Phase 1 and Phase 2 is non-negotiable.
+
+**A7. Folder rename.**
+- Current folder: `outdoor-inventory/`
+- Recommended new name: `ledger/` (short, accurate, ages well across domains)
+- **Decision deferred** — Tom will decide whether/when to rename. No code impact either way.
+
+---
+
+## Outstanding inputs Tom owes the project
+
+These don't block planning but block specific build tasks. Tracked here for visibility:
+
+- [ ] Historical purchases CSV (blocks Task 0.5)
+- [ ] 5–10 sample emails forwarded for fixtures (blocks Tasks 1.2, 1.3)
+- [ ] Telegram bot token via @BotFather (blocks Task 1.8)
+- [ ] Telegram chat ID — get from `/start` to bot (blocks Task 1.8)
+- [ ] Anthropic API key (blocks Tasks 1.3, 2.4)
+- [ ] GCP project + OAuth credentials, with consent screen *published* (blocks Task 0.2)
+- [ ] OpenWeatherMap API key OR decision to use NOAA (blocks Task 3.1; decide end of Phase 2)
+- [ ] AllTrails MCP availability check from Railway deploy (blocks Task 4.1; decide start of Phase 4)
+- [ ] Recreation.gov API key (blocks Task 5.1; decide start of Phase 5)
+
+---
+
+---
+
+## 2026-05-01 — Outdoor agent reframed as broad outdoor companion
+
+**Decision:** The outdoor agent's role is broadened from "gear advisor" to "outdoor companion / guru." It is now scoped to handle anything outdoor-related — gear, trip planning, picking up new activities (mountain biking, surfing, climbing, etc.), training advice, where-to-go suggestions, technique pointers, buying decisions — across hiking, backpacking, mountain biking, climbing, skiing/snowboarding, paddling, surfing, trail running, and other outdoor activities.
+
+**Why:** Tom asked "what if I want to take up mountain biking or plan a surf trip to Australia?" — the original "gear advisor" framing was too narrow. Sonnet 4.6 already has broad outdoor knowledge in its training data; the agent doesn't need new infrastructure to answer activity questions, just a broader system prompt. The unique value (vs. a generic chatbot) is the combination of broad outdoor knowledge with Tom's specific inventory grounding — and that moat compounds over time as Tom takes up new activities and logs related purchases.
+
+**How to apply:** No architecture change. Outdoor remains a single domain with a single agent. System prompt rewritten to position the agent as a companion across all outdoor activities. Activity-specific knowledge gaps (current conditions, current product releases, etc.) are filled by the web_search tool (Phase 2.5).
+
+---
+
+## 2026-05-01 — Add `web_search` to outdoor agent as Phase 2.5
+
+**Decision:** Anthropic's built-in `web_search` server tool is added to the outdoor agent's tool registry as a new Phase 2.5 (between agent v1 and weather integration). Single-day deploy.
+
+**Why:** Without web search, the agent is limited to Sonnet 4.6's January 2026 training cutoff. Adding web_search lets the agent ground recommendations in current product reviews, current trail/snow/surf conditions, current pricing, recent gear releases. ~1 day of work; meaningful capability uplift; covers the long tail of activity-specific queries that don't justify dedicated integrations.
+
+**How to apply:** Add `web_search` to the tool list in `domains/outdoor/agent.ts`. Update system prompt to mention "search the web when the user asks about current conditions, current prices, recent product releases, or anything that may have changed since your training cutoff." No additional API key needed (server-side tool — Anthropic executes the search).
+
+---
+
+## 2026-05-01 — AllTrails covers all trail-based activities (hiking, MTB, trail running)
+
+**Decision:** Phase 4's trail integration uses AllTrails as the single source for hiking, mountain biking, and trail running. The trail-client filename in `domains/outdoor/integrations/` is `trails.ts` (activity-agnostic), not `alltrails.ts` (which would be misleading if we end up on the OSM fallback).
+
+**Why:** Tom explicitly chose AllTrails as the trail-data source for all activities including MTB. AllTrails has MTB and trail-running data in addition to hiking. Tom rejected adding Trailforks (MTB-specific) — keeps tool-list minimal and consistent.
+
+**How to apply:** Tool functions accept an optional `activity` parameter (`'hiking' | 'mtb' | 'running'`) for filtering. If MCP isn't reachable from Railway, OSM fallback uses `cycleway` / `mtb:scale` tags for MTB and `highway=path` + `sac_scale` for hiking. Update agent system prompt to advertise coverage of all three activities.
+
+---
+
+## 2026-05-01 — NOT building: Trailforks, Surfline, Magic Seaweed, activity-specific APIs
+
+**Decision:** No dedicated MTB-trail API (Trailforks), no dedicated surf-forecast API (Surfline / Magic Seaweed / similar), no other activity-specific integrations beyond what's already in the plan (Weather + AllTrails + Free-camping).
+
+**Why:** Tom explicitly rejected both. The combination of (a) AllTrails for trails, (b) Weather for forecasts, (c) web_search for everything else covers his use cases without committing to N more integration projects. Each additional integration is its own maintenance burden, auth flow, rate-limit consideration, and template-fragility risk; the marginal value beyond web_search is low for these specific cases.
+
+**How to apply:** When future-Claude is tempted to add a "while we're here" surf or MTB API: don't. Web_search handles it. Revisit only if a specific use case repeatedly fails web_search and Tom explicitly asks.
+
+---
+
+## 2026-05-01 — Full custom build chosen over Claude Project / hybrid
+
+**Decision:** Build the full custom application as planned (Phases 0 through 6+). Do **not** use a Claude Project as the agent layer, and do **not** pursue a hybrid (build the ingest cron only + use a Claude Project for the agent).
+
+**Why:** The hybrid was honestly evaluated and surfaced to Tom as a faster, cheaper alternative — Claude Projects can deliver ~80% of the agent value with ~0% of the engineering, since claude.ai already provides web search, AllTrails MCP, Gmail/Drive connectors, mobile UI, and persistent context. The hybrid would have skipped Phases 2–6 and only built the email-ingest cron (Phase 0 + Phase 1, ~1 week of work).
+
+Tom chose the full build anyway. The full build is justified by:
+- **Telegram as the primary interface** — chat with the agent from anywhere, including while shopping IRL, without opening claude.ai
+- **Bot-mediated write-back** — "I lost my Jetboil" automatically updates Status in the sheet, no manual sheet editing
+- **Single agent that knows ALL domains at once** — vs. a separate Claude Project per domain (loses cross-domain context)
+- **Building / learning value** — Tom wants to build this
+
+**How to apply:** When future Claude sessions are tempted to suggest "why not just use a Claude Project for this?" — the answer is documented here. Tom considered it, the tradeoffs were laid out explicitly, and he chose the full build. Don't relitigate.
+
+---
+
+---
+
+## 2026-05-01 — Status enum extended with `retired`
+
+**Decision:** Add `retired` to the Status (column M) enum. Meaning: "still own it but not actively using it." Distinct from `excluded` ("don't include in inventory analysis at all").
+
+**Why:** Tom uses (and will use) gear that he keeps but cycles out of active rotation — older boots that still work, a previous-generation shell, etc. A separate state lets the agent answer "what do I actively use?" (filter `active`) vs. "what do I own?" (include `active` + `retired`) cleanly.
+
+**How to apply:** Update the Status enum everywhere it's referenced (sheet schema, dedup, agent system prompt, slash commands). Default for new rows is still `active`. Agent's default inventory queries filter to `active` unless context suggests otherwise.
+
+---
+
+## 2026-05-01 — Slash commands added to Phase 2 (`/log`, `/lost`, `/sold`, `/donated`, `/retired`, `/broken`)
+
+**Decision:** Phase 2 includes a small set of slash commands on the Telegram bot for fast purchase logging and lifecycle updates. New Task 2.5: `/log <free-form text>` for manual purchase entry; `/lost`, `/sold`, `/donated`, `/retired`, `/broken <item>` for fast Status updates.
+
+**Why:**
+- `/log` covers the entire class of purchases that don't come through Gmail (in-store cash, marketplace, gifts received). Without this, the inventory has blind spots.
+- Status commands are syntactic sugar over the agent's existing `update_status` tool — faster than typing a full sentence. Useful in the field when Tom is busy.
+
+**How to apply:** Implement in `apps/bot/handlers.ts`. `/log` parses free-form text via Claude (returning structured fields) and asks for confirmation before writing. Status commands fuzzy-match against existing inventory, ask for clarification if multiple matches.
+
+---
+
+## 2026-05-01 — Phase 3.5 added: Calendar-aware trip prep
+
+**Decision:** New mini-phase (~3 days) between Phase 3 (Weather) and Phase 4 (AllTrails). A daily cron reads Tom's Google Calendar, identifies upcoming outdoor events, and proactively sends a Telegram packing-list nudge that combines event + forecast + inventory.
+
+**Why:** This is one of the features that uniquely justifies a custom build over a Claude Project. Projects can't run scheduled background tasks against your calendar. The combination of calendar + weather + inventory + Claude reasoning is the "system earns its keep" moment.
+
+**How to apply:** OAuth scope expansion required (`calendar.readonly`) — re-run `scripts/auth.ts` once. New `lib/calendar.ts`. New `apps/cron/trip-prep.ts` runs daily, separate from the email-ingest cron. De-dupe via small state-tracking sheet tab so the same event isn't nudged twice.
+
+---
+
+## 2026-05-01 — Phase 5.5 added: Gear age / maintenance nudges
+
+**Decision:** New mini-phase (~1 day) between Phase 5 (Free camping) and Phase 6 (Web UI). Monthly cron scans inventory, applies category-based age/maintenance rules (boots 3–5 yrs, shells 18mo for DWR, climbing rope 5 yrs, helmets 5 yrs, etc.), and sends a single consolidated Telegram message with items needing attention.
+
+**Why:** Promoted from the v2 candidate list. Tom explicitly wants this. It's small (rules engine + monthly cron), uses existing Telegram + inventory infra, and adds proactive value that Projects can't deliver.
+
+**How to apply:** Rules engine in `domains/outdoor/maintenance.ts`. Acknowledged-flag tracking in a "Maintenance Acked" sheet tab so items don't re-flag every month. Keep messages concise (≤10 items per message; prioritize oldest if more).
+
+---
+
+## 2026-05-01 — Explicitly NOT building (consolidated list)
+
+**Decision:** The following were considered and explicitly rejected. Do not propose adding them without an explicit user request.
+
+- **Strava integration** (correlate gear with activity miles) — Tom rejected
+- **Resale-value advisor** (estimate eBay/Marketplace prices) — Tom rejected
+- **Photo / receipt OCR logging** — replaced by typed `/log` command
+- **Weekly Telegram digest** (in addition to per-run digest) — per-run digest from Phase 1 is sufficient
+- **Voice notes via Telegram** — typed `/log` is fine
+- **iMessage relay / Apple Shortcuts** — out of scope
+- **Multi-person mode** (partner's gear, lend/borrow) — out of scope
+- **Specialist sub-agents within outdoor** (separate trip-planner vs. gear-advisor) — overkill; one agent with good tools wins
+- **Tax categorization** — not relevant to Tom's situation
+- **Trailforks** — AllTrails covers MTB
+- **Surfline / Magic Seaweed** — web_search covers surf
+
+**Why this matters:** These came up in conversation and were evaluated against Tom's stated goals. Capturing them here prevents future Claude sessions from re-suggesting them in a fresh context.
+
+---
+
+## 2026-05-01 — Sheet schema gains `Product URL` (col O); admin UX hardened
+
+**Decision:** Add column O `Product URL` to the `All Purchases` tab. The sheet now has 15 columns (A–O). Concurrently, `scripts/bootstrap-sheet.ts` will install (a) a data-validation dropdown on column M (Status) covering the locked enum, and (b) a conditional-formatting rule that visually mutes rows where `Status != active`.
+
+**Why:**
+- Tom asked for a way to click through to a product page from the sheet to manually verify items (still sold? correctly captured?). A URL column is the simplest answer. The link is for *human* verification only — the agent does not use it to reason. (Agent uses `web_search` for "is this still sold" type questions starting Phase 2.5.)
+- Tom is the admin and will edit the sheet directly when convenient — historical cleanup, bulk re-categorization, marking items lost/sold faster than via Telegram. Even after Phase 2 adds slash commands, sheet edits remain a first-class path. Making them ergonomic (dropdown enum, visual mute) prevents silent typos that would corrupt agent queries (e.g. typing `lost` as `Lost` and the agent counting the item as still owned).
+- `excluded` keeps its existing meaning ("don't include in inventory analysis at all"). Soft delete preserves the audit trail and prevents the cron from re-ingesting the same email and resurrecting the row.
+
+**How to apply:**
+- `lib/parsers/types.ts`: `ParsedItem` gains optional `productUrl: string | undefined`.
+- `lib/parsers/rei.ts`: extract product `<a href>` per line item.
+- `lib/parsers/amazon.ts`: extract product link from shipment-confirmation when present; leave blank when absent. Do *not* synthesize a URL from the ASIN if not seen in the email body. Haiku fallback's JSON schema includes `productUrl` as optional.
+- `scripts/import-history.ts`: read `Product URL` from CSV if the column header exists; blank otherwise.
+- `scripts/bootstrap-sheet.ts`: add col O header; apply data validation on col M (whole column, reject-on-invalid); add conditional-formatting rule for `M != "active"` rows.
+- `lib/sheets.ts`: append-row helper now writes 15 columns instead of 14.
+- Dedup key is unchanged: `(Order ID, Item Name, Color, Size)`. `Product URL` is *not* part of dedup.
+- Agent default inventory queries continue to filter `Status = active`. `excluded` items remain hidden even from "what do I own (including retired)" queries.
+
+---
+
+## How to use this file
+
+- **Append** new decisions with a date stamp and "Why" rationale
+- **Don't overwrite** historical decisions — if something changes, add a new entry that references the prior decision
+- When a future Claude session is unsure why something was chosen, this file is the answer
