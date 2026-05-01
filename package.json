@@ -18,12 +18,13 @@
     "auth": "tsx scripts/auth.ts",
     "bootstrap-sheet": "tsx scripts/bootstrap-sheet.ts",
     "inspect-sheets": "tsx scripts/inspect-sheets.ts",
+    "migrate-to-master": "tsx scripts/migrate-to-master.ts",
     "import-history": "tsx scripts/import-history.ts",
     "cron": "tsx apps/cron/index.ts",
     "bot": "tsx apps/bot/index.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.32.0",
+    "@anthropic-ai/sdk": "^0.92.0",
     "cheerio": "^1.0.0",
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",

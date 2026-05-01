@@ -305,6 +305,49 @@ Tom chose the full build anyway. The full build is justified by:
 
 ---
 
+## 2026-05-01 — Source sheet has 3 tabs, not 1; consolidate via migration script
+
+**Decision:** Tom's existing spreadsheet has three tabs, not the single `All Purchases` tab the original spec assumed:
+- `REI Summary` — ~20 rows of free-form summary text (charts/aggregates), col A only
+- `REI All Purchases` — ~82 raw line-item rows, 11 cols (Year, Date, **Exclude**, Category, Sub-Category, Brand, Item Name, Color, Size, Qty, Price)
+- `Amazon Purchases` — ~311 raw line-item rows, 7 cols (Year, Date, Category, Item Name, Unit Price, Quantity, Order ID)
+
+We're consolidating into a single `All Purchases` master tab via a one-time migration script (`scripts/migrate-to-master.ts`). The migration replaces what was originally Task 0.5 (CSV import) — Tom doesn't need a CSV; his existing tabs *are* the historical data. Existing tabs are left untouched as a safety net.
+
+**Why one master tab:**
+- Agent inventory queries are one read, not three — same applies to dedup, the cron pipeline, and the Phase 6 web UI.
+- Adding a future retailer (Patagonia, Backcountry, …) becomes a new value in the `Source` column, not a new tab + code path.
+- Conditional formatting + data validation are applied once.
+- Per-source tabs would have forced every code path that touches inventory to be tab-aware. Significant downstream complexity for minimal upside.
+
+**Sub-decisions locked in this session:**
+
+| # | Question | Decision |
+|---|---|---|
+| 1 | How to backfill Amazon's missing depth (no Sub-Category / Brand) | **Use Claude Haiku 4.5 to enrich Amazon rows during migration** — assigns Domain + Category + Sub-Category + Brand using REI's existing taxonomy as the seed vocabulary, with prompt caching on the system prompt + vocabulary. ~$0.50 / ~5 min for 311 rows. |
+| 2 | REI category vocabulary | **Keep as-is.** REI's existing categories (e.g. "Ski/Snow Gear", "Gloves & Mittens", "Membership") become the canonical seed vocabulary that the Amazon classifier maps into. New categories allowed when nothing fits. |
+| 3 | `REI Summary` tab | **Leave alone for now.** May be deleted or rebuilt as formulas over the new master tab in Phase 6. |
+| 4 | Existing `Amazon Purchases` + `REI All Purchases` tabs after migration | **Leave as-is.** Easy rollback if migration has bugs. May be archived/renamed/deleted later once the master tab is verified in production. |
+| 5 | Original Task 0.5 (CSV import) | **Replaced by `scripts/migrate-to-master.ts`.** Tom doesn't have a CSV to provide — his existing tabs are the source. |
+
+**Phase blurring acknowledged:** Using Haiku to classify Amazon rows during the Phase 0 migration is technically Phase 1 classifier work brought forward. Justified because: (a) the migration needs *some* classification anyway, (b) the same Haiku prompt + vocabulary will be reused by the Phase 1 Amazon parser, so this isn't throwaway code — it's a head start, (c) Tom will have rich, queryable data from day one rather than blank columns until the proper classifier ships. Does not violate the Golden Rule (still all Outdoor focus, no second-domain code).
+
+**How to apply:**
+
+- `scripts/migrate-to-master.ts`:
+  - Reads existing REI All Purchases (cols A–K) and Amazon Purchases (cols A–G).
+  - Reads REI's distinct (Category, Sub-Category, Brand) values to build a seed vocabulary that's passed to Haiku in a prompt-cached system message.
+  - For each REI row: maps directly into the 15-col schema. Date `Jan 26, 2022` → `2022-01-26`. Price `$89.95` → `89.95`. **Source = "REI"**, Order ID = blank, **Status = "excluded" if REI col C "Exclude" = "Yes" else "active"**, **Domain = "Outdoor"**, Product URL = blank.
+  - For each Amazon row: maps the explicit fields. Date `4/30/2026` → `2026-04-30`. Price `$79.95` → `79.95`. **Source = "Amazon"**, Order ID preserved, Status = "active". Then sends item name + Amazon's existing Category to Haiku to fill **Domain** (`Outdoor` or `Other`), **Category** (prefer REI vocabulary, allow new), **Sub-Category** (prefer REI vocabulary or blank), **Brand** (extract from item name).
+  - Writes to a new `All Purchases` tab (created if missing). Existing tabs are not modified.
+  - **Dry-run by default.** Prints a sample of converted rows and a summary; only writes when re-run with `--apply`.
+  - Idempotent on re-run with `--apply`: if `All Purchases` already has data, the script aborts with a clear error rather than appending duplicates. To re-migrate, delete the existing `All Purchases` tab first.
+- `scripts/bootstrap-sheet.ts`: unchanged. Run *after* a successful migration; it'll find the new `All Purchases` tab and apply validation + formatting + create `Needs Review`.
+- Original Task 0.5 (`scripts/import-history.ts`) is removed from the plan.
+- Dedup behavior for historical REI rows: blank Order IDs mean dedup falls back to `(Item Name, Color, Size)` for those rows. New REI rows ingested in Phase 1 will have proper Order IDs from the email parser.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale

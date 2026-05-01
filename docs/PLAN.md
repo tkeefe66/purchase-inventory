@@ -240,22 +240,36 @@ DRY_RUN=false                        # Set true to print proposed actions withou
 
 **Acceptance:** Runs against the real sheet; second run prints "all schema present." Admin can open the sheet, click any cell in column M, and pick a Status from a dropdown. Rows with `Status != active` are visually muted.
 
-### Task 0.5: Historical CSV import
+### Task 0.5: Sheet-to-sheet historical migration (Haiku-enriched)
 
-**Files:** `scripts/import-history.ts`
+**Files:** `scripts/migrate-to-master.ts`
+
+**Replaces:** the original CSV-import design. Tom's existing spreadsheet already contains all historical data across three tabs (`REI All Purchases`, `Amazon Purchases`, `REI Summary`) — so we don't need a CSV. We migrate sheet-to-sheet into a new master `All Purchases` tab. Full rationale in `DECISIONS.md` (2026-05-01 entry: "Source sheet has 3 tabs, not 1").
 
 **What it does:**
-1. Reads CSV file (path passed as arg) provided by Tom
-2. Maps columns to sheet schema, including `Domain=Outdoor` for all imported rows (since historical data is outdoor-focused)
-3. Sets `Status=active` for all rows
-4. Reads `Product URL` from the CSV if a column with that header is present; blank otherwise
-5. Dedupes against existing sheet rows
-6. Appends new rows
-7. Prints summary
+1. Reads existing `REI All Purchases` (cols A–K) and `Amazon Purchases` (cols A–G) tabs.
+2. Builds a **seed vocabulary** from REI's distinct (Category, Sub-Category, Brand) values.
+3. **REI rows → master tab** (direct mapping):
+   - Date `Jan 26, 2022` → `2022-01-26` (ISO).
+   - Price `$89.95` → `89.95` (numeric).
+   - `Source = "REI"`, `Order ID = ""` (REI tab has no order IDs), `Status = "excluded" if REI col C "Exclude" = "Yes" else "active"`, `Domain = "Outdoor"`, `Product URL = ""`.
+4. **Amazon rows → master tab** (Haiku-enriched):
+   - Date `4/30/2026` → `2026-04-30`.
+   - Price `$79.95` → `79.95`.
+   - `Source = "Amazon"`, `Order ID` preserved from source, `Status = "active"`, `Product URL = ""`.
+   - Sends item name + Amazon's existing Category to Claude Haiku 4.5 with the seed vocabulary in a prompt-cached system message; Haiku returns `{ domain: "Outdoor" | "Other", category, subCategory, brand }`. Prefer REI vocabulary; allow new categories where nothing fits.
+5. Writes the merged result to a new `All Purchases` tab (15 cols A–O per the canonical schema).
+6. **Dry-run by default** — prints sample classified rows + summary stats without writing. Re-run with `--apply` to write.
+7. **Idempotent on `--apply`:** if `All Purchases` already exists with data, aborts with a clear message rather than appending duplicates. To re-migrate, delete `All Purchases` and re-run.
 
-**Blocked by:** Tom providing CSV. (Tracked in DECISIONS.md.)
+**Cost / time budget:** ~$0.50 of Anthropic spend; ~5 min wall time for 311 Amazon rows (concurrent batches of 10).
 
-**Acceptance:** Run once; sheet contains all historical purchases with `Domain=Outdoor`.
+**Existing tabs (`REI All Purchases`, `Amazon Purchases`, `REI Summary`) are not modified** — left as a rollback safety net. Tom can rename/delete after the master tab is verified.
+
+**Acceptance:**
+- Dry-run prints 5–10 sample converted rows (mix of REI + Amazon) for human eyeballing of classification quality.
+- After `--apply`: `All Purchases` tab exists with 15-col schema, ~393 data rows (82 REI + 311 Amazon), `Source` populated, `Domain` populated, `Status` populated.
+- `npm run bootstrap-sheet` (Task 0.4) then runs cleanly against the new tab and applies validation + formatting + creates `Needs Review`.
 
 ---
 
