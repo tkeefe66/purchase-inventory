@@ -1,5 +1,5 @@
 import { google, sheets_v4 } from 'googleapis';
-import { makeDedupKey } from './dedup.js';
+import { buildExistingKeySet, type DedupIndex } from './dedup.js';
 import type { MasterRow, Vocab } from './types.js';
 
 /**
@@ -152,25 +152,25 @@ export async function readMasterRows(
 }
 
 /**
- * Returns the set of dedup keys (Order ID || Item Name || Color || Size) for
- * every row in the master tab. Used by the cron pipeline to skip already-
- * ingested items before appending.
+ * Returns a DedupIndex for every row in the master tab. The index has both a
+ * full-key set (for exact matches including Order ID + color + size) and a
+ * blank-Order-ID-content set (for tolerant cross-matching of historical rows
+ * against fresh-email rows). See `lib/dedup.ts` for the matching semantics.
  */
 export async function readDedupKeys(
   sheets: SheetsClient,
   spreadsheetId: string,
   tabName = 'All Purchases',
-): Promise<Set<string>> {
+): Promise<DedupIndex> {
   const rows = await readMasterRows(sheets, spreadsheetId, tabName);
-  return new Set(
-    rows.map((r) =>
-      makeDedupKey({
-        orderId: r.orderId,
-        itemName: r.itemName,
-        color: r.color,
-        size: r.size,
-      }),
-    ),
+  return buildExistingKeySet(
+    rows.map((r) => ({
+      orderId: r.orderId,
+      brand: r.brand,
+      itemName: r.itemName,
+      color: r.color,
+      size: r.size,
+    })),
   );
 }
 

@@ -96,7 +96,7 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineResult
 
   log('Reading existing dedup keys...');
   const existingKeys = await readDedupKeys(sheets, opts.spreadsheetId);
-  log(`✓ ${existingKeys.size} existing keys`);
+  log(`✓ ${existingKeys.fullKeys.size} existing rows indexed (${existingKeys.blankOrderContentKeys.size} historical no-Order-ID content keys)`);
 
   const labelId = await ensureLabel(gmail, PROCESSED_LABEL);
 
@@ -130,11 +130,12 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineResult
     }
   }
 
-  // Dedup against existing sheet
+  // Dedup against existing sheet (key = orderId + brand + name + color + size)
   const beforeDedup = newRows.length;
   const deduped = dedupItems(
     newRows.map((r) => ({
       orderId: r.orderId,
+      brand: r.brand,
       itemName: r.itemName,
       color: r.color,
       size: r.size,

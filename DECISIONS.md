@@ -71,6 +71,52 @@ The following 28+ questions were resolved during this session. Format: question 
 
 ---
 
+## 2026-05-01 — Dedup key adds Brand + tolerant cross-match for historical rows
+
+**Context:** First live cron run added 2 new REI rows that were actually duplicates of items already in the sheet from the historical migration. Two reasons:
+
+1. **Brand split.** Historical (manually-entered) REI rows store `Brand="Salomon"` separately from `Item Name="X Ultra 5 Mid GORE-TEX Hiking Boots - Men's"`. Email parsers extract item names from `<img alt>` which includes the brand inline ("Salomon X Ultra 5 …"). Same item, two different itemName strings, original dedup key `(orderId, itemName, color, size)` failed.
+
+2. **Color/size formatting drift.** Historical row had `Color="Black/Asphalt/Castlerock"` (full REI catalog colorway), email parse had `Color="Black/Asphalt"` (shorter form in the order email). Even with brand fixed, the color difference defeated dedup.
+
+3. **Blank vs real Order IDs.** Historical REI rows have blank Order IDs (REI's source tab didn't carry them). Fresh emails have real Order IDs. Mixed.
+
+**Decision (supersedes Decision #15 in the original Q&A log):** Two-level dedup matching.
+
+```
+DedupIndex = {
+  fullKeys: Set<(orderId, brand, normalized-name, color, size)>,
+  blankOrderContentKeys: Set<(brand, normalized-name)>     // built only from rows with blank Order ID
+}
+
+isDuplicate(newItem, index) =
+  index.fullKeys.has(newItem.fullKey)                      ||  // exact match
+  (newItem.orderId !== '' && index.blankOrderContentKeys.has(newItem.contentKey))   // cross-match
+```
+
+- **`makeDedupKey` (full):** `(orderId, brand, normalized-name, color, size)`. Used for exact matches — including same-Order-ID-different-color (legitimately bought 2 colors of one item in one order remain distinct rows).
+- **`makeContentKey`:** `(brand, normalized-name)` — IGNORES color and size. Used for tolerant cross-matching against historical (blank-Order-ID) rows where the color/size formatting often differs between manual entry and email-parsed data.
+- **`normalizeItemName`:** lowercases, strips brand prefix if present, collapses whitespace. Handles the inline-vs-split brand case ("Salomon X Ultra…" ↔ "X Ultra…").
+- **Re-buy preserved.** Two real Order IDs + same brand+name = different rows allowed. Cross-match only fires when one side has blank Order ID — i.e. the existing row is a historical/manual entry, not a prior email-derived purchase.
+
+**Why these specific trade-offs:**
+
+- **Color/size in cross-match would be wrong.** Tom's manual entries use the full REI catalog colorway; emails use a shorter form. Requiring exact match on those means duplicates leak. Dropping them from cross-match catches the common case at the cost of a rare edge case (re-buying same item in different size against a historical no-Order-ID record).
+- **Same-order color/size still distinct.** Within one Order ID, different colors must be different rows (you genuinely bought both). The full key keeps them separate.
+- **Re-buys still tracked.** A new Order ID buying an item already in the sheet (with its own real Order ID) still creates a new row — that's a real purchase event we want recorded.
+
+**How to apply:**
+
+- `lib/dedup.ts`: `DedupKeyInput` adds `brand`. New helpers: `makeContentKey`, `buildExistingKeySet → DedupIndex`. `dedupItems(newItems, index)` does both checks.
+- `lib/sheets.ts`: `readDedupKeys` returns `DedupIndex` (was `Set<string>`). All callers updated.
+- `apps/cron/pipeline.ts`: dedup call passes brand into the key inputs.
+- `scripts/dedup-existing.ts`: new one-off cleanup script. Groups existing rows by content key (brand + normalized name); removes within-Order-ID exact dupes and historical-vs-fresh-email cross-match dupes. **Run once with `--apply`** to clean up rows added before this fix; idempotent thereafter (re-runs find zero dupes).
+- New tests in `tests/dedup.test.ts` lock the behavior — including the canonical "Salomon case" (different colorway formatting + brand prefix variation → still cross-matched).
+
+**One-time cleanup applied during this work:** removed 3 rows from `All Purchases` — 1 within-order duplicate (CAP Barbell dumbbells inside Order 113-9160613-7873014) and 2 cross-match duplicates from the first live cron run (REI Co-op Base Camp 4 Tent and Salomon X Ultra 5 boots).
+
+---
+
 ## 2026-05-01 — Sheets layer is column-order-agnostic (read/write by header name)
 
 **Context:** During Phase 1 buildout we hit a real bug — Tom had reordered columns in the Sheets UI after the initial migration (he moved `Type` left to be next to other dropdowns, swapping the original `O=Product URL, P=Type` to the now-actual `O=Type, P=Product URL`). All my read/write code used hardcoded column indices (`row[14]` for Product URL), so reads returned the wrong field, the bootstrap script applied the Type validation dropdown to the wrong column, and the URL backfill wrote URLs to the Type column. None of this surfaced until I built `lib/sheets.ts` and ran a smoke test.

@@ -26,7 +26,7 @@ async function main(): Promise<void> {
 
   console.log('\nBuilding dedup keys...');
   const keys = await readDedupKeys(sheets, spreadsheetId);
-  console.log(`✓ ${keys.size} unique keys`);
+  console.log(`✓ ${keys.fullKeys.size} full keys, ${keys.blankOrderContentKeys.size} historical content keys`);
 
   console.log('\nBuilding vocab...');
   const vocab = await buildVocab(sheets, spreadsheetId);
