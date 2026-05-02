@@ -308,7 +308,9 @@ Each `ParsedItem` includes a `productUrl` field that is **always non-empty** for
 
 **Files:** `lib/parsers/amazon.ts`, `lib/claude.ts`
 
-Tier 1: regex/cheerio against shipment-confirmation (primary, more stable) and order-confirmation (price reconciliation) formats.
+**Source emails (revised May 2026):** parse **shipment-tracking emails only** (`shipment-tracking@amazon.com`, "Shipped: …"). Order-confirmation emails (`auto-confirm@amazon.com`, "Ordered: …") return `null` — they only carry the order *total*, not per-item prices, so they're not a useful ingestion source. The 1–3 day lag between ordering and shipping is acceptable; rows appear in the sheet when items SHIP. See DECISIONS.md (2026-05-01: "Amazon parser sources shipment-tracking only").
+
+Tier 1: regex/cheerio against shipment-tracking emails. Extract Order ID, item name from `<img alt>`, Quantity from "Quantity: N" text, per-item price from the `<sup>$</sup><span>X,XXX</span><sup>YY</sup>` typographic pattern (price is rendered as superscripted dollar sign + integer + superscripted cents — the page's "Total" line includes shipping/tax and is NOT what we want).
 Tier 2: Claude Haiku 4.5 fallback with strict JSON schema if regex returns nothing or low confidence.
 Tier 3: low-confidence Claude → return null + reason for Needs Review.
 

@@ -21,6 +21,7 @@
     "migrate-to-master": "tsx scripts/migrate-to-master.ts",
     "backfill-urls": "tsx scripts/backfill-urls.ts",
     "fetch-fixtures": "tsx scripts/fetch-fixtures.ts",
+    "telegram-setup": "tsx scripts/telegram-setup.ts",
     "import-history": "tsx scripts/import-history.ts",
     "cron": "tsx apps/cron/index.ts",
     "bot": "tsx apps/bot/index.ts"

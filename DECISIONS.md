@@ -40,7 +40,36 @@ The following 28+ questions were resolved during this session. Format: question 
 
 **5/6. Amazon senders.** Use BOTH `auto-confirm@amazon.com` (order confirmation, primary source for price/total) AND `ship-confirm@amazon.com` (shipment confirmation, primary source for line items — more stable format). *Why: order confirmation has the price truth; shipment confirmation has the cleaner item list.*
 
-> ⚠️ **Updated May 2026:** verified against Tom's Gmail — `ship-confirm@amazon.com` returns 0 hits over 2 years. The actual sender is `shipment-tracking@amazon.com` (subject prefix "Shipped: …"). PLAN.md and the gmail.ts query updated accordingly. The order-confirmation primacy assumption (auto-confirm has price truth) was also revised: the order-confirmation email itself contains line-item detail (item name, quantity, price, Order ID) for each item, so it's now treated as the *primary* parser source. Shipment-tracking emails become secondary — useful for confirming partial shipments or re-deriving items if order-confirmation parsing fails. **Additional quirk:** order-confirmation emails sometimes bundle multiple orders (different Order IDs) under one subject; parser walks per-Order-ID section.
+> ⚠️ **Updated May 2026:** verified against Tom's Gmail — `ship-confirm@amazon.com` returns 0 hits over 2 years. The actual sender is `shipment-tracking@amazon.com` (subject prefix "Shipped: …"). PLAN.md and the gmail.ts query updated accordingly. **Order-confirmation primacy assumption was wrong.** Per the next entry below ("Amazon parser sources shipment-tracking only"), the order-confirmation email shows only the order *total* (not per-item prices). Shipment-tracking is now the canonical source. **Additional quirk that still applies:** Amazon emails sometimes bundle multiple orders (different Order IDs) under one subject ("Ordered: 'X' and 1 more item"); parser walks per-Order-ID section.
+
+---
+
+## 2026-05-01 — Amazon parser sources shipment-tracking only
+
+**Context:** Phase 1 TDD on the Amazon parser revealed that order-confirmation emails (`auto-confirm@amazon.com`, "Ordered: …") only carry the **order total**, not per-item prices. The order total includes shipping/tax/discounts, so it can't be split per item. Per-item pricing lives in shipment-tracking emails (`shipment-tracking@amazon.com`, "Shipped: …") instead, in a typographic `<sup>$</sup><span>1,498</span><sup>00</sup>` pattern that styles the dollar sign and cents as superscripts.
+
+**Decision:** **The Amazon parser parses shipment-tracking emails only.** Order-confirmation emails return `null` (the cron fetches them, sees null, applies the processed label, moves on without ingesting).
+
+**Why:**
+- Shipment-tracking has everything we need: Order ID, item name (from `<img alt>`), Quantity, per-item price.
+- Order-confirmation only has Order ID + item names + order total. Without per-item prices, we'd insert placeholder rows with `price=0`, then have to merge updates from later shipment emails — significant added complexity for marginal benefit.
+- The 1–3 day lag between order placement and shipment notification is acceptable. The cron runs twice daily, so worst case a shipped item appears in the sheet within ~12 hours of shipping. Tom doesn't need real-time order tracking — he wants accurate inventory.
+- `Status` semantics stay clean: every row in the sheet has a real price and represents an item that physically shipped.
+
+**Trade-offs accepted:**
+- Cancelled / returned orders that never shipped will not appear in the sheet at all (good — saves a noise row).
+- Orders that ship in multiple shipments will produce one row per shipment for the same Order ID (acceptable — dedup key `(Order ID, Item Name, Color, Size)` still prevents true duplicates if a single item ships twice somehow).
+- An item that's been ordered but not yet shipped is invisible to the agent for ~1–3 days. Marginal impact.
+
+**How to apply:**
+- `lib/parsers/amazon.ts`: `parseAmazonEmail(html)` returns `null` for any email that isn't a shipment-tracking email (heuristic: presence of "Quantity: N" line items + the `<sup>$</sup>` price structure). For shipment-tracking emails, returns `ParsedOrder[]` (one per Order ID — multi-shipment quirk still applies).
+- `lib/gmail.ts` query: still fetches both senders. Order-confirmation emails just get labeled-and-skipped at the parser stage.
+- `apps/cron/pipeline.ts` (Phase 1, Task 1.7): when parser returns null, apply the `inventory-processed` label and move on (no Needs Review entry — null is normal for non-receipt emails).
+- PLAN.md Task 1.3 updated to reflect this.
+
+**Future consideration:** if Tom decides he wants the "ordered but not yet shipped" visibility, we'd add Option B (parse both, merge) as a Phase 2+ enhancement. For v1, simpler wins.
+
+---
 
 **7. Non-receipt emails.** No hardcoded ignore-list. If the parser determines an email isn't a receipt, skip silently. Don't apply the label so we can revisit later if needed.
 
