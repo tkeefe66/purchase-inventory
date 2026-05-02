@@ -90,7 +90,7 @@ ledger/                     # current folder name: outdoor-inventory
 | Item lifecycle | `Status` column M: `active` (default), `retired` (still own, not in active rotation), `returned`, `lost`, `broken`, `sold`, `donated`, `excluded` (don't include in inventory analysis) |
 | Year derivation | From `Date Purchased` in Mountain time |
 | Price | Line-item price, post-discount, no shipping/tax |
-| Email senders | REI: `rei@notices.rei.com`. Amazon: both `auto-confirm@amazon.com` (order) AND `ship-confirm@amazon.com` (shipment, primary for line items) |
+| Email senders | REI: `rei@notices.rei.com`. Amazon: `auto-confirm@amazon.com` (order — "Ordered: …") AND `shipment-tracking@amazon.com` (shipment — "Shipped: …"). PLAN.md originally said `ship-confirm@amazon.com` — verified May 2026 against Tom's Gmail; correct sender is `shipment-tracking@amazon.com`. |
 | REI parser | Pure cheerio; no LLM |
 | Amazon parser | Tier 1 regex/cheerio → Tier 2 Claude Haiku 4.5 fallback → Tier 3 Needs Review |
 | Brand extraction | Allowlist seeded from existing sheet's Brand column; LLM as backup |

@@ -287,7 +287,14 @@ DRY_RUN=false                        # Set true to print proposed actions withou
 
 **Files:** `lib/gmail.ts`
 
-Same as previously specified — fetch unprocessed messages from `rei@notices.rei.com`, `auto-confirm@amazon.com`, `ship-confirm@amazon.com`; apply labels; ensure label exists.
+Fetch unprocessed messages from these senders, apply labels, ensure label exists:
+- `rei@notices.rei.com` (REI orders + shipping/delivery notifications)
+- `auto-confirm@amazon.com` (Amazon "Ordered: …" — primary source for line items + prices)
+- `shipment-tracking@amazon.com` (Amazon "Shipped: …" — secondary; useful for confirming what actually shipped, partial shipments)
+
+**Sender correction:** PLAN.md originally said `ship-confirm@amazon.com`. Verified May 2026 against Tom's Gmail — actual sender is `shipment-tracking@amazon.com`. The `ship-confirm@` address either doesn't exist or has been deprecated.
+
+**Quirk discovered May 2026:** Amazon "Ordered: …" emails sometimes bundle multiple separate orders (different Order IDs) under one subject like *"Ordered: 'X' and 1 more item"*. The parser must walk the email by Order-ID-section and emit one `ParsedOrder` per Order ID found, not assume one email = one order.
 
 ### Task 1.2: REI parser
 

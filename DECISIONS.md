@@ -40,6 +40,8 @@ The following 28+ questions were resolved during this session. Format: question 
 
 **5/6. Amazon senders.** Use BOTH `auto-confirm@amazon.com` (order confirmation, primary source for price/total) AND `ship-confirm@amazon.com` (shipment confirmation, primary source for line items — more stable format). *Why: order confirmation has the price truth; shipment confirmation has the cleaner item list.*
 
+> ⚠️ **Updated May 2026:** verified against Tom's Gmail — `ship-confirm@amazon.com` returns 0 hits over 2 years. The actual sender is `shipment-tracking@amazon.com` (subject prefix "Shipped: …"). PLAN.md and the gmail.ts query updated accordingly. The order-confirmation primacy assumption (auto-confirm has price truth) was also revised: the order-confirmation email itself contains line-item detail (item name, quantity, price, Order ID) for each item, so it's now treated as the *primary* parser source. Shipment-tracking emails become secondary — useful for confirming partial shipments or re-deriving items if order-confirmation parsing fails. **Additional quirk:** order-confirmation emails sometimes bundle multiple orders (different Order IDs) under one subject; parser walks per-Order-ID section.
+
 **7. Non-receipt emails.** No hardcoded ignore-list. If the parser determines an email isn't a receipt, skip silently. Don't apply the label so we can revisit later if needed.
 
 #### Parser strategy

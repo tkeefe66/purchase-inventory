@@ -9,3 +9,8 @@ dist/
 coverage/
 .tsbuildinfo
 *.tsbuildinfo
+
+# Email fixtures contain real purchase data (name, address, order IDs, prices).
+# Kept local until reviewed/sanitized. Tests should reference these by relative path.
+tests/fixtures/rei/*.html
+tests/fixtures/amazon/*.html
