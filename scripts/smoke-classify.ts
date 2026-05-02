@@ -31,12 +31,12 @@ async function main(): Promise<void> {
   const amazonParsed = parseAmazonEmail(amazonHtml);
   if (amazonParsed && amazonParsed[0]?.items[0]) {
     const order = amazonParsed[0];
-    const item = order.items[0];
+    const item = order.items[0]!;
     const masterRow = await routeItem(
       { parsedOrder: order, parsedItem: item, emailDate: new Date('2026-04-29T20:54:29Z') },
       classify,
     );
-    printMasterRow(masterRow);
+    printMasterRow(masterRow as unknown as Record<string, unknown>);
   }
 
   // Test 2: REI order confirmation — Salomon boots
@@ -48,16 +48,16 @@ async function main(): Promise<void> {
   const reiParsed = parseReiEmail(reiHtml);
   if (reiParsed && reiParsed.items[0]) {
     const order = reiParsed;
-    const item = order.items[0];
+    const item = order.items[0]!;
     const masterRow = await routeItem(
       { parsedOrder: order, parsedItem: item, emailDate: new Date('2026-04-29T14:44:17Z') },
       classify,
     );
-    printMasterRow(masterRow);
+    printMasterRow(masterRow as unknown as Record<string, unknown>);
   }
 }
 
-function printMasterRow(r: { [k: string]: unknown }): void {
+function printMasterRow(r: Record<string, unknown>): void {
   console.log(`  Date:        ${r['date']} (Year=${r['year']})`);
   console.log(`  Item:        ${r['itemName']}`);
   console.log(`  Source:      ${r['source']}, Order ${r['orderId']}`);

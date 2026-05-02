@@ -24,6 +24,7 @@
     "telegram-setup": "tsx scripts/telegram-setup.ts",
     "import-history": "tsx scripts/import-history.ts",
     "cron": "tsx apps/cron/index.ts",
+    "cron:dry": "tsx apps/cron/index.ts --dry-run",
     "bot": "tsx apps/bot/index.ts"
   },
   "dependencies": {
