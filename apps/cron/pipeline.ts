@@ -35,6 +35,8 @@ export interface PipelineOptions {
   dryRun: boolean;
   reprocessSince: string | undefined;
   maxMessages: number | undefined;
+  /** Only process emails received on/after this YYYY-MM-DD date. */
+  ingestAfterDate: string | undefined;
   spreadsheetId: string;
   clientId: string;
   clientSecret: string;
@@ -264,9 +266,18 @@ function countItems(orders: ParsedOrder[]): number {
 function buildQuery(opts: PipelineOptions): string {
   const senders = `from:(${REI_SENDER} OR ${AMAZON_ORDER_SENDER} OR ${AMAZON_SHIPMENT_SENDER})`;
   if (opts.reprocessSince) {
-    return `${senders} after:${opts.reprocessSince}`;
+    // Reprocess mode: bypass label filter, scoped by --since.
+    return `${senders} after:${gmailDate(opts.reprocessSince)}`;
   }
-  return `${senders} -label:${PROCESSED_LABEL}`;
+  const afterPart = opts.ingestAfterDate
+    ? ` after:${gmailDate(opts.ingestAfterDate)}`
+    : ' newer_than:30d';
+  return `${senders} -label:${PROCESSED_LABEL}${afterPart}`;
+}
+
+function gmailDate(dateString: string): string {
+  // Gmail accepts YYYY/MM/DD or YYYY-MM-DD; normalize to slashes for consistency.
+  return dateString.replace(/-/g, '/');
 }
 
 async function safeGetSubject(gmail: GmailClient, msgId: string): Promise<string> {

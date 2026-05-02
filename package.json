@@ -25,6 +25,7 @@
     "import-history": "tsx scripts/import-history.ts",
     "cron": "tsx apps/cron/index.ts",
     "cron:dry": "tsx apps/cron/index.ts --dry-run",
+    "label-historical": "tsx scripts/label-historical.ts",
     "bot": "tsx apps/bot/index.ts"
   },
   "dependencies": {

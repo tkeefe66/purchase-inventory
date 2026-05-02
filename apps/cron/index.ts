@@ -37,6 +37,7 @@ interface AppEnv {
   anthropicKey: string;
   telegramBotToken: string | undefined;
   telegramChatId: string | undefined;
+  ingestAfterDate: string | undefined;
 }
 
 function readEnv(): AppEnv {
@@ -66,6 +67,7 @@ function readEnv(): AppEnv {
     anthropicKey: anthropicKey!,
     telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
     telegramChatId: process.env.TELEGRAM_CHAT_ID,
+    ingestAfterDate: process.env.INGEST_AFTER_DATE,
   };
 }
 
@@ -76,6 +78,7 @@ async function main(): Promise<void> {
     dryRun: flags.dryRun,
     reprocessSince: flags.reprocessSince,
     maxMessages: flags.maxMessages,
+    ingestAfterDate: env.ingestAfterDate,
     spreadsheetId: env.spreadsheetId,
     clientId: env.clientId,
     clientSecret: env.clientSecret,
