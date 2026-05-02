@@ -85,7 +85,7 @@ ledger/                     # current folder name: outdoor-inventory
 | Hosting | Railway, three services (cron, bot, web) sharing one repo |
 | Cron | 6am + 6pm Mountain Time |
 | Storage | Google Sheets (sheet ID in `PLAN.md`); no separate DB in v1 |
-| Sheet schema | 17 columns A–Q; key new ones: K=Source, L=Order ID, M=Status, N=Domain, O=Product URL, P=Type, Q=Reasoning |
+| Sheet schema | 17 columns; key new ones: Source, Order ID, Status, Domain, Type, Product URL, Reasoning. **Code accesses columns by HEADER NAME (not position)** via `buildHeaderMap` in `lib/sheets.ts` — admin can reorder columns in Sheets UI without breaking ingestion. |
 | Dedup key | `(Order ID, Item Name, Color, Size)` |
 | Item lifecycle | `Status` column M: `active` (default), `retired` (still own, not in active rotation), `returned`, `lost`, `broken`, `sold`, `donated`, `excluded` (don't include in inventory analysis) |
 | Year derivation | From `Date Purchased` in Mountain time |

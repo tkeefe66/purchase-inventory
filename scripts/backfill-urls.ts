@@ -1,14 +1,9 @@
 import 'dotenv/config';
 import { google, sheets_v4 } from 'googleapis';
 import { buildFallbackProductUrl, Source } from '../lib/url-fallback.js';
+import { buildHeaderMap, colLetter } from '../lib/sheets.js';
 
 const TARGET_TAB = 'All Purchases';
-
-// Column indices (0-based) in the All Purchases schema.
-const COL_ITEM_NAME = 5; // F
-const COL_SOURCE = 10; // K
-const COL_ORDER_ID = 11; // L
-const COL_PRODUCT_URL = 14; // O
 
 async function main(): Promise<void> {
   const env = readEnv();
@@ -16,10 +11,36 @@ async function main(): Promise<void> {
   oauth2Client.setCredentials({ refresh_token: env.refreshToken });
   const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
 
-  console.log(`Reading "${TARGET_TAB}"...`);
+  // Read header row + look up columns by name (resilient to column reordering).
+  const headerResp = await sheets.spreadsheets.values.get({
+    spreadsheetId: env.spreadsheetId,
+    range: `'${TARGET_TAB}'!1:1`,
+  });
+  const headers = ((headerResp.data.values?.[0] ?? []) as Array<string | null | undefined>).map((s) =>
+    (s ?? '').toString(),
+  );
+  const map = buildHeaderMap(headers);
+  const productUrlIdx = map.get('Product URL');
+  const itemNameIdx = map.get('Item Name');
+  const sourceIdx = map.get('Source');
+  const orderIdIdx = map.get('Order ID');
+  if (
+    productUrlIdx === undefined ||
+    itemNameIdx === undefined ||
+    sourceIdx === undefined ||
+    orderIdIdx === undefined
+  ) {
+    console.error('✗ One or more required columns missing in headers.');
+    console.error(`  Need: Product URL, Item Name, Source, Order ID. Found: [${[...map.keys()].join(', ')}]`);
+    process.exit(1);
+  }
+  const productUrlColLetter = colLetter(productUrlIdx);
+  const lastColLetter = colLetter(headers.length - 1);
+  console.log(`Reading "${TARGET_TAB}" (Product URL is column ${productUrlColLetter})...`);
+
   const resp = await sheets.spreadsheets.values.get({
     spreadsheetId: env.spreadsheetId,
-    range: `'${TARGET_TAB}'!A2:Q`,
+    range: `'${TARGET_TAB}'!A2:${lastColLetter}`,
   });
   const rows = (resp.data.values ?? []) as string[][];
   console.log(`✓ ${rows.length} data rows`);
@@ -31,14 +52,14 @@ async function main(): Promise<void> {
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i] ?? [];
-    const existingUrl = (row[COL_PRODUCT_URL] ?? '').trim();
+    const existingUrl = ((row[productUrlIdx] as string) ?? '').trim();
     if (existingUrl) {
       alreadyHaveUrl++;
       continue;
     }
-    const itemName = (row[COL_ITEM_NAME] ?? '').trim();
-    const source = (row[COL_SOURCE] ?? '').trim();
-    const orderId = (row[COL_ORDER_ID] ?? '').trim();
+    const itemName = ((row[itemNameIdx] as string) ?? '').trim();
+    const source = ((row[sourceIdx] as string) ?? '').trim();
+    const orderId = ((row[orderIdIdx] as string) ?? '').trim();
     if (!itemName || (source !== 'REI' && source !== 'Amazon')) {
       skipped++;
       continue;
@@ -52,7 +73,6 @@ async function main(): Promise<void> {
       skipped++;
       continue;
     }
-    // Sheet row index = data row index + 2 (header is row 1, data starts at row 2).
     updates.push({ rowIndex1Based: i + 2, url });
     willPopulate++;
   }
@@ -67,16 +87,15 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Sample preview
   console.log(`\nSample URLs being written:`);
   for (const u of updates.slice(0, 3)) {
     console.log(`  Row ${u.rowIndex1Based}: ${u.url}`);
   }
   if (updates.length > 3) console.log(`  … and ${updates.length - 3} more`);
 
-  console.log(`\nApplying ${updates.length} cell updates to column O...`);
+  console.log(`\nApplying ${updates.length} cell updates to column ${productUrlColLetter}...`);
   const data: sheets_v4.Schema$ValueRange[] = updates.map((u) => ({
-    range: `'${TARGET_TAB}'!O${u.rowIndex1Based}`,
+    range: `'${TARGET_TAB}'!${productUrlColLetter}${u.rowIndex1Based}`,
     values: [[u.url]],
   }));
   await sheets.spreadsheets.values.batchUpdate({

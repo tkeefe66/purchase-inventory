@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { google, sheets_v4 } from 'googleapis';
+import { buildHeaderMap, colLetter } from '../lib/sheets.js';
 
 const EXPECTED_HEADERS = [
   'Year',
@@ -58,12 +59,6 @@ const NEEDS_REVIEW_HEADERS = [
   'Resolved',
 ];
 
-const STATUS_COL_INDEX = 12; // M
-const DOMAIN_COL_INDEX = 13; // N
-const TYPE_COL_INDEX = 15; // P
-const TOTAL_COLS = EXPECTED_HEADERS.length; // 17
-const CONDITIONAL_FORMAT_FORMULA = '=$M2<>"active"';
-
 async function main(): Promise<void> {
   const { clientId, clientSecret, refreshToken, spreadsheetId } = readEnv();
 
@@ -85,15 +80,13 @@ async function main(): Promise<void> {
   const allTabs = meta.data.sheets ?? [];
   const tabNames = allTabs.map((s) => s.properties?.title ?? '(untitled)');
   console.log('Tabs found:');
-  for (const name of tabNames) {
-    console.log(`  - "${name}"`);
-  }
+  for (const name of tabNames) console.log(`  - "${name}"`);
   console.log();
 
   const targetTab = pickTargetTab(allTabs);
   if (!targetTab) {
     console.error('✗ Could not determine which tab to bootstrap.');
-    console.error('  Expected a tab named "All Purchases" (case-sensitive), or set TARGET_TAB=<name> in .env to override.');
+    console.error('  Expected a tab named "All Purchases", or set TARGET_TAB=<name> in .env.');
     console.error(`  Available: ${tabNames.map((n) => `"${n}"`).join(', ')}`);
     process.exit(1);
   }
@@ -108,79 +101,71 @@ async function main(): Promise<void> {
   console.log(`Target tab: "${targetTitle}" (sheetId=${targetSheetId})`);
   console.log();
 
-  // Read existing header row (cols A through O — extend if more cols exist).
-  const headerRange = `'${escapeTabName(targetTitle)}'!A1:Z1`;
+  // Read existing header row
   const headerResp = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: headerRange,
+    range: `'${escapeTabName(targetTitle)}'!1:1`,
   });
-  const existingHeaders = (headerResp.data.values?.[0] ?? []) as string[];
+  const existingHeaders = ((headerResp.data.values?.[0] ?? []) as Array<string | null | undefined>).map(
+    (s) => (s ?? '').toString(),
+  );
+  const headerMap = buildHeaderMap(existingHeaders);
 
-  console.log('Current headers:');
-  for (let i = 0; i < TOTAL_COLS; i++) {
-    const colLetter = colIndexToLetter(i);
+  console.log('Current headers (in physical order):');
+  for (let i = 0; i < Math.max(existingHeaders.length, EXPECTED_HEADERS.length); i++) {
+    const colL = colLetter(i);
     const existing = existingHeaders[i] ?? '';
-    console.log(`  ${colLetter}: ${existing ? `"${existing}"` : '(empty)'}`);
+    console.log(`  ${colL.padStart(2)}: ${existing ? `"${existing}"` : '(empty)'}`);
   }
   console.log();
 
-  // === Plan + apply: missing headers ===
-  const headerUpdates: Array<{ col: string; value: string }> = [];
-  const headerWarnings: string[] = [];
-  for (let i = 0; i < TOTAL_COLS; i++) {
-    const expected = EXPECTED_HEADERS[i]!;
-    const existing = existingHeaders[i];
-    const colLetter = colIndexToLetter(i);
-    if (!existing) {
-      headerUpdates.push({ col: colLetter, value: expected });
-    } else if (existing.trim() !== expected) {
-      headerWarnings.push(`  ${colLetter}: existing="${existing}" expected="${expected}" — leaving as-is`);
+  // === Plan + apply: append any missing headers at end of row ===
+  const missingHeaders = EXPECTED_HEADERS.filter((h) => !headerMap.has(h));
+  if (missingHeaders.length > 0) {
+    let nextCol = existingHeaders.length;
+    console.log(`Appending ${missingHeaders.length} missing header(s) at end:`);
+    const updates: { range: string; value: string }[] = [];
+    for (const h of missingHeaders) {
+      const colL = colLetter(nextCol);
+      console.log(`  ${colL} = "${h}"`);
+      updates.push({ range: `'${escapeTabName(targetTitle)}'!${colL}1`, value: h });
+      headerMap.set(h, nextCol);
+      nextCol++;
     }
-  }
-
-  if (headerWarnings.length > 0) {
-    console.log('⚠ Header mismatches (existing values kept; review manually if needed):');
-    for (const w of headerWarnings) console.log(w);
-    console.log();
-  }
-
-  if (headerUpdates.length > 0) {
-    console.log(`Applying ${headerUpdates.length} header addition(s):`);
-    for (const u of headerUpdates) console.log(`  ${u.col} = "${u.value}"`);
     await sheets.spreadsheets.values.batchUpdate({
       spreadsheetId,
       requestBody: {
         valueInputOption: 'RAW',
-        data: headerUpdates.map((u) => ({
-          range: `'${escapeTabName(targetTitle)}'!${u.col}1`,
-          values: [[u.value]],
-        })),
+        data: updates.map((u) => ({ range: u.range, values: [[u.value]] })),
       },
     });
     console.log('✓ Headers added');
   } else {
-    console.log('✓ All expected headers already present');
+    console.log('✓ All expected headers present (in any order)');
   }
   console.log();
 
   // === Plan + apply: data validation, conditional formatting, Needs Review tab ===
   const requests: sheets_v4.Schema$Request[] = [];
 
-  // Data-validation dropdowns on Status (M), Domain (N), and Type (P).
-  // setDataValidation replaces any existing rule on the range — naturally idempotent.
-  const dropdowns: Array<{ label: string; col: number; values: string[] }> = [
-    { label: 'M Status', col: STATUS_COL_INDEX, values: STATUS_ENUM },
-    { label: 'N Domain', col: DOMAIN_COL_INDEX, values: DOMAIN_ENUM },
-    { label: 'P Type', col: TYPE_COL_INDEX, values: TYPE_ENUM },
+  const dropdowns: Array<{ headerName: string; values: string[] }> = [
+    { headerName: 'Status', values: STATUS_ENUM },
+    { headerName: 'Domain', values: DOMAIN_ENUM },
+    { headerName: 'Type', values: TYPE_ENUM },
   ];
   for (const d of dropdowns) {
+    const colIdx = headerMap.get(d.headerName);
+    if (colIdx === undefined) {
+      console.warn(`  ⚠ Header "${d.headerName}" not found — skipping dropdown`);
+      continue;
+    }
     requests.push({
       setDataValidation: {
         range: {
           sheetId: targetSheetId,
           startRowIndex: 1, // skip header row
-          startColumnIndex: d.col,
-          endColumnIndex: d.col + 1,
+          startColumnIndex: colIdx,
+          endColumnIndex: colIdx + 1,
         },
         rule: {
           condition: {
@@ -192,45 +177,54 @@ async function main(): Promise<void> {
         },
       },
     });
-    console.log(`Plan: data validation on column ${d.label} (${d.values.join(', ')})`);
+    console.log(
+      `Plan: data validation on column ${colLetter(colIdx)} (${d.headerName}: ${d.values.join(', ')})`,
+    );
   }
 
-  // Conditional formatting — only add if not already present.
-  const existingRules = targetTab.conditionalFormats ?? [];
-  const formatRuleAlreadyExists = existingRules.some(
-    (r) =>
-      r.booleanRule?.condition?.type === 'CUSTOM_FORMULA' &&
-      r.booleanRule.condition.values?.[0]?.userEnteredValue === CONDITIONAL_FORMAT_FORMULA,
-  );
-  if (formatRuleAlreadyExists) {
-    console.log('Plan: conditional formatting (already present — skip)');
+  // Conditional formatting — formula references the Status column dynamically.
+  const statusColIdx = headerMap.get('Status');
+  if (statusColIdx === undefined) {
+    console.warn('  ⚠ Status column not found — skipping conditional formatting');
   } else {
-    console.log('Plan: conditional formatting — gray rows where Status != active');
-    requests.push({
-      addConditionalFormatRule: {
-        rule: {
-          ranges: [
-            {
-              sheetId: targetSheetId,
-              startRowIndex: 1,
-              startColumnIndex: 0,
-              endColumnIndex: TOTAL_COLS,
-            },
-          ],
-          booleanRule: {
-            condition: {
-              type: 'CUSTOM_FORMULA',
-              values: [{ userEnteredValue: CONDITIONAL_FORMAT_FORMULA }],
-            },
-            format: {
-              backgroundColor: { red: 0.95, green: 0.95, blue: 0.95 },
-              textFormat: { foregroundColor: { red: 0.5, green: 0.5, blue: 0.5 } },
+    const statusColLetter = colLetter(statusColIdx);
+    const formula = `=$${statusColLetter}2<>"active"`;
+    const existingRules = targetTab.conditionalFormats ?? [];
+    const formatRuleAlreadyExists = existingRules.some(
+      (r) =>
+        r.booleanRule?.condition?.type === 'CUSTOM_FORMULA' &&
+        r.booleanRule.condition.values?.[0]?.userEnteredValue === formula,
+    );
+    if (formatRuleAlreadyExists) {
+      console.log(`Plan: conditional formatting (already present for ${formula} — skip)`);
+    } else {
+      console.log(`Plan: conditional formatting — gray rows where ${formula}`);
+      requests.push({
+        addConditionalFormatRule: {
+          rule: {
+            ranges: [
+              {
+                sheetId: targetSheetId,
+                startRowIndex: 1,
+                startColumnIndex: 0,
+                endColumnIndex: Math.max(EXPECTED_HEADERS.length, existingHeaders.length),
+              },
+            ],
+            booleanRule: {
+              condition: {
+                type: 'CUSTOM_FORMULA',
+                values: [{ userEnteredValue: formula }],
+              },
+              format: {
+                backgroundColor: { red: 0.95, green: 0.95, blue: 0.95 },
+                textFormat: { foregroundColor: { red: 0.5, green: 0.5, blue: 0.5 } },
+              },
             },
           },
+          index: 0,
         },
-        index: 0,
-      },
-    });
+      });
+    }
   }
 
   // Needs Review tab — create if missing.
@@ -259,11 +253,10 @@ async function main(): Promise<void> {
   });
   console.log('✓ Batch update applied');
 
-  // Populate Needs Review headers if we just created it.
   if (needsReviewWillBeCreated) {
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `'Needs Review'!A1:${colIndexToLetter(NEEDS_REVIEW_HEADERS.length - 1)}1`,
+      range: `'Needs Review'!A1:${colLetter(NEEDS_REVIEW_HEADERS.length - 1)}1`,
       valueInputOption: 'RAW',
       requestBody: { values: [NEEDS_REVIEW_HEADERS] },
     });
@@ -271,7 +264,7 @@ async function main(): Promise<void> {
   }
 
   console.log();
-  console.log('Done. Re-run anytime — operations are idempotent.');
+  console.log('Done. Re-run anytime — operations are idempotent under column reordering.');
 }
 
 function pickTargetTab(allTabs: sheets_v4.Schema$Sheet[]): sheets_v4.Schema$Sheet | undefined {
@@ -319,16 +312,6 @@ function readEnv(): {
     refreshToken: refreshToken!,
     spreadsheetId: spreadsheetId!,
   };
-}
-
-function colIndexToLetter(index: number): string {
-  let result = '';
-  let i = index;
-  while (i >= 0) {
-    result = String.fromCharCode(65 + (i % 26)) + result;
-    i = Math.floor(i / 26) - 1;
-  }
-  return result;
 }
 
 function escapeTabName(name: string): string {

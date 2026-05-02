@@ -71,6 +71,46 @@ The following 28+ questions were resolved during this session. Format: question 
 
 ---
 
+## 2026-05-01 — Sheets layer is column-order-agnostic (read/write by header name)
+
+**Context:** During Phase 1 buildout we hit a real bug — Tom had reordered columns in the Sheets UI after the initial migration (he moved `Type` left to be next to other dropdowns, swapping the original `O=Product URL, P=Type` to the now-actual `O=Type, P=Product URL`). All my read/write code used hardcoded column indices (`row[14]` for Product URL), so reads returned the wrong field, the bootstrap script applied the Type validation dropdown to the wrong column, and the URL backfill wrote URLs to the Type column. None of this surfaced until I built `lib/sheets.ts` and ran a smoke test.
+
+**Decision:** **All sheet I/O resolves columns by HEADER NAME, never by position.** `lib/sheets.ts` exports two helpers:
+
+- `buildHeaderMap(headerRow): Map<string, number>` — reads the live header row and returns a name→index lookup.
+- `colLetter(index): string` — converts a 0-indexed column to its A1 letter (handles A–Z, AA, AB, …).
+
+Every read in `lib/sheets.ts` (readMasterRows, readDedupKeys, buildVocab) calls `readHeaderRow` first, builds a map, and accesses cells via `getCell(row, map, "Product URL")`. Every write (`appendRows`) does the same — it reads the live header order and arranges row values to match. `scripts/bootstrap-sheet.ts` looks up Status/Domain/Type by name when applying validation dropdowns, and the conditional-formatting formula `=$<col>2<>"active"` references the Status column letter dynamically. `scripts/backfill-urls.ts` looks up Product URL by name.
+
+**Why:**
+
+- The user-facing layout is what matters. Tom can drag columns around in Sheets to suit his review workflow — the code adapts.
+- **Insurance against a real risk we already hit.** Position-based access broke silently the first time the layout drifted; header-based access fails loudly (a missing column throws a clear error) or works correctly under any reordering.
+- Renaming a column is the only thing that still requires a code change (the name is the contract). That's a deliberate, infrequent action — and the failure mode is loud.
+
+**Trade-offs accepted:**
+
+- One extra Sheets API call per read/write to fetch the header row. Negligible (single round trip, ~50ms).
+- Slightly more code in writers (build values array per the live order rather than as a fixed list).
+
+**Lessons captured for future surface design:**
+
+- Whenever code talks to a structure the user can rearrange (sheets, JSON columns, API responses with key order significance), prefer name-based access from the start. Adding it later requires migrating all the call sites.
+- A "smoke test against real state" right after building any I/O layer would have caught this faster — defaulted to running it as part of every read/write feature now.
+
+**How to apply (deltas):**
+
+- `lib/sheets.ts`: rewrite all I/O via `buildHeaderMap` + `getCell` + `colLetter`. Throw with `requireColumns(map, names, tabName)` if any expected name is missing.
+- `scripts/bootstrap-sheet.ts`: same pattern. Append missing headers at the end of the existing row (not at fixed positions). Apply validation dropdowns and conditional formatting based on header lookup.
+- `scripts/backfill-urls.ts`: same pattern.
+- `scripts/migrate-to-master.ts`: still has hardcoded header order in its `writeMasterRows` for *initial* tab creation, but the gating ("abort if All Purchases already has data") prevents it from accidentally overwriting a reordered tab. Will refactor when needed.
+- `tests/sheets.test.ts`: unit tests for `buildHeaderMap` (including reordered cases) and `colLetter` (including multi-letter A–ZZ).
+- `PLAN.md` schema row: adds a note clarifying the letters are *current* physical order, not authoritative — the names are.
+
+**One-time fix applied during this work:** the misplaced Type-dropdown that the previous bootstrap-sheet had installed on column P was cleared via a one-off `setDataValidation` call with no `rule` field.
+
+---
+
 **7. Non-receipt emails.** No hardcoded ignore-list. If the parser determines an email isn't a receipt, skip silently. Don't apply the label so we can revisit later if needed.
 
 #### Parser strategy
