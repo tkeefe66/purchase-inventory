@@ -76,6 +76,7 @@ const HEADERS = [
   'Product URL',
   'Type',
   'Reasoning',
+  'Notes',
 ] as const;
 
 async function readHeaderRow(
@@ -147,6 +148,7 @@ export async function readMasterRows(
         productUrl: getCell(row, map, 'Product URL'),
         type: itemType,
         reasoning: getCell(row, map, 'Reasoning'),
+        notes: getCell(row, map, 'Notes'),
       };
     });
 }
@@ -268,6 +270,7 @@ function buildRowValues(
   set('Product URL', r.productUrl);
   set('Type', r.type);
   set('Reasoning', r.reasoning);
+  set('Notes', r.notes);
   return arr;
 }
 

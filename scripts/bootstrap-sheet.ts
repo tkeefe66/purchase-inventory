@@ -20,6 +20,7 @@ const EXPECTED_HEADERS = [
   'Product URL',
   'Type',
   'Reasoning',
+  'Notes',
 ];
 
 const STATUS_ENUM = [

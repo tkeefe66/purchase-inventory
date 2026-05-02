@@ -53,5 +53,6 @@ export async function routeItem(
     productUrl: parsedItem.productUrl,
     type: classification.type,
     reasoning: classification.reasoning,
+    notes: '',
   };
 }

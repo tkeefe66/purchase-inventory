@@ -36,7 +36,8 @@ export type ItemType = (typeof ITEM_TYPE_VALUES)[number];
 export type Source = 'REI' | 'Amazon';
 
 /**
- * One row in the `All Purchases` tab. 17 columns A–Q.
+ * One row in the `All Purchases` tab. 18 columns. Position-independent —
+ * code accesses fields by header name, not column letter.
  */
 export interface MasterRow {
   year: string;
@@ -56,6 +57,13 @@ export interface MasterRow {
   productUrl: string;
   type: ItemType;
   reasoning: string;
+  /**
+   * Free-form notes the admin enters manually. The agent reads this for
+   * additional context it can't infer from structured fields ("gift from
+   * Sarah", "bought for Iceland trip", "stored at the cabin", etc.).
+   * Empty by default; never written by parsers or classifiers.
+   */
+  notes: string;
 }
 
 /**
