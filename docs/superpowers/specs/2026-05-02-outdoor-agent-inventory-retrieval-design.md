@@ -116,7 +116,7 @@ Sheets API failure
 - `Date Purchased` (column B) — drop full date; keep `Year` (column A) only
 
 **Compress:**
-- `Status` (column M) → single letter: `a`=active, `r`=retired, `x`=returned, `l`=lost, `b`=broken, `s`=sold, `d`=donated, `e`=excluded
+- Since only `active` rows are sent (see Filtering), the status letter is implicit and **omitted** from the per-row format.
 - `Color` and `Size` → omitted with their wrapping parens when both blank; if only one is present, render `(<value>)` with no comma
 - `Sub-Category` → joined with Category as `Category/Sub-Category` (or just `Category` if Sub-Category blank)
 - `Brand` blank → render the item name with no leading space; do not emit a placeholder
@@ -126,27 +126,27 @@ Sheets API failure
 Pseudo-grammar (`{}` denotes a literal optional segment, not part of the output):
 
 ```
-<Year> | {<Brand> }<Item Name>{ (<Color>{, <Size>})} | <status-letter> $<Price> [<Category>{/<Sub-Category>}]
+<Year> | {<Brand> }<Item Name>{ (<Color>{, <Size>})} | $<Price> [<Category>{/<Sub-Category>}]
 ```
 
 **Example rows:**
 
 ```
-2026 | Therm-a-Rest Z Lite Sol Sleeping Pad (Limon, Reg) | a $49.95 [Camping Gear/Sleep System]
-2026 | Salomon X Ultra 5 Mid GORE-TEX Hiking Boots (Black/Asphalt/Castlerock, 9) | a $190 [Hiking Gear/Footwear]
-2026 | 12 Pack Tent Stake with Hammer | a $19.99 [Camping Gear/Camp Accessories]
+2026 | Therm-a-Rest Z Lite Sol Sleeping Pad (Limon, Reg) | $49.95 [Camping Gear/Sleep System]
+2026 | Salomon X Ultra 5 Mid GORE-TEX Hiking Boots (Black/Asphalt/Castlerock, 9) | $190 [Hiking Gear/Footwear]
+2026 | 12 Pack Tent Stake with Hammer | $19.99 [Camping Gear/Camp Accessories]
 ```
 
 **Inventory header (sent once at top of compact block):**
 
 ```
-=== INVENTORY (every non-excluded row; status code shows lifecycle state) ===
-Format: Year | [Brand] Item (Color, Size) | status $price [Category/Sub-Category]
-Status codes: a=active, r=retired, x=returned, l=lost, b=broken, s=sold, d=donated
+=== ACTIVE OUTDOOR INVENTORY ===
+Format: Year | [Brand] Item (Color, Size) | $price [Category/Sub-Category]
+Note: Only items with status=active are shown. Non-active items (retired/returned/lost/broken/sold/donated) are out of view in this conversation.
 Total rows: <N>
 ```
 
-**Filtering:** include only rows where `Domain=Outdoor`. Other domains (Photography, Media, etc.) are filtered out for the outdoor agent.
+**Filtering:** include only rows where `Domain=Outdoor` **AND** `Status=active`. Non-active rows (retired, returned, lost, broken, sold, donated, excluded) are excluded from the agent's context entirely. If/when the agent needs visibility into non-active items, add a `getNonActiveItems(status?)` tool — deferred until a real use case appears.
 
 **Ordering:** by `Category`, then `Year` desc, then `Item Name`. Stable order keeps the cache hash stable across no-op refreshes.
 
@@ -217,12 +217,15 @@ The compact serialization built in v1 is reused for Tier 2 tool responses, so th
 
 ---
 
+## Locked decisions (resolved during brainstorm)
+
+1. **Conversation lifetime: 30 minutes idle → new conversation.** Bot maintains one Claude conversation per Telegram session, where a session is "messages within 30 min of each other." After 30 min idle, the next message starts a fresh conversation. Bounds conversation history growth and matches a natural break in user attention.
+2. **Status filter: active only.** The compact output sent to the agent includes only rows with `Status=active`. Non-active rows are not in the agent's view at all in v1. If a use case appears later ("what gear did I lose last year?"), add a `getNonActiveItems(status?)` tool then.
+
 ## Open questions / accepted risks
 
 1. **Cache TTL choice.** Start with default 5-min ephemeral cache. Revisit at first monthly cost check; switch to 1-hour beta TTL if cold writes dominate cost.
-2. **Conversation lifetime.** Bot maintains one Claude conversation per Telegram session (defined as: messages within 1 hour of each other). After 1 hour idle, start a new conversation. This bounds conversation history growth.
-3. **Status filter default.** Compact output includes ALL non-`excluded` items, with status letter visible. Agent reasons about `retired`/`returned`/etc. itself. If this proves noisy, add a `Hide retired by default` flag with an agent override tool.
-4. **Multi-domain agent later.** When other domains (Kitchen, Photography) get agents, each builds its own compact view from its domain-filtered subset. The serialize/cache pattern is reusable; no shared cache across agents.
+2. **Multi-domain agent later.** When other domains (Kitchen, Photography) get agents, each builds its own compact view from its domain-filtered subset. The serialize/cache pattern is reusable; no shared cache across agents.
 
 ## Acceptance criteria
 
@@ -258,10 +261,10 @@ The retrieval layer is "done" for Phase 2 when:
 ## Dependencies
 
 - **Hard:** Phase 1 soak completes cleanly (target 2026-05-08). No code in this spec ships before then.
-- **Soft:** Tom is comfortable with the 1-hour conversation lifetime heuristic (open question 2). Easy to tune later.
 
 ---
 
 ## Revision log
 
 - 2026-05-02 — Initial design, brainstormed with Claude, approved by Tom.
+- 2026-05-02 — Locked OQ2 (30-min conversation lifetime) and OQ3 (active-only filter); promoted both from open questions to locked decisions. Updated compact format to drop status letter (implicit) and updated header copy.

@@ -428,17 +428,19 @@ Long-poll Telegram. Restrict to authorized chat IDs. Route incoming messages via
 
 For now, every message goes to the outdoor domain handler. (Multi-domain routing is added when a 2nd domain ships — for now, simple pass-through with a TODO comment is fine.)
 
-### Task 2.3: Outdoor inventory query layer
+### Task 2.3: Inventory cache + compact serialization + instrumentation
 
-**Files:** `domains/outdoor/inventory.ts`, `tests/domains/outdoor/inventory.test.ts`
+**Spec:** `docs/superpowers/specs/2026-05-02-outdoor-agent-inventory-retrieval-design.md`
 
-Query helpers:
-- `getActiveItems(filters)` — filter by category, brand, year, status; defaults `status=active` and `domain=Outdoor`
-- `getSpending(year?, category?)`
-- `searchByText(query)` — fuzzy match on item name + brand
-- `summarizeByCategory()`
+**Files (new):**
+- `apps/bot/inventoryCache.ts` — in-memory snapshot, 15-min refresh timer, SHA-256 content-hash check, `applyLocalChange()` for slash-command writes
+- `apps/bot/stats.ts` — per-query / per-refresh / per-session counters; `/stats` Telegram command
+- `domains/outdoor/serialize.ts` — compact row formatter (active-only, target 25-35 tokens/row)
+- `domains/outdoor/inventory.ts` — thin query helpers used by slash commands (`getById`, `findByFuzzyName`, `applyStatusChange`); the agent itself does NOT call these — it reads the full compact view from its system prompt
 
-Caches sheet read for the duration of one bot turn.
+**Tests:** vitest unit tests for `serialize.ts` (golden-file fixtures) and `inventoryCache.ts` (hash stability across no-op refreshes, hash changes on real edits, atomic snapshot swap).
+
+**Acceptance:** see spec § Acceptance criteria.
 
 ### Task 2.4: Outdoor agent
 
@@ -446,22 +448,23 @@ Caches sheet read for the duration of one bot turn.
 
 **Draft system prompt** (will be tuned during implementation):
 
-> You are Tom's personal outdoor companion — a knowledgeable guru across hiking, backpacking, mountain biking, climbing, skiing/snowboarding, paddling, surfing, trail running, and other outdoor activities. You have access to Tom's complete outdoor purchase history via tools, so you know what he already owns.
+> You are Tom's personal outdoor companion — a knowledgeable guru across hiking, backpacking, mountain biking, climbing, skiing/snowboarding, paddling, surfing, trail running, and other outdoor activities. Tom's complete **active** outdoor inventory is included below in compact form — read it directly to answer questions about what he owns. Items he's retired/returned/lost/sold are not shown; if asked about those, say you don't have that view in this conversation.
 >
-> Help him with: gear questions, trip planning, picking up new activities, training advice, where-to-go suggestions, technique pointers, and buying decisions. When he's considering a purchase, always check his inventory first to avoid recommending duplicates and to understand his existing setup.
+> Help him with: gear questions, trip planning, picking up new activities, training advice, where-to-go suggestions, technique pointers, and buying decisions. When he's considering a purchase, scan the inventory first to avoid recommending duplicates and to understand his existing setup.
 >
 > Be concise. Ask clarifying questions before recommending — don't assume. When you don't know something specific (current prices, recent product releases, current trail or surf conditions), say so. Never invent facts. In Phase 2 you have no real-time data; in later phases you'll get web_search, weather, trail, and camping tools.
 
-**Tools (Phase 2):**
-- `search_inventory(query, filters)`
-- `get_spending(year, category)`
-- `summarize_by_category()`
-- `get_item_details(item_name)`
-- `update_status(item_id, new_status)` — for "I lost my Jetboil" type messages
+**Tools (Phase 2 — minimal because the agent has full inventory in context):**
+- `get_product_url(item_id)` — fetch a row's Product URL on demand (URLs are dropped from the compact serialization to save tokens)
+- `update_status(item_id, new_status)` — used by slash commands; agent can also call this when Tom says "I lost my Jetboil"
+
+Tools NOT included in v1 (deferred to the soft-threshold flip per spec): `search_inventory`, `get_spending`, `summarize_by_category`, `get_item_details`. The agent computes these from the in-context inventory directly.
 
 **Model:** Sonnet 4.6 (better reasoning than Haiku for this; Haiku stays in the parser fallback).
 
-**Caching:** System prompt + tool definitions cached per global CLAUDE.md.
+**Caching:** Compact-inventory block in the system prompt has `cache_control: { type: 'ephemeral' }` per spec.
+
+**Conversation lifetime:** 30 min idle resets the conversation (per spec).
 
 ### Task 2.5: Slash commands (`/log` + status updates)
 
@@ -493,6 +496,14 @@ Plus verify slash commands:
 - `/log Black Diamond Couloir harness, $80, REI, today` → confirms + appends row
 - `/retired Atom LT` → fuzzy-matches existing item, flips Status to `retired`
 - `/lost <item that doesn't exist>` → bot says it can't find a match, asks for clarification
+- `/stats` → returns inventory size, system-prompt token count, last-7d cold/warm cache split, est. monthly cost, threshold status (X/4 hit)
+- `/refresh` → forces immediate sheet refetch; reports new row count
+
+Plus inventoryCache + serialization checks (per spec § Acceptance):
+- 15-min refresh on a clean sheet (no row changes) does NOT invalidate the prompt cache (verify via `/stats` before/after)
+- A new row added to the sheet shows up in the agent's view within 15 min
+- A `/log` write shows up immediately in the next agent response
+- Threshold-status display in `/stats` matches expected values (0/4 at current scale)
 
 If any fail, debug + iterate before declaring Phase 2 done.
 

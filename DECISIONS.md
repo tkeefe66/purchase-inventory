@@ -624,6 +624,36 @@ Previous version of `inferReiType()` in `migrate-to-master.ts` only matched snac
 
 ---
 
+## 2026-05-02 — Outdoor agent inventory retrieval: full-context with compact serialization
+
+Full design: `docs/superpowers/specs/2026-05-02-outdoor-agent-inventory-retrieval-design.md`
+
+**Decisions locked:**
+
+1. **Retrieval architecture: full-context, not retrieval-based.** The Phase 2 outdoor agent receives Tom's entire active outdoor inventory in its system prompt every conversation (Anthropic prompt-cached). No `searchInventory()` tool in v1 — the agent reads, filters, and reasons over the whole list. Sonnet 4.6's reasoning and 200K context make this feasible at current scale.
+2. **Compact serialization format.** Drop `Order ID`, `Reasoning`, `Product URL`, full `Date Purchased` from the agent-facing representation. Compress remaining fields. Target ~25-35 tokens per row (vs ~100-150 naïve). At 400 rows this is ~12K tokens; ceiling is ~6,500 rows before hitting the 200K context limit.
+3. **Refresh strategy: 15-min timer + content-hash check.** Bot polls the sheet every 15 min, but only invalidates the prompt cache if the row data actually changed (SHA-256 hash). Prevents the cache from going cold ~96 times/day for no reason. Bot self-writes (slash commands) update the in-memory snapshot immediately. `/refresh` slash command forces an immediate refetch.
+4. **Conversation lifetime: 30 min idle.** Bot maintains one Claude conversation per Telegram session (messages within 30 min of each other); after 30 min idle, the next message starts a fresh conversation. Bounds conversation history growth.
+5. **Status filter: active-only in agent context.** Only `Status=active` rows are sent to the agent. Non-active rows (retired/returned/lost/broken/sold/donated/excluded) are not in the agent's view in v1. Defer a `getNonActiveItems(status?)` tool until a real use case appears.
+6. **Soft threshold for hybrid mode.** When ≥ 2 of 4 signals fire — inventory ≥ 2,000 rows, monthly cold-cache cost > $30, cold first-token latency > 8s, free conversation context budget < 40K tokens — flip to a hybrid pattern (Tier 1 inventory summary in cached system prompt + Tier 2 `searchInventory()` tool). Until then, do not pre-build the hybrid pattern.
+7. **Instrumentation now, hybrid later.** Build a `/stats` slash command + per-query / per-refresh / per-session logging in v1 so we can detect threshold hits without guessing.
+
+**Why:**
+
+Tom asked the right question — categorization in the sheet is leaf-specific (good for human browsing, bad for agent retrieval). Three approaches were considered: (a) full-context, (b) tool-based retrieval, (c) hybrid. At ~400 rows and a single user, (a) is dramatically simpler and cheaper than (b) — no tool surface to design, no tag taxonomy to maintain, no risk of the agent picking wrong filters and missing items. Estimated current cost: ~$5/month. Threshold-driven evolution to (c) preserves the option without paying its complexity tax up front.
+
+**Why active-only:** Tom doesn't want the agent confused by gear he no longer uses. Reduces tokens further (~10-20% at current size). Trade-off accepted: agent can't answer "what did I return last year?" until the deferred tool ships.
+
+**Why 30-min conversation lifetime:** matches a natural break in user attention; long enough that follow-up Telegram messages stay in the same conversation (cache stays warm); short enough that conversation history doesn't accumulate forever.
+
+**How to apply (deltas to other artifacts):**
+
+- `docs/PLAN.md`: Phase 2 task list updated. New Task 2.3 covers inventory cache + compact serialization + instrumentation. Task 2.4 (agent) tool list slimmed — no `search_inventory`, `get_spending`, `summarize_by_category`, or `get_item_details` in v1 (agent has full inventory in context). Task 2.6 ship gate adds threshold-status check via `/stats`.
+- `CLAUDE.md`: no change required; the architectural rule "lib/ is pure infrastructure, domain/ is domain-specific" already accommodates the new files (`apps/bot/inventoryCache.ts`, `apps/bot/stats.ts`, `domains/outdoor/serialize.ts`).
+- Implementation gated on Phase 1 soak completing cleanly (target 2026-05-08).
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale
