@@ -10,8 +10,7 @@ import {
 } from '../../lib/gmail.js';
 import {
   KNOWN_SENDERS,
-  pickRole,
-  senderIsAllowlisted,
+  findSender,
   subjectLooksLikePurchase,
   subjectMatchesExpected,
 } from '../../lib/sources.js';
@@ -33,6 +32,7 @@ export interface AuditResult {
   senderDrift: AuditFlag[];
   subjectDrift: AuditFlag[];
   totals: { senderDrift: number; subjectDrift: number };
+  fetchErrors: number;
   clean: boolean;
 }
 
@@ -47,32 +47,36 @@ export async function runAudit(opts: RunAuditOptions): Promise<AuditResult> {
   const subjectDrift: AuditFlag[] = [];
   let senderDriftTotal = 0;
   let subjectDriftTotal = 0;
+  let fetchErrors = 0;
 
   const query = buildAuditQuery(opts.lookbackDays);
   const ids = await listMessages(opts.gmail, { query, maxResults: 500 });
 
   for (const id of ids) {
-    const msg = await getMessage(opts.gmail, id);
-    const from = (getHeader(msg, 'From') ?? '').toLowerCase();
-    const subject = getHeader(msg, 'Subject') ?? '';
+    try {
+      const msg = await getMessage(opts.gmail, id);
+      const from = (getHeader(msg, 'From') ?? '').toLowerCase();
+      const subject = getHeader(msg, 'Subject') ?? '';
 
-    if (senderIsAllowlisted(from)) {
-      const role = pickRole(from);
-      if (
-        role &&
-        subjectLooksLikePurchase(subject) &&
-        !subjectMatchesExpected(role, subject)
-      ) {
-        subjectDriftTotal++;
-        if (subjectDrift.length < SAMPLE_CAP) {
-          subjectDrift.push({ messageId: id, from, subject });
+      const sender = findSender(from);
+      if (sender) {
+        if (
+          subjectLooksLikePurchase(subject) &&
+          !subjectMatchesExpected(sender.role, subject)
+        ) {
+          subjectDriftTotal++;
+          if (subjectDrift.length < SAMPLE_CAP) {
+            subjectDrift.push({ messageId: id, from, subject });
+          }
+        }
+      } else if (subjectLooksLikePurchase(subject)) {
+        senderDriftTotal++;
+        if (senderDrift.length < SAMPLE_CAP) {
+          senderDrift.push({ messageId: id, from, subject });
         }
       }
-    } else if (subjectLooksLikePurchase(subject)) {
-      senderDriftTotal++;
-      if (senderDrift.length < SAMPLE_CAP) {
-        senderDrift.push({ messageId: id, from, subject });
-      }
+    } catch {
+      fetchErrors++;
     }
   }
 
@@ -83,7 +87,8 @@ export async function runAudit(opts: RunAuditOptions): Promise<AuditResult> {
     senderDrift,
     subjectDrift,
     totals: { senderDrift: senderDriftTotal, subjectDrift: subjectDriftTotal },
-    clean: senderDriftTotal === 0 && subjectDriftTotal === 0,
+    fetchErrors,
+    clean: senderDriftTotal === 0 && subjectDriftTotal === 0 && fetchErrors === 0,
   };
 }
 
@@ -119,6 +124,11 @@ export function formatAuditDigest(r: AuditResult): string {
     for (const f of r.subjectDrift) {
       lines.push(`  • ${f.from} — ${f.subject.slice(0, 80)}`);
     }
+  }
+
+  if (r.fetchErrors > 0) {
+    lines.push('');
+    lines.push(`⚠️ ${r.fetchErrors} message fetch error(s) — audit may be incomplete`);
   }
 
   return lines.join('\n');

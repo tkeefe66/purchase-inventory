@@ -42,6 +42,7 @@ describe('runAudit', () => {
     const result: AuditResult = await runAudit({ gmail, lookbackDays: 8 });
     expect(result.senderDrift).toEqual([]);
     expect(result.subjectDrift).toEqual([]);
+    expect(result.fetchErrors).toBe(0);
     expect(result.clean).toBe(true);
   });
 
@@ -91,5 +92,31 @@ describe('runAudit', () => {
     const result = await runAudit({ gmail: makeFakeGmail(many), lookbackDays: 8 });
     expect(result.senderDrift.length).toBeLessThanOrEqual(10);
     expect(result.totals.senderDrift).toBe(25);
+  });
+
+  test('counts per-message fetch errors and includes them in the result', async () => {
+    const messages = [
+      fakeGmailMessage('a', 'auto-confirm@amazon.com', 'Ordered: "Foo"'),
+      fakeGmailMessage('b', 'shipment-tracking@amazon.com', 'Shipped: "Bar"'),
+    ];
+    const broken = {
+      users: {
+        messages: {
+          list: vi.fn().mockResolvedValue({
+            data: { messages: [{ id: 'a' }, { id: 'b' }] },
+          }),
+          get: vi.fn().mockImplementation(({ id }: { id: string }) => {
+            if (id === 'a') return Promise.resolve({ data: messages[0] });
+            return Promise.reject(new Error('Gmail 503'));
+          }),
+        },
+      },
+    } as unknown as Parameters<typeof runAudit>[0]['gmail'];
+
+    const result = await runAudit({ gmail: broken, lookbackDays: 8 });
+    expect(result.fetchErrors).toBe(1);
+    expect(result.clean).toBe(false);
+    expect(result.senderDrift).toEqual([]);
+    expect(result.subjectDrift).toEqual([]);
   });
 });
