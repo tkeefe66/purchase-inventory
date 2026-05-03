@@ -22,14 +22,14 @@ import {
   createSheetsClient,
   readDedupKeys,
 } from '../../lib/sheets.js';
+import {
+  KNOWN_SENDERS,
+  pickSource,
+} from '../../lib/sources.js';
 import { sendMessage } from '../../lib/telegram.js';
 import type { MasterRow, Source } from '../../lib/types.js';
 
 const PROCESSED_LABEL = process.env.PROCESSED_LABEL ?? 'inventory-processed';
-
-const REI_SENDER = 'rei@notices.rei.com';
-const AMAZON_ORDER_SENDER = 'auto-confirm@amazon.com';
-const AMAZON_SHIPMENT_SENDER = 'shipment-tracking@amazon.com';
 
 export interface PipelineOptions {
   dryRun: boolean;
@@ -243,12 +243,6 @@ async function processMessage(
   return rows;
 }
 
-function pickSource(from: string): Source | null {
-  if (from.includes(REI_SENDER)) return 'REI';
-  if (from.includes(AMAZON_ORDER_SENDER) || from.includes(AMAZON_SHIPMENT_SENDER)) return 'Amazon';
-  return null;
-}
-
 function parseEmail(source: Source, html: string): ParsedOrder[] | null {
   if (source === 'REI') {
     const r = parseReiEmail(html);
@@ -265,7 +259,7 @@ function countItems(orders: ParsedOrder[]): number {
 }
 
 function buildQuery(opts: PipelineOptions): string {
-  const senders = `from:(${REI_SENDER} OR ${AMAZON_ORDER_SENDER} OR ${AMAZON_SHIPMENT_SENDER})`;
+  const senders = `from:(${KNOWN_SENDERS.map((s) => s.email).join(' OR ')})`;
   if (opts.reprocessSince) {
     // Reprocess mode: bypass label filter, scoped by --since.
     return `${senders} after:${gmailDate(opts.reprocessSince)}`;
