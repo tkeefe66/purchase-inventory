@@ -2,6 +2,7 @@ import { describe, test, expect } from 'vitest';
 import {
   senderIsAllowlisted,
   pickSource,
+  pickRole,
   subjectMatchesExpected,
   subjectLooksLikePurchase,
   KNOWN_SENDERS,
@@ -39,6 +40,21 @@ describe('pickSource', () => {
   });
   test('returns null for non-allowlisted senders', () => {
     expect(pickSource('store-news@amazon.com')).toBeNull();
+  });
+});
+
+describe('pickRole', () => {
+  test('returns amazon-order for auto-confirm', () => {
+    expect(pickRole('auto-confirm@amazon.com')).toBe('amazon-order');
+  });
+  test('returns amazon-shipment for shipment-tracking', () => {
+    expect(pickRole('shipment-tracking@amazon.com')).toBe('amazon-shipment');
+  });
+  test('returns rei-order for rei notices', () => {
+    expect(pickRole('rei@notices.rei.com')).toBe('rei-order');
+  });
+  test('returns null for non-allowlisted', () => {
+    expect(pickRole('foo@example.com')).toBeNull();
   });
 });
 

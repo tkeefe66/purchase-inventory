@@ -49,25 +49,25 @@ const EXPECTED_SUBJECT_PATTERNS: Record<SenderRole, RegExp[]> = {
   ],
 };
 
-export function senderIsAllowlisted(from: string): boolean {
+export function findSender(from: string): KnownSender | null {
   const lc = from.toLowerCase();
-  return KNOWN_SENDERS.some((s) => lc.includes(s.email));
+  return KNOWN_SENDERS.find((s) => lc.includes(s.email)) ?? null;
+}
+
+export function senderIsAllowlisted(from: string): boolean {
+  return findSender(from) !== null;
 }
 
 export function pickSource(from: string): Source | null {
-  const lc = from.toLowerCase();
-  const match = KNOWN_SENDERS.find((s) => lc.includes(s.email));
-  return match ? match.source : null;
+  return findSender(from)?.source ?? null;
 }
 
 export function pickRole(from: string): SenderRole | null {
-  const lc = from.toLowerCase();
-  const match = KNOWN_SENDERS.find((s) => lc.includes(s.email));
-  return match ? match.role : null;
+  return findSender(from)?.role ?? null;
 }
 
 export function subjectMatchesExpected(role: SenderRole, subject: string): boolean {
-  return EXPECTED_SUBJECT_PATTERNS[role].some((re) => re.test(subject));
+  return (EXPECTED_SUBJECT_PATTERNS[role] ?? []).some((re) => re.test(subject));
 }
 
 export function subjectLooksLikePurchase(subject: string): boolean {
