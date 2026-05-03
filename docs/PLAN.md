@@ -799,6 +799,19 @@ These block specific tasks. Surface at session start so they don't surprise mid-
 
 ---
 
+## Reliability
+
+### Sender-drift audit (shipped 2026-05-02)
+
+A weekly Gmail audit runs every Sunday morning Mountain time, paired with the existing 6am cron tick. It performs two broad searches across `amazon.com` / `rei.com` senders to detect:
+
+- **Check A — Sender drift:** purchase-shaped subjects from senders NOT in the ingest allowlist.
+- **Check B — Subject drift:** purchase-keyword subjects from allowlisted senders that do not match the expected subject patterns.
+
+Telegram alerts only fire when at least one email is flagged. The audit reads no state, writes nothing, applies no labels. Per-message Gmail fetch errors are counted and surfaced (audit does not abort on a single failure). Code: `apps/cron/audit.ts`. Allowlist + patterns: `lib/sources.ts`. Manual run: `npm run audit`.
+
+---
+
 ## Discipline rules (enshrined)
 
 These rules exist to prevent the "great architecture, nothing shipped" failure mode. Future Claude sessions: enforce these unless Tom explicitly overrides them in conversation.

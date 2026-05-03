@@ -654,6 +654,18 @@ Tom asked the right question — categorization in the sheet is leaf-specific (g
 
 ---
 
+## 2026-05-02 — Sender-drift audit
+
+**Decision:** Add a weekly Gmail audit that runs alongside the existing Sunday-morning cron tick. Two checks (sender drift, subject drift). Telegram-only output, fires only when something is flagged. No state.
+
+**Why:** Hardcoded sender allowlist (`rei@notices.rei.com`, `auto-confirm@amazon.com`, `shipment-tracking@amazon.com`) means a silent under-count if Amazon or REI ever change senders or subject conventions. Failure mode is invisible without an external check.
+
+**Why not broader filter:** Loosening the main pipeline to `from:amazon.com` would pull in promo / return / account email and require new noise-filtering. The audit gives us drift detection without changing the ingest path.
+
+**Why no state:** Keeps the audit a pure function — easy to test, easy to reason about. Sample cap (10 per check) prevents Telegram spam if drift is widespread. Per-message Gmail fetch errors are counted into `fetchErrors` and surfaced in the digest, so a partial-failure run still produces signal rather than silently skipping.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale
