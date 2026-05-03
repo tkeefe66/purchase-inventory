@@ -1,5 +1,9 @@
 import 'dotenv/config';
+import { formatInTimeZone } from 'date-fns-tz';
 import { runPipeline, type PipelineOptions } from './pipeline.js';
+import { createGmailClient } from '../../lib/gmail.js';
+import { sendMessage } from '../../lib/telegram.js';
+import { runAudit, formatAuditDigest } from './audit.js';
 
 interface CliFlags {
   dryRun: boolean;
@@ -93,6 +97,30 @@ async function main(): Promise<void> {
 
   const result = await runPipeline(opts);
 
+  if (shouldRunWeeklyAudit()) {
+    try {
+      console.log('\n=== Running weekly sender-drift audit ===');
+      const gmail = createGmailClient({
+        clientId: env.clientId,
+        clientSecret: env.clientSecret,
+        refreshToken: env.refreshToken,
+      });
+      const audit = await runAudit({ gmail, lookbackDays: 8 });
+      console.log(JSON.stringify(audit, null, 2));
+      if (!audit.clean && env.telegramBotToken && env.telegramChatId) {
+        await sendMessage(
+          { botToken: env.telegramBotToken },
+          { chat_id: env.telegramChatId, text: formatAuditDigest(audit) },
+        );
+        console.log('✓ Audit Telegram alert sent');
+      } else if (audit.clean) {
+        console.log('✓ Audit clean — no alert sent');
+      }
+    } catch (err) {
+      console.error('✗ Weekly audit failed (non-fatal):', err instanceof Error ? err.message : err);
+    }
+  }
+
   console.log();
   console.log('=== Result ===');
   console.log(JSON.stringify(result, null, 2));
@@ -102,6 +130,13 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   console.log('\n✓ Cron complete');
+}
+
+function shouldRunWeeklyAudit(): boolean {
+  const tz = process.env.TZ ?? 'America/Denver';
+  const dayOfWeek = formatInTimeZone(new Date(), tz, 'EEEE');
+  const hour = parseInt(formatInTimeZone(new Date(), tz, 'H'), 10);
+  return dayOfWeek === 'Sunday' && hour < 12;
 }
 
 main().catch((err: unknown) => {
