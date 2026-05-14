@@ -28,6 +28,7 @@
     "audit": "tsx apps/cron/audit.ts",
     "label-historical": "tsx scripts/label-historical.ts",
     "dedup-existing": "tsx scripts/dedup-existing.ts",
+    "smoke-cache": "tsx scripts/smoke-cache.ts",
     "bot": "tsx apps/bot/index.ts"
   },
   "dependencies": {
