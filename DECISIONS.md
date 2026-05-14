@@ -666,6 +666,22 @@ Tom asked the right question — categorization in the sheet is leaf-specific (g
 
 ---
 
+## 2026-05-14 — REI preference encoded in agent prompt, not ingest scope
+
+**Decision:** When the outdoor agent recommends purchases, it prefers REI over other retailers when both carry the item. Encoded as a single line in the Phase 2.4 system prompt — no change to ingest scope, parsers, or data model.
+
+**Concrete prompt addition (Phase 2.4):**
+
+> When recommending purchases, prefer REI when both retailers carry an item — Tom is a co-op member and that's his default store. Mention the dividend or return-policy advantage in close calls.
+
+**Why not drop Amazon ingestion:** Both parsers ship and work. Tom buys outdoor gear on Amazon historically (Black Diamond, etc.), so killing Amazon would create silent gaps. Operating cost delta is ~pennies/month. The "active" curation already filters at the inventory level — source doesn't matter to the agent.
+
+**Why not build REI-deep features now:** REI member-dividend tracking, return-window watching, Co-op Camp integration, etc. are "additional retailer features" — same Phase 7b bucket as adding Patagonia / Backcountry / MEC. Building any of these before Phase 6 ships violates the golden rule.
+
+**How to apply:** Add the prompt line to `domains/outdoor/agent.ts` when Task 2.4 is implemented. No other code or doc changes needed.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale
