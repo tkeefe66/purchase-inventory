@@ -4,7 +4,8 @@ import type { PendingActionStore } from '../../../lib/pendingActions.js';
 import { fuzzyMatchExisting, type FuzzyCandidateRow } from '../../../lib/dedup.js';
 import type { PhotoExtraction } from '../../../lib/parsers/photo.js';
 import type { Classification } from '../../../lib/classifier.js';
-import type { MasterRow, ItemType, Domain } from '../../../lib/types.js';
+import type { MasterRow } from '../../../lib/types.js';
+import { DOMAIN_VALUES, ITEM_TYPE_VALUES, type Domain, type ItemType } from '../../../lib/types.js';
 
 export interface AddgearDeps {
   addgearState: AddgearStateStore;
@@ -84,7 +85,7 @@ function previewRow(row: MasterRow): string {
     `About to log:`,
     `  ${row.brand} ${row.itemName} (${row.color || '—'}, ${row.size || '—'})`,
     `  $${row.price}, ${row.source}, ${row.date || '—'}, [${row.category}/${row.subCategory}]`,
-    `Reply 'yes' to write, 'field: value' to change something, or /cancel.`,
+    `Reply /confirm to write, 'field: value' to change something, or /cancel.`,
   ].join('\n');
 }
 
@@ -231,20 +232,39 @@ export async function continueAddgear(
         case 'item name':   updated.itemName = value; break;
         case 'color':       updated.color = value; break;
         case 'size':        updated.size = value; break;
-        case 'price':       updated.price = Number(value.replace(/^\$/, '')); break;
+        case 'price': {
+          const p = Number(value.replace(/^\$/, ''));
+          if (!Number.isFinite(p) || p < 0) {
+            return `Couldn't read "${value}" as a price. Try a number like "120".`;
+          }
+          updated.price = p;
+          break;
+        }
         case 'date':        updated.date = value; updated.year = value.slice(0, 4); break;
         case 'category':    updated.category = value; break;
         case 'subcategory':
         case 'sub-category':updated.subCategory = value; break;
-        case 'domain':      updated.domain = value as Domain; break;
-        case 'type':        updated.type = value as ItemType; break;
+        case 'domain': {
+          if (!(DOMAIN_VALUES as readonly string[]).includes(value)) {
+            return `Unknown domain "${value}". Valid: ${DOMAIN_VALUES.join(', ')}.`;
+          }
+          updated.domain = value as Domain;
+          break;
+        }
+        case 'type': {
+          if (!(ITEM_TYPE_VALUES as readonly string[]).includes(value)) {
+            return `Unknown type "${value}". Valid: ${ITEM_TYPE_VALUES.join(', ')}.`;
+          }
+          updated.type = value as ItemType;
+          break;
+        }
         default:
-          return `Unknown field "${field}". Try: brand, item, color, size, price, date, category, sub-category, domain, type. Or reply 'yes' / /cancel.`;
+          return `Unknown field "${field}". Try: brand, item, color, size, price, date, category, sub-category, domain, type. Or reply /confirm or /cancel.`;
       }
       deps.addgearState.set(chatId, { kind: 'awaiting-confirm', row: updated });
       return previewRow(updated);
     }
-    return `Reply 'yes' to write, 'field: value' to change something, or /cancel.`;
+    return `Reply /confirm to write, 'field: value' to change something, or /cancel.`;
   }
 
   return null;
