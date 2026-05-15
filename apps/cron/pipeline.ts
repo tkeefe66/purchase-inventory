@@ -13,17 +13,22 @@ import {
   type GmailClient,
 } from '../../lib/gmail.js';
 import { parseAmazonShipmentEmail, parseAmazonOrderEmail } from '../../lib/parsers/amazon.js';
+import { parseAmazonReturnEmail, type ReturnAction } from '../../lib/parsers/amazon-return.js';
 import { parseReiEmail } from '../../lib/parsers/rei.js';
 import type { ParsedOrder } from '../../lib/parsers/types.js';
+import { extractProductId } from '../../lib/productId.js';
 import { routeItem } from '../../lib/router.js';
 import {
   appendRows,
   buildVocab,
   createSheetsClient,
   readDedupKeys,
+  readMasterRows,
+  updateRowStatus,
 } from '../../lib/sheets.js';
 import {
   KNOWN_SENDERS,
+  pickRole,
   pickSource,
 } from '../../lib/sources.js';
 import { sendMessage } from '../../lib/telegram.js';
@@ -56,6 +61,10 @@ export interface PipelineResult {
   skippedNonReceipts: number;
   duplicatesIgnored: number;
   labelsApplied: number;
+  /** Number of rows flipped to Status='returned' from return@amazon.com emails. */
+  returnsApplied: number;
+  /** Items the return parser identified but couldn't match to an existing row. */
+  returnsUnmatched: number;
   errors: Array<{ messageId: string; subject: string; error: string }>;
   dryRun: boolean;
 }
@@ -72,6 +81,8 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineResult
     skippedNonReceipts: 0,
     duplicatesIgnored: 0,
     labelsApplied: 0,
+    returnsApplied: 0,
+    returnsUnmatched: 0,
     errors: [],
     dryRun: !!opts.dryRun,
   };
@@ -109,12 +120,36 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineResult
   log(`Found ${messageIds.length} messages to process`);
 
   const newRows: MasterRow[] = [];
+  const returnActions: ReturnAction[] = [];
   const messagesToLabel: string[] = [];
 
   for (const msgId of messageIds) {
     result.messagesScanned++;
     try {
-      const rows = await processMessage(gmail, msgId, classify, anthropic);
+      const msg = await getMessage(gmail, msgId);
+      const from = (getHeader(msg, 'From') ?? '').toLowerCase();
+      const role = pickRole(from);
+
+      if (role === 'amazon-return') {
+        const subject = getHeader(msg, 'Subject') ?? '(no subject)';
+        const html = extractHtmlBody(msg);
+        if (!html) {
+          log(`  [skip] ${msgId} return — no HTML body — "${subject.slice(0, 50)}"`);
+          messagesToLabel.push(msgId);
+          continue;
+        }
+        const action = await parseAmazonReturnEmail(anthropic, html);
+        if (action) {
+          returnActions.push(action);
+          log(`  [ok] ${msgId} return — order ${action.orderId}, ${action.items.length} item(s)`);
+        } else {
+          log(`  [skip] ${msgId} return — couldn't extract order/items — "${subject.slice(0, 50)}"`);
+        }
+        messagesToLabel.push(msgId);
+        continue;
+      }
+
+      const rows = await processOrderOrShipmentMessage(msg, classify, anthropic);
       if (rows === 'non-receipt') {
         result.skippedNonReceipts++;
         messagesToLabel.push(msgId);
@@ -139,6 +174,7 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineResult
       itemName: r.itemName,
       color: r.color,
       size: r.size,
+      productUrl: r.productUrl,
       _row: r,
     })),
     existingKeys,
@@ -159,6 +195,37 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineResult
     log(`✓ Rows appended`);
   } else if (deduped.length > 0) {
     log(`[DRY RUN] Would append ${deduped.length} rows`);
+  }
+
+  // Apply return actions — flip matching rows to Status='returned'. We re-read
+  // the sheet so newly-appended rows from this run are also matchable.
+  if (returnActions.length > 0) {
+    const currentRows = await readMasterRows(sheets, opts.spreadsheetId);
+    for (const action of returnActions) {
+      for (const item of action.items) {
+        const rowIdx = findRowForReturn(currentRows, action.orderId, item);
+        if (rowIdx === -1) {
+          log(`  [warn] no row matches return: order ${action.orderId}, item "${item.itemName.slice(0, 60)}"`);
+          result.returnsUnmatched++;
+          continue;
+        }
+        const target = currentRows[rowIdx]!;
+        if (target.status === 'returned') {
+          log(`  [skip] row ${rowIdx + 2} already returned: ${target.brand} ${target.itemName.slice(0, 50)}`);
+          continue;
+        }
+        if (!opts.dryRun) {
+          await updateRowStatus(sheets, opts.spreadsheetId, {
+            rowIndex: rowIdx + 2,
+            newStatus: 'returned',
+          });
+          log(`  ✓ marked row ${rowIdx + 2} returned: ${target.brand} ${target.itemName.slice(0, 50)}`);
+        } else {
+          log(`  [DRY RUN] would mark row ${rowIdx + 2} returned: ${target.brand} ${target.itemName.slice(0, 50)}`);
+        }
+        result.returnsApplied++;
+      }
+    }
   }
 
   if (messagesToLabel.length > 0 && !opts.dryRun) {
@@ -187,7 +254,11 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineResult
         {
           chat_id: opts.telegramChatId,
           text: formatDigest(result),
-          disable_notification: result.errors.length === 0 && result.itemsAdded === 0,
+          // Always audible — Tom wants a daily heartbeat confirming the cron ran,
+          // not just a noisy ping on activity. If this becomes too chatty, we'll
+          // dial it back to "audible on activity, silent only when nothing
+          // interesting changed AND it's mid-week".
+          disable_notification: false,
         },
       );
     } catch (err) {
@@ -198,13 +269,12 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineResult
   return result;
 }
 
-async function processMessage(
-  gmail: GmailClient,
-  msgId: string,
+async function processOrderOrShipmentMessage(
+  msg: Awaited<ReturnType<typeof getMessage>>,
   classify: ReturnType<typeof createClassifier>,
   anthropic: Anthropic,
 ): Promise<MasterRow[] | 'non-receipt'> {
-  const msg = await getMessage(gmail, msgId);
+  const msgId = msg.id ?? '(no-id)';
   const subject = getHeader(msg, 'Subject') ?? '(no subject)';
   const from = (getHeader(msg, 'From') ?? '').toLowerCase();
   const dateHeader = getHeader(msg, 'Date') ?? '';
@@ -316,6 +386,13 @@ function formatDigest(r: PipelineResult): string {
     `${r.messagesScanned} email${r.messagesScanned === 1 ? '' : 's'} scanned, ${r.skippedNonReceipts} skipped (non-receipts), ${r.duplicatesIgnored} duplicates filtered`,
   );
 
+  if (r.returnsApplied > 0 || r.returnsUnmatched > 0) {
+    const parts: string[] = [];
+    if (r.returnsApplied > 0) parts.push(`${r.returnsApplied} returned`);
+    if (r.returnsUnmatched > 0) parts.push(`${r.returnsUnmatched} return(s) unmatched`);
+    lines.push(`↩️ ${parts.join(', ')}`);
+  }
+
   if (r.errors.length > 0) {
     lines.push(`❌ ${r.errors.length} error${r.errors.length === 1 ? '' : 's'}:`);
     for (const e of r.errors.slice(0, 5)) {
@@ -329,4 +406,51 @@ function formatDigest(r: PipelineResult): string {
 
 function log(msg: string): void {
   console.log(msg);
+}
+
+/**
+ * Match a return-email item against an existing sheet row. Strong preference
+ * for (orderId, productId) — that's robust to item-name drift. Falls back to
+ * (orderId, fuzzy name token overlap) when the return email doesn't carry a
+ * product URL. Returns the array index (0-based) or -1.
+ */
+function findRowForReturn(
+  rows: readonly MasterRow[],
+  orderId: string,
+  item: { itemName: string; productUrl: string },
+): number {
+  const targetPid = extractProductId(item.productUrl);
+  if (targetPid) {
+    const exact = rows.findIndex(
+      (r) => r.orderId === orderId && extractProductId(r.productUrl) === targetPid,
+    );
+    if (exact !== -1) return exact;
+  }
+  // Fallback: same order, fuzzy name overlap (>= 2 distinctive shared tokens).
+  const targetTokens = nameTokens(item.itemName);
+  if (targetTokens.size === 0) return -1;
+  let bestIdx = -1;
+  let bestOverlap = 0;
+  rows.forEach((r, i) => {
+    if (r.orderId !== orderId) return;
+    const rowTokens = nameTokens(r.itemName);
+    let overlap = 0;
+    for (const t of targetTokens) if (rowTokens.has(t)) overlap++;
+    if (overlap > bestOverlap) {
+      bestOverlap = overlap;
+      bestIdx = i;
+    }
+  });
+  return bestOverlap >= 2 ? bestIdx : -1;
+}
+
+const COMMON_TOKENS = new Set(['the', 'and', 'for', 'with', 'a', 'an', 'of', 'in', 'to', 'on']);
+
+function nameTokens(name: string): Set<string> {
+  const tokens = name
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, ' ')
+    .split(/\s+/)
+    .filter((t) => t.length >= 3 && !COMMON_TOKENS.has(t));
+  return new Set(tokens);
 }

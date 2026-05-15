@@ -1,6 +1,6 @@
 import type { Source } from './types.js';
 
-export type SenderRole = 'rei-order' | 'amazon-order' | 'amazon-shipment';
+export type SenderRole = 'rei-order' | 'amazon-order' | 'amazon-shipment' | 'amazon-return';
 
 export interface KnownSender {
   email: string;
@@ -12,6 +12,7 @@ export const KNOWN_SENDERS: readonly KnownSender[] = [
   { email: 'rei@notices.rei.com', role: 'rei-order', source: 'REI' },
   { email: 'auto-confirm@amazon.com', role: 'amazon-order', source: 'Amazon' },
   { email: 'shipment-tracking@amazon.com', role: 'amazon-shipment', source: 'Amazon' },
+  { email: 'return@amazon.com', role: 'amazon-return', source: 'Amazon' },
 ];
 
 export const PURCHASE_KEYWORDS: readonly string[] = [
@@ -46,6 +47,12 @@ const EXPECTED_SUBJECT_PATTERNS: Record<SenderRole, RegExp[]> = {
     /has shipped/i,
     /has been (received|delivered|placed)/i,
     /order confirmation/i,
+  ],
+  'amazon-return': [
+    /^Refund issued/i,
+    /^Dropoff confirmed/i,
+    /^Return (received|requested|started|initiated)/i,
+    /^Your refund/i,
   ],
 };
 
