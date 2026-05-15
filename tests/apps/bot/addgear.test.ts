@@ -37,6 +37,9 @@ function makeDeps(overrides: Partial<AddgearDeps> = {}): AddgearDeps {
     // Default: name refinement returns null (no change). Tests that exercise
     // refinement override with a function that returns the desired name.
     fetchProductName: vi.fn(async () => null),
+    // Default: URL parser returns null (no URL in caption in most tests). Tests
+    // that exercise the URL-in-caption flow override with a real return value.
+    fetchProductInfo: vi.fn(async () => null),
     ...overrides,
   };
 }
@@ -770,5 +773,124 @@ describe('continueAddgear — url field correction at awaiting-confirm', () => {
     await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
     const reply = await continueAddgear('chat-1', 'url: just-some-text', deps);
     expect(reply).toMatch(/must start with http/i);
+  });
+});
+
+describe('startAddgear — URL pasted in caption (fast path: skip product-pick)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-14T12:00:00Z'));
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  test('URL + vision succeed → uses URL data, skips product-pick', async () => {
+    const fetchInfo = vi.fn(async () => ({
+      brand: 'Grass Sticks',
+      itemName: 'Original Bamboo Ski Poles - Pair',
+    }));
+    const lookup = vi.fn(async () => []);
+    const deps = makeDeps({
+      fetchProductInfo: fetchInfo,
+      lookupProduct: lookup,
+      // Vision can't read bamboo — returns minimal data.
+      extractFromPhoto: vi.fn(async (): Promise<PhotoExtraction> => ({
+        brand: '', itemName: '', color: 'natural', size: '',
+        confidence: { brand: 'missing', itemName: 'missing', color: 'low', size: 'missing' },
+      })),
+    });
+    const reply = await startAddgear(
+      'chat-1', 'FILE-1',
+      '/addgear ~2018 ~$120 https://www.rei.com/product/163187/grass-sticks-original-bamboo-ski-poles-pair',
+      deps,
+    );
+    // Goes straight to preview — no product-pick step.
+    expect(reply).toMatch(/About to log/i);
+    expect(fetchInfo).toHaveBeenCalledOnce();
+    expect(lookup).not.toHaveBeenCalled();
+    const step = deps.addgearState.peek('chat-1');
+    expect(step?.kind).toBe('awaiting-confirm');
+    if (step?.kind === 'awaiting-confirm') {
+      expect(step.row.brand).toBe('Grass Sticks');
+      expect(step.row.itemName).toBe('Original Bamboo Ski Poles - Pair');
+      expect(step.row.productUrl).toContain('rei.com');
+      expect(step.row.color).toBe('natural'); // vision contributed color
+    }
+  });
+
+  test('URL succeeds + vision returns nothing → still proceeds (no bail)', async () => {
+    const deps = makeDeps({
+      fetchProductInfo: vi.fn(async () => ({
+        brand: 'Grass Sticks',
+        itemName: 'Original Bamboo Ski Poles',
+      })),
+      extractFromPhoto: vi.fn(async () => null),
+    });
+    const reply = await startAddgear(
+      'chat-1', 'FILE-1',
+      '/addgear ~2018 ~$120 https://www.rei.com/product/163187/grass-sticks-original-bamboo-ski-poles-pair',
+      deps,
+    );
+    expect(reply).toMatch(/About to log/i);
+    expect(reply).not.toMatch(/couldn't read brand/i);
+  });
+
+  test('URL fails AND vision fails → returns a single clear error', async () => {
+    const deps = makeDeps({
+      fetchProductInfo: vi.fn(async () => null),
+      extractFromPhoto: vi.fn(async () => null),
+    });
+    const reply = await startAddgear(
+      'chat-1', 'FILE-1',
+      '/addgear ~2018 ~$120 https://example.com/x',
+      deps,
+    );
+    expect(reply).toMatch(/couldn't extract a product name/i);
+  });
+
+  test('photo and URL disagree on brand → preview is prefixed with a "Heads up" warning', async () => {
+    const deps = makeDeps({
+      fetchProductInfo: vi.fn(async () => ({
+        brand: 'Grass Sticks',
+        itemName: 'Original Bamboo Ski Poles',
+      })),
+      extractFromPhoto: vi.fn(async (): Promise<PhotoExtraction> => ({
+        brand: 'Marmot', itemName: 'Tungsten Tent', color: 'orange', size: '',
+        confidence: { brand: 'high', itemName: 'high', color: 'high', size: 'missing' },
+      })),
+    });
+    const reply = await startAddgear(
+      'chat-1', 'FILE-1',
+      '/addgear ~2018 ~$120 https://www.rei.com/product/163187/grass-sticks-original-bamboo-ski-poles-pair',
+      deps,
+    );
+    expect(reply).toMatch(/heads up/i);
+    expect(reply).toContain('Marmot');
+    expect(reply).toContain('Grass Sticks');
+    expect(reply).toMatch(/About to log/i);
+    const step = deps.addgearState.peek('chat-1');
+    if (step?.kind === 'awaiting-confirm') {
+      // URL wins, brand is from URL not from vision
+      expect(step.row.brand).toBe('Grass Sticks');
+    }
+  });
+
+  test('photo and URL agree on brand → no warning', async () => {
+    const deps = makeDeps({
+      fetchProductInfo: vi.fn(async () => ({
+        brand: 'Patagonia',
+        itemName: 'Houdini Jacket',
+      })),
+      // Vision agrees on brand.
+      extractFromPhoto: vi.fn(async (): Promise<PhotoExtraction> => ({
+        brand: 'Patagonia', itemName: 'Houdini', color: 'blue', size: 'M',
+        confidence: { brand: 'high', itemName: 'high', color: 'high', size: 'high' },
+      })),
+    });
+    const reply = await startAddgear(
+      'chat-1', 'FILE-1',
+      '/addgear ~2018 ~$120 https://www.patagonia.com/product/foo',
+      deps,
+    );
+    expect(reply).not.toMatch(/heads up/i);
   });
 });

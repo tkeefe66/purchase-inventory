@@ -3,7 +3,7 @@ import type { AddgearStateStore, PartialDraft } from '../../../lib/addgearState.
 import type { PendingActionStore } from '../../../lib/pendingActions.js';
 import { fuzzyMatchExisting, type FuzzyCandidateRow } from '../../../lib/dedup.js';
 import type { PhotoExtraction } from '../../../lib/parsers/photo.js';
-import type { ProductCandidate } from '../../../lib/parsers/product-lookup.js';
+import type { ProductCandidate, UrlProductInfo } from '../../../lib/parsers/product-lookup.js';
 import type { Classification } from '../../../lib/classifier.js';
 import type { MasterRow } from '../../../lib/types.js';
 import { DOMAIN_VALUES, ITEM_TYPE_VALUES, type Domain, type ItemType } from '../../../lib/types.js';
@@ -18,6 +18,7 @@ export interface AddgearDeps {
   classify: (input: { brand: string; itemName: string }) => Promise<Classification>;
   lookupProduct: (brand: string, itemName: string) => Promise<ProductCandidate[]>;
   fetchProductName: (url: string, brand: string) => Promise<string | null>;
+  fetchProductInfo: (url: string) => Promise<UrlProductInfo | null>;
   listExistingRows: () => readonly FuzzyCandidateRow[];
 }
 
@@ -264,6 +265,23 @@ function parkForConfirm(chatId: string, row: MasterRow, deps: AddgearDeps): stri
   return previewRow(row);
 }
 
+/**
+ * Tokens shared between two brand strings, lowercased and stripped of
+ * punctuation and short stopwords. Used for the photo↔URL brand sanity-check.
+ */
+function brandsDisagree(a: string, b: string): boolean {
+  if (!a.trim() || !b.trim()) return false;
+  const tokenize = (s: string): string[] => s
+    .toLowerCase()
+    .replace(/[.,&'"]/g, ' ')
+    .split(/\s+/)
+    .filter((t) => t.length >= 2 && !['the', 'co', 'inc', 'llc', 'ltd', 'and'].includes(t));
+  const aTokens = new Set(tokenize(a));
+  const bTokens = tokenize(b);
+  if (aTokens.size === 0 || bTokens.length === 0) return false;
+  return !bTokens.some((t) => aTokens.has(t));
+}
+
 export async function startAddgear(
   chatId: string,
   photoFileId: string,
@@ -273,7 +291,19 @@ export async function startAddgear(
   const afterCmd = caption.replace(/^\/addgear\s*/i, '');
   const hints = parseCaptionHints(afterCmd);
 
+  // A URL in the caption is the user's explicit signal: "this is the product page."
+  // Skip the lookup/pick step, trust the URL for brand/itemName, use vision only
+  // for color/size and as a brand cross-check.
+  const urlMatch = hints.rest.match(/https?:\/\/\S+/i);
+  const captionUrl = urlMatch?.[0];
+  const visionCaption = captionUrl ? hints.rest.replace(captionUrl, '').trim() : hints.rest;
+
   const photoBytes = await deps.downloadPhoto(photoFileId);
+
+  if (captionUrl) {
+    return startAddgearWithUrl(chatId, photoFileId, photoBytes, captionUrl, visionCaption, hints, deps);
+  }
+
   const extraction = await deps.extractFromPhoto(photoBytes, hints.rest);
   if (!extraction || (!extraction.brand && !extraction.itemName)) {
     return `Couldn't read brand or item name from the photo. Reply 'brand: X, item: Y' or send a clearer photo with /addgear.`;
@@ -332,6 +362,70 @@ export async function startAddgear(
     `Couldn't find a confident product page via web search.`,
     `Paste a product URL to use (and refine the name), or reply 'skip' to leave URL blank.`,
   ].join('\n');
+}
+
+/**
+ * /addgear variant for when the user pasted a URL in the caption. The URL is
+ * authoritative for brand/itemName/productUrl; vision is used for color/size
+ * and as a brand sanity-check. Skips the product-pick step entirely.
+ */
+async function startAddgearWithUrl(
+  chatId: string,
+  photoFileId: string,
+  photoBytes: Buffer,
+  url: string,
+  visionCaption: string,
+  hints: CaptionHints,
+  deps: AddgearDeps,
+): Promise<string> {
+  const [extraction, urlInfo] = await Promise.all([
+    deps.extractFromPhoto(photoBytes, visionCaption),
+    deps.fetchProductInfo(url).catch((err: unknown) => {
+      console.warn('[addgear] fetchProductInfo failed:', err instanceof Error ? err.message : err);
+      return null;
+    }),
+  ]);
+
+  const brand = (urlInfo?.brand ?? '').trim() || (extraction?.brand ?? '').trim();
+  const itemName = (urlInfo?.itemName ?? '').trim() || (extraction?.itemName ?? '').trim();
+
+  if (!brand && !itemName) {
+    return `Couldn't extract a product name from the photo or the URL. Try a different URL or send a clearer photo.`;
+  }
+
+  // Surface inconsistency: vision saw a brand, URL gave a different brand,
+  // no token overlap. We're using the URL's value; flag it so the user can
+  // override via 'brand: X' on the preview if vision was right.
+  const visionBrand = (extraction?.brand ?? '').trim();
+  const urlBrand = (urlInfo?.brand ?? '').trim();
+  const warning = brandsDisagree(visionBrand, urlBrand)
+    ? `Heads up: photo looks like "${visionBrand}" but URL says "${urlBrand}" — using URL. Reply 'brand: ${visionBrand}' on the preview if the photo was right.\n\n`
+    : '';
+
+  const resolvedDate = extraction?.date ?? hints.date ?? '';
+  const resolvedPrice = extraction?.price ?? hints.price ?? null;
+
+  const classification = await deps.classify({ brand, itemName });
+
+  const draft: PartialDraft = {
+    brand,
+    itemName,
+    color: extraction?.color ?? '',
+    size: extraction?.size ?? '',
+    date: resolvedDate,
+    dateAcknowledgedUnknown: false,
+    price: resolvedPrice,
+    priceAcknowledgedUnknown: false,
+    productUrl: url,
+    imageFileId: photoFileId,
+    domain: classification.domain,
+    category: classification.category,
+    subCategory: classification.subCategory,
+    type: classification.type,
+    reasoning: 'captured via /addgear photo+url',
+  };
+
+  return warning + advanceFlow(chatId, draft, deps);
 }
 
 function advanceFlow(chatId: string, draft: PartialDraft, deps: AddgearDeps): string {

@@ -43,6 +43,7 @@ function makeDeps(rows: MasterRow[], overrides: Partial<HandlerDeps> = {}): {
       classify: vi.fn() as unknown as HandlerDeps['addgearInner']['classify'],
       lookupProduct: vi.fn() as unknown as HandlerDeps['addgearInner']['lookupProduct'],
       fetchProductName: vi.fn() as unknown as HandlerDeps['addgearInner']['fetchProductName'],
+      fetchProductInfo: vi.fn() as unknown as HandlerDeps['addgearInner']['fetchProductInfo'],
       listExistingRows: () => [],
     },
     ...overrides,

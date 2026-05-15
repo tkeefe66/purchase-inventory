@@ -1,11 +1,16 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import { VISION_MODEL } from '../models.js';
+import { VISION_MODEL, PARSER_MODEL } from '../models.js';
 import { callWithRetry } from '../anthropic-retry.js';
 
 export interface ProductCandidate {
   itemName: string;
   productUrl: string;
   source: string;
+}
+
+export interface UrlProductInfo {
+  brand: string;
+  itemName: string;
 }
 
 // Curated list — Anthropic's crawler is blocked by many large-enterprise sites
@@ -241,6 +246,93 @@ function isJunkTitle(name: string, host: string, brand: string): boolean {
     /^error\b/i,
   ];
   return junkPatterns.some((p) => p.test(name));
+}
+
+const URL_INFO_SYSTEM_PROMPT = `You extract a brand and product name from a product-page URL and (when available) its HTML <title>.
+
+Return JSON only with this exact shape:
+{"brand": "<brand>", "itemName": "<product name with brand prefix stripped>"}
+
+Rules:
+- brand: empty string if you can't identify it confidently
+- itemName: the product name. STRIP the brand prefix (we store brand separately).
+- itemName: STRIP trailing site names like " | REI Co-op", " - L.L.Bean", " — Patagonia"
+- Use both the URL slug and the page title when available — title is more authoritative when both are present
+- Return JSON only, no prose, no markdown fences`;
+
+/**
+ * Parse a product page URL into {brand, itemName} by combining the URL slug
+ * with the page <title> (when fetchable) and running it through Haiku.
+ *
+ * For Amazon and other bot-shielded hosts we skip the page fetch and pass
+ * the URL slug alone — Haiku still does a competent job on Amazon's
+ * "/Brand-Product-Detail/dp/SKU" slug pattern.
+ *
+ * Returns null if both Haiku and the URL alone fail to yield anything.
+ */
+export async function fetchProductInfo(
+  anthropic: Anthropic,
+  url: string,
+): Promise<UrlProductInfo | null> {
+  if (!/^https?:\/\//i.test(url)) return null;
+  let host = '';
+  try { host = new URL(url).hostname.replace(/^www\./, '').toLowerCase(); }
+  catch { return null; }
+
+  const pageTitle = FETCH_BLOCKED_HOSTS.has(host) ? '' : await fetchPageTitle(url);
+  const userText = `URL: ${url}\nTitle: ${pageTitle || '(not available)'}`;
+
+  let resp: Anthropic.Messages.Message;
+  try {
+    resp = await callWithRetry(() =>
+      anthropic.messages.create({
+        model: PARSER_MODEL,
+        max_tokens: 256,
+        system: [{ type: 'text', text: URL_INFO_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+        messages: [{ role: 'user', content: userText }],
+      }),
+    );
+  } catch (err) {
+    console.warn(`[product-lookup] fetchProductInfo failed for ${url}: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+
+  const block = resp.content.find((b): b is Anthropic.TextBlock => b.type === 'text');
+  if (!block) return null;
+
+  const cleaned = extractJsonObject(block.text);
+  if (!cleaned) return null;
+
+  let parsed: { brand?: unknown; itemName?: unknown };
+  try { parsed = JSON.parse(cleaned) as typeof parsed; }
+  catch { return null; }
+
+  const brand = typeof parsed.brand === 'string' ? parsed.brand.trim() : '';
+  const itemName = typeof parsed.itemName === 'string' ? parsed.itemName.trim() : '';
+  if (!brand && !itemName) return null;
+  return { brand, itemName };
+}
+
+async function fetchPageTitle(url: string): Promise<string> {
+  try {
+    const resp = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; outdoor-inventory/1.0)',
+        'Accept': 'text/html,application/xhtml+xml',
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!resp.ok) return '';
+    const html = await resp.text();
+    const ogMatch = html.match(/<meta[^>]+property=["']og:title["'][^>]+content="([^"]*)"/i)
+      ?? html.match(/<meta[^>]+property=["']og:title["'][^>]+content='([^']*)'/i)
+      ?? html.match(/<meta[^>]+content="([^"]*)"[^>]+property=["']og:title["']/i)
+      ?? html.match(/<meta[^>]+content='([^']*)'[^>]+property=["']og:title["']/i);
+    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+    return decodeBasicEntities((ogMatch?.[1] ?? titleMatch?.[1] ?? '').trim());
+  } catch {
+    return '';
+  }
 }
 
 function decodeBasicEntities(s: string): string {
