@@ -74,7 +74,7 @@ const WEB_SEARCH_ALLOWED_DOMAINS = [
   // Retailers (pricing, stock, returns)
   'rei.com', 'backcountry.com', 'patagonia.com', 'evo.com', 'moosejaw.com',
   'competitivecyclist.com', 'nrs.com', 'jensonusa.com', 'amazon.com',
-  'llbean.com', 'cabelas.com',
+  'llbean.com', 'cabelas.com', 'basspro.com',
   // Expert reviews (product judgment)
   'outdoorgearlab.com', 'switchbacktravel.com', 'treelinereview.com',
   'gearjunkie.com', 'climbing.com', 'pinkbike.com', 'bikepacking.com',
