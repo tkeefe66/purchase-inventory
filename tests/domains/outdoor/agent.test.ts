@@ -112,6 +112,64 @@ describe('OutdoorAgent.handleMessage', () => {
     expect(stats.cacheHits).toBe(1);
   });
 
+  test('includes web_search server tool in the tools array', async () => {
+    const { cache, conversations, stats } = makeAgentDeps([FIXTURE_THERMAREST]);
+    await cache.refresh();
+    const anthropic = makeFakeAnthropic([
+      {
+        content: [{ type: 'text', text: 'ok' }],
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 2400, output_tokens: 1 },
+      },
+    ]);
+    const agent = new OutdoorAgent({
+      cache,
+      conversations,
+      stats,
+      anthropic: anthropic as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['anthropic'],
+      sheets: {} as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['sheets'],
+      spreadsheetId: 'TEST',
+      updateRowStatus: vi.fn() as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['updateRowStatus'],
+    });
+    await agent.handleMessage('chat-1', 'hi');
+    const call = (anthropic.messages.create as any).mock.calls[0][0];
+    const tools = call.tools as Array<{ name: string; type?: string; max_uses?: number }>;
+    const webSearch = tools.find((t) => t.name === 'web_search');
+    expect(webSearch).toBeDefined();
+    expect(webSearch?.type).toBe('web_search_20260209');
+    expect(webSearch?.max_uses).toBe(3);
+  });
+
+  test('handles server_tool_use + web_search_tool_result blocks alongside text', async () => {
+    const { cache, conversations, stats } = makeAgentDeps([FIXTURE_THERMAREST]);
+    await cache.refresh();
+    const anthropic = {
+      messages: {
+        create: vi.fn(async () => ({
+          content: [
+            { type: 'server_tool_use', id: 'srv_1', name: 'web_search', input: { query: 'current price R1' } },
+            { type: 'web_search_tool_result', tool_use_id: 'srv_1', content: [] },
+            { type: 'text', text: 'Based on the search, R1 is currently $129 at REI.' },
+          ],
+          stop_reason: 'end_turn',
+          usage: { input_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 2400, output_tokens: 10 },
+        })),
+      },
+    };
+    const agent = new OutdoorAgent({
+      cache,
+      conversations,
+      stats,
+      anthropic: anthropic as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['anthropic'],
+      sheets: {} as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['sheets'],
+      spreadsheetId: 'TEST',
+      updateRowStatus: vi.fn() as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['updateRowStatus'],
+    });
+    const out = await agent.handleMessage('chat-1', 'current R1 price?');
+    expect(out).toBe('Based on the search, R1 is currently $129 at REI.');
+    expect(anthropic.messages.create).toHaveBeenCalledTimes(1);
+  });
+
   test('executes a tool call and feeds the result back to the model', async () => {
     const { cache, conversations, stats } = makeAgentDeps([FIXTURE_THERMAREST]);
     await cache.refresh();

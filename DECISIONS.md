@@ -790,6 +790,24 @@ await telegram.sendMessage(chatId, reply);
 
 ---
 
+## 2026-05-14 — Phase 2.5: web_search tool added
+
+**Decision:** Outdoor agent's tool registry now includes Anthropic's server-side `web_search_20260209` tool. Capped at `max_uses: 3` per turn. No domain allowlist/blocklist.
+
+**Why:** Phase 2.6 acceptance answers were "decent" but limited by the Sonnet/Opus training cutoff (January 2026). Questions about current prices, recent gear releases, current trail/weather/snow conditions, or anything time-sensitive returned stale or hedged answers. `web_search` lets the agent verify and ground its responses in current information.
+
+**Why server tool, not client:** Anthropic runs the search server-side and returns results inline. No client-side handler, no separate API key, no new infrastructure. The existing tool-call loop passes through unchanged — `text` blocks get extracted as before, `server_tool_use` and `web_search_tool_result` blocks are filtered out of the dispatch path (verified by the new test in `tests/domains/outdoor/agent.test.ts`).
+
+**Why `max_uses: 3`:** Bounds per-message cost ($0.01/search × 3 = $0.03 max per turn) and prevents the model from searching indefinitely on a vague question. Most outdoor questions need 0-1 searches. The cap can be lifted if the agent starts hitting it during real use.
+
+**Why no allowlist:** Starting unconstrained — Anthropic's search is generally good at filtering low-quality results. If results disappoint (SEO sludge, listicle spam), revisit with a curated allowlist (REI, Backcountry, OutdoorGearLab, Switchback Travel, NPS, USFS, etc.).
+
+**Cost impact:** ~$0.01/search. If ~30% of questions trigger search at ~10 questions/day, that's ~$0.90/month additional. Total agent spend now expected $1-2/month including Opus 4.7 + web_search.
+
+**The `get_product_url` tool is now dead.** Inventory rows include the URL directly (Phase 2.6 UX fix). The tool is left in the registry as a fallback in case a row's URL is empty, but the system prompt deprioritizes it. Worth removing in a future cleanup.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale

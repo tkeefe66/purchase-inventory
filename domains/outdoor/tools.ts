@@ -70,6 +70,14 @@ export const TOOL_SCHEMAS = [
   },
 ] as const;
 
+export const SERVER_TOOLS = [
+  {
+    type: 'web_search_20260209',
+    name: 'web_search',
+    max_uses: 3,
+  },
+] as const;
+
 export function createTools(deps: ToolDeps): ToolHandlers {
   return {
     async get_product_url(input: GetProductUrlInput): Promise<GetProductUrlResult> {

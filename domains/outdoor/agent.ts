@@ -6,7 +6,7 @@ import { ConversationStore } from '../../lib/conversations.js';
 import { Stats } from '../../apps/bot/stats.js';
 import { callWithRetry } from '../../lib/anthropic-retry.js';
 import { AGENT_PRIMARY_MODEL, AGENT_FALLBACK_MODELS } from '../../lib/models.js';
-import { createTools, TOOL_SCHEMAS, type ToolHandlers } from './tools.js';
+import { createTools, TOOL_SCHEMAS, SERVER_TOOLS, type ToolHandlers } from './tools.js';
 
 export interface SystemPromptInput {
   compactViewText: string;
@@ -28,11 +28,13 @@ Telegram renders Markdown. When you reference a specific item from Tom's invento
 
 const REI_PREFERENCE = `When recommending purchases, prefer REI when both retailers carry an item — Tom is a co-op member and that's his default store. Mention the dividend or return-policy advantage in close calls.`;
 
-const TOOL_GUIDANCE = `You have two tools available:
+const TOOL_GUIDANCE = `You have three tools available:
 
-- get_product_url(item_id) — usually NOT needed since each row already includes its product URL. Use only as a fallback if a URL is missing from the row.
+- web_search — use for anything time-sensitive: current prices, current trail/snow/surf/weather conditions, recent product releases, reviews from the past year, current park/trail status. Do NOT search for things in Tom's inventory (already in context) or for general outdoor knowledge (you already know). Capped at 3 searches per turn. When you do search, cite the source domain in your reply so Tom can verify (e.g., "per outdoorgearlab.com").
 
 - update_status(item_id, new_status) — when the user tells you they lost, sold, donated, retired, returned, or broke an item, or wants to mark it excluded. Possible new_status values: active, retired, returned, lost, broken, sold, donated, excluded. After calling this tool, confirm to the user what changed.
+
+- get_product_url(item_id) — usually NOT needed since each inventory row already includes its product URL. Use only as a fallback if a URL is missing from the row.
 
 Use tools sparingly: only call when needed.`;
 
@@ -158,7 +160,7 @@ export class OutdoorAgent {
       max_tokens: MAX_TOKENS,
       system,
       messages: messages as Anthropic.Messages.MessageParam[],
-      tools: TOOL_SCHEMAS as unknown as Anthropic.Messages.Tool[],
+      tools: [...TOOL_SCHEMAS, ...SERVER_TOOLS] as unknown as Anthropic.Messages.Tool[],
     };
     const chain = [AGENT_PRIMARY_MODEL, ...AGENT_FALLBACK_MODELS];
     let lastErr: unknown;
