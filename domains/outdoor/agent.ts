@@ -1,3 +1,11 @@
+import Anthropic from '@anthropic-ai/sdk';
+import type { InventoryCache } from '../../apps/bot/inventoryCache.js';
+import type { SheetsClient } from '../../lib/sheets.js';
+import type { Status } from '../../lib/types.js';
+import { ConversationStore } from '../../lib/conversations.js';
+import { Stats } from '../../apps/bot/stats.js';
+import { createTools, TOOL_SCHEMAS, type ToolHandlers } from './tools.js';
+
 export interface SystemPromptInput {
   compactViewText: string;
 }
@@ -36,14 +44,6 @@ export function buildSystemPrompt(input: SystemPromptInput): SystemBlock[] {
     { type: 'text', text: TOOL_GUIDANCE },
   ];
 }
-
-import Anthropic from '@anthropic-ai/sdk';
-import type { InventoryCache } from '../../apps/bot/inventoryCache.js';
-import type { SheetsClient } from '../../lib/sheets.js';
-import type { Status } from '../../lib/types.js';
-import { ConversationStore } from '../../lib/conversations.js';
-import { Stats } from '../../apps/bot/stats.js';
-import { createTools, TOOL_SCHEMAS, type ToolHandlers } from './tools.js';
 
 const SONNET_MODEL = 'claude-sonnet-4-6';
 const MAX_TOKENS = 1024;

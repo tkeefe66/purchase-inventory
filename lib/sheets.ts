@@ -1,6 +1,6 @@
 import { google, sheets_v4 } from 'googleapis';
 import { buildExistingKeySet, type DedupIndex } from './dedup.js';
-import type { MasterRow, Status, Vocab } from './types.js';
+import { STATUS_VALUES, type MasterRow, type Status, type Vocab } from './types.js';
 
 /**
  * Builds a name → column-index lookup from a sheet's header row. Use this for
@@ -322,10 +322,6 @@ function parsePrice(s: string | number): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-const VALID_STATUSES: readonly Status[] = [
-  'active', 'retired', 'returned', 'lost', 'broken', 'sold', 'donated', 'excluded',
-];
-
 export interface UpdateStatusInput {
   rowIndex: number;
   newStatus: Status;
@@ -336,8 +332,8 @@ export async function updateRowStatus(
   spreadsheetId: string,
   input: UpdateStatusInput,
 ): Promise<void> {
-  if (!VALID_STATUSES.includes(input.newStatus)) {
-    throw new Error(`Invalid status: ${input.newStatus}. Expected one of ${VALID_STATUSES.join(', ')}.`);
+  if (!STATUS_VALUES.includes(input.newStatus as Status)) {
+    throw new Error(`Invalid status: ${input.newStatus}. Expected one of ${STATUS_VALUES.join(', ')}.`);
   }
   const headerResp = await sheets.spreadsheets.values.get({
     spreadsheetId,

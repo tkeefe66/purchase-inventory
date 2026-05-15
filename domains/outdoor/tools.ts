@@ -1,5 +1,5 @@
 import type { SheetsClient } from '../../lib/sheets.js';
-import type { MasterRow, Status } from '../../lib/types.js';
+import { STATUS_VALUES, type MasterRow, type Status } from '../../lib/types.js';
 import type { InventoryCache } from '../../apps/bot/inventoryCache.js';
 import { itemId } from './types.js';
 
@@ -37,10 +37,6 @@ export interface ToolHandlers {
   get_product_url: (input: GetProductUrlInput) => Promise<GetProductUrlResult>;
   update_status: (input: UpdateStatusInput) => Promise<UpdateStatusResult>;
 }
-
-const VALID_STATUSES: readonly Status[] = [
-  'active', 'retired', 'returned', 'lost', 'broken', 'sold', 'donated', 'excluded',
-];
 
 export const TOOL_SCHEMAS = [
   {
@@ -83,7 +79,7 @@ export function createTools(deps: ToolDeps): ToolHandlers {
     },
 
     async update_status(input: UpdateStatusInput): Promise<UpdateStatusResult> {
-      if (!VALID_STATUSES.includes(input.new_status)) {
+      if (!STATUS_VALUES.includes(input.new_status as Status)) {
         return { ok: false, message: `Invalid status: ${input.new_status}` };
       }
       const snapshot = deps.cache.getSnapshot();
