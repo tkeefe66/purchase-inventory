@@ -26,7 +26,7 @@ export const AGENT_FALLBACK_MODELS: readonly ModelId[] = [MODELS.sonnet, MODELS.
 /** Model the Amazon parser's tier-2 fallback uses (cost-optimized JSON extraction). */
 export const PARSER_MODEL: ModelId = MODELS.haiku;
 
-/** Model used by lib/parsers/photo.ts for vision extraction from gear photos. */
+/** Vision parser model for lib/parsers/photo.ts — Sonnet balances multimodal accuracy against cost (Haiku lacks vision, Opus is overkill). */
 export const VISION_MODEL: ModelId = MODELS.sonnet;
 
 /**
