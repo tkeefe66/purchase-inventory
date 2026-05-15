@@ -3,6 +3,7 @@ import type { AddgearStateStore, PartialDraft } from '../../../lib/addgearState.
 import type { PendingActionStore } from '../../../lib/pendingActions.js';
 import { fuzzyMatchExisting, type FuzzyCandidateRow } from '../../../lib/dedup.js';
 import type { PhotoExtraction } from '../../../lib/parsers/photo.js';
+import type { ProductCandidate } from '../../../lib/parsers/product-lookup.js';
 import type { Classification } from '../../../lib/classifier.js';
 import type { MasterRow } from '../../../lib/types.js';
 import { DOMAIN_VALUES, ITEM_TYPE_VALUES, type Domain, type ItemType } from '../../../lib/types.js';
@@ -14,6 +15,7 @@ export interface AddgearDeps {
   downloadPhoto: (fileId: string) => Promise<Buffer>;
   extractFromPhoto: (bytes: Buffer, caption: string) => Promise<PhotoExtraction | null>;
   classify: (input: { brand: string; itemName: string }) => Promise<Classification>;
+  lookupProduct: (brand: string, itemName: string) => Promise<ProductCandidate[]>;
   listExistingRows: () => readonly FuzzyCandidateRow[];
 }
 
@@ -193,7 +195,7 @@ function rowFromDraft(draft: PartialDraft, today: string, orderId: string): Mast
     orderId,
     status: 'active',
     domain: draft.domain,
-    productUrl: '',
+    productUrl: draft.productUrl,
     type: draft.type,
     reasoning: draft.reasoning || 'captured via /addgear photo',
     notes: '',
@@ -205,6 +207,7 @@ function previewRow(row: MasterRow): string {
     `About to log:`,
     `  ${row.brand} ${row.itemName} (${row.color || '—'}, ${row.size || '—'})`,
     `  $${row.price}, ${row.source}, ${row.date || '—'}, [${row.category}/${row.subCategory}]`,
+    `  URL: ${row.productUrl || '—'}`,
     `Reply /confirm to write, 'field: value' to change something, or /cancel.`,
   ].join('\n');
 }
@@ -236,10 +239,14 @@ export async function startAddgear(
     return `Couldn't read brand or item name from the photo. Reply 'brand: X, item: Y' or send a clearer photo with /addgear.`;
   }
 
-  const classification = await deps.classify({
-    brand: extraction.brand,
-    itemName: extraction.itemName,
-  });
+  // classify and lookupProduct both depend only on (brand, itemName) — run in parallel.
+  const [classification, candidates] = await Promise.all([
+    deps.classify({ brand: extraction.brand, itemName: extraction.itemName }),
+    deps.lookupProduct(extraction.brand, extraction.itemName).catch((err: unknown) => {
+      console.warn('[addgear] lookupProduct failed:', err instanceof Error ? err.message : err);
+      return [] as ProductCandidate[];
+    }),
+  ]);
 
   const draft: PartialDraft = {
     brand: extraction.brand,
@@ -250,6 +257,7 @@ export async function startAddgear(
     dateAcknowledgedUnknown: false,
     price: hints.price ?? null,
     priceAcknowledgedUnknown: false,
+    productUrl: '',
     imageFileId: photoFileId,
     domain: classification.domain,
     category: classification.category,
@@ -257,6 +265,19 @@ export async function startAddgear(
     type: classification.type,
     reasoning: 'captured via /addgear photo',
   };
+
+  if (candidates.length > 0) {
+    deps.addgearState.set(chatId, { kind: 'awaiting-product-pick', draft, candidates });
+    const lines = candidates.map(
+      (c, i) => `  ${i + 1}. ${draft.brand} ${c.itemName} — ${c.source}\n     ${c.productUrl}`,
+    );
+    return [
+      `Vision read: ${draft.brand} ${draft.itemName}.`,
+      `Closest product matches:`,
+      ...lines,
+      `Reply 1, 2, or 3 to pick, paste a URL to use that instead, or 'skip' to leave URL blank.`,
+    ].join('\n');
+  }
 
   return advanceFlow(chatId, draft, deps);
 }
@@ -306,6 +327,28 @@ export async function continueAddgear(
     deps.addgearState.clear(chatId);
     deps.pendingActions.clear(chatId);
     return `Cancelled. Nothing was written.`;
+  }
+
+  if (step.kind === 'awaiting-product-pick') {
+    const pick = reply.match(/^([123])$/);
+    if (pick) {
+      const idx = Number(pick[1]) - 1;
+      const candidate = step.candidates[idx];
+      if (!candidate) {
+        return `Pick 1, 2, or 3, paste a URL, or 'skip'.`;
+      }
+      step.draft.itemName = candidate.itemName;
+      step.draft.productUrl = candidate.productUrl;
+      return advanceFlow(chatId, step.draft, deps);
+    }
+    if (/^https?:\/\/\S+$/i.test(reply)) {
+      step.draft.productUrl = reply;
+      return advanceFlow(chatId, step.draft, deps);
+    }
+    if (/^skip$/i.test(reply)) {
+      return advanceFlow(chatId, step.draft, deps);
+    }
+    return `Pick 1, 2, or 3, paste a full URL (https://...), or reply 'skip' to leave URL blank.`;
   }
 
   if (step.kind === 'awaiting-date') {
@@ -396,6 +439,19 @@ export async function continueAddgear(
         case 'category':    updated.category = value; break;
         case 'subcategory':
         case 'sub-category':updated.subCategory = value; break;
+        case 'url':
+        case 'product url':
+        case 'producturl': {
+          if (value.toLowerCase() === 'clear') {
+            updated.productUrl = '';
+            break;
+          }
+          if (!/^https?:\/\//i.test(value)) {
+            return `Product URL must start with http:// or https:// (got "${value}"). Use 'url: clear' to blank it.`;
+          }
+          updated.productUrl = value;
+          break;
+        }
         case 'domain': {
           if (!(DOMAIN_VALUES as readonly string[]).includes(value)) {
             return `Unknown domain "${value}". Valid: ${DOMAIN_VALUES.join(', ')}.`;
@@ -411,7 +467,7 @@ export async function continueAddgear(
           break;
         }
         default:
-          return `Unknown field "${field}". Try: brand, item, color, size, price, date, category, sub-category, domain, type. Or reply /confirm or /cancel.`;
+          return `Unknown field "${field}". Try: brand, item, color, size, price, date, url, category, sub-category, domain, type. Or reply /confirm or /cancel.`;
       }
       // Re-park so the pending action also reflects the patched row.
       return parkForConfirm(chatId, updated, deps);

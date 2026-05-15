@@ -1,11 +1,12 @@
 import type { MasterRow, Domain, ItemType } from './types.js';
 import type { FuzzyMatch } from './dedup.js';
+import type { ProductCandidate } from './parsers/product-lookup.js';
 
 /**
  * Per-chat state for the /addgear capture flow.
  *
  * The flow walks chatId through:
- *   awaiting-date -> awaiting-price -> [awaiting-dedup] -> awaiting-confirm
+ *   [awaiting-product-pick] -> awaiting-date -> awaiting-price -> [awaiting-dedup] -> awaiting-confirm
  *
  * Each step holds a partial draft; awaiting-confirm holds a complete MasterRow.
  * On terminal success (write succeeds) or user /cancel, the entry is cleared.
@@ -22,6 +23,7 @@ export interface PartialDraft {
   dateAcknowledgedUnknown: boolean;
   price: number | null;
   priceAcknowledgedUnknown: boolean;
+  productUrl: string;
   imageFileId: string;
   domain: Domain;
   category: string;
@@ -31,6 +33,7 @@ export interface PartialDraft {
 }
 
 export type AddgearStep =
+  | { kind: 'awaiting-product-pick'; draft: PartialDraft; candidates: ProductCandidate[] }
   | { kind: 'awaiting-date'; draft: PartialDraft }
   | { kind: 'awaiting-price'; draft: PartialDraft }
   | { kind: 'awaiting-dedup'; draft: PartialDraft; candidates: FuzzyMatch[] }

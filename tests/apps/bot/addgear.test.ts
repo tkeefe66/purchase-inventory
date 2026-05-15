@@ -3,6 +3,7 @@ import { AddgearStateStore } from '../../../lib/addgearState.js';
 import { PendingActionStore } from '../../../lib/pendingActions.js';
 import { startAddgear, continueAddgear, parseUserDate, extractDatePrefix, extractPrice, type AddgearDeps } from '../../../apps/bot/commands/addgear.js';
 import type { PhotoExtraction } from '../../../lib/parsers/photo.js';
+import type { ProductCandidate } from '../../../lib/parsers/product-lookup.js';
 import type { Classification } from '../../../lib/classifier.js';
 
 function makeDeps(overrides: Partial<AddgearDeps> = {}): AddgearDeps {
@@ -29,6 +30,9 @@ function makeDeps(overrides: Partial<AddgearDeps> = {}): AddgearDeps {
       reasoning: 'classified',
     })),
     listExistingRows: vi.fn((): readonly { brand: string; itemName: string }[] => []),
+    // Default: lookup returns no candidates → skip the awaiting-product-pick step.
+    // Tests that exercise the pick step override this.
+    lookupProduct: vi.fn(async () => []),
     ...overrides,
   };
 }
@@ -439,5 +443,149 @@ describe('startAddgear — caption price hints across the year-range', () => {
       expect(step.draft.date).toBe('2018-01-01');
       expect(step.draft.price).toBeNull();
     }
+  });
+});
+
+describe('startAddgear — product lookup populates URL candidates', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-14T12:00:00Z'));
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  const twoCandidates: ProductCandidate[] = [
+    {
+      itemName: 'Houdini Jacket',
+      productUrl: 'https://www.patagonia.com/product/mens-houdini-jacket/24142.html',
+      source: 'patagonia.com',
+    },
+    {
+      itemName: 'Houdini Air Jacket',
+      productUrl: 'https://www.rei.com/product/123456/patagonia-houdini-air-jacket-mens',
+      source: 'rei.com',
+    },
+  ];
+
+  test('when lookup returns candidates, bot enters awaiting-product-pick', async () => {
+    const deps = makeDeps({ lookupProduct: vi.fn(async () => twoCandidates) });
+    const reply = await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    expect(reply).toMatch(/closest product matches/i);
+    expect(reply).toContain('Houdini Jacket');
+    expect(reply).toContain('patagonia.com');
+    const step = deps.addgearState.peek('chat-1');
+    expect(step?.kind).toBe('awaiting-product-pick');
+  });
+
+  test('picking "1" sets canonical name + URL and advances to confirm', async () => {
+    const deps = makeDeps({ lookupProduct: vi.fn(async () => twoCandidates) });
+    await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    const reply = await continueAddgear('chat-1', '1', deps);
+    expect(reply).toMatch(/About to log/i);
+    const step = deps.addgearState.peek('chat-1');
+    expect(step?.kind).toBe('awaiting-confirm');
+    if (step?.kind === 'awaiting-confirm') {
+      expect(step.row.itemName).toBe('Houdini Jacket');
+      expect(step.row.productUrl).toBe(twoCandidates[0]!.productUrl);
+    }
+  });
+
+  test('pasting a URL stores it and keeps the vision item name', async () => {
+    const deps = makeDeps({ lookupProduct: vi.fn(async () => twoCandidates) });
+    await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    const reply = await continueAddgear('chat-1', 'https://example.com/my-thing', deps);
+    expect(reply).toMatch(/About to log/i);
+    const step = deps.addgearState.peek('chat-1');
+    if (step?.kind === 'awaiting-confirm') {
+      expect(step.row.productUrl).toBe('https://example.com/my-thing');
+      // itemName falls back to vision's value (didn't pick a candidate)
+      expect(step.row.itemName).toBe('Houdini Jacket');
+    }
+  });
+
+  test('"skip" leaves URL blank, keeps vision item name', async () => {
+    const deps = makeDeps({ lookupProduct: vi.fn(async () => twoCandidates) });
+    await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    const reply = await continueAddgear('chat-1', 'skip', deps);
+    expect(reply).toMatch(/About to log/i);
+    const step = deps.addgearState.peek('chat-1');
+    if (step?.kind === 'awaiting-confirm') {
+      expect(step.row.productUrl).toBe('');
+    }
+  });
+
+  test('invalid pick (e.g. "5" when there are 2 candidates) re-prompts', async () => {
+    const deps = makeDeps({ lookupProduct: vi.fn(async () => twoCandidates) });
+    await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
+    const reply = await continueAddgear('chat-1', '5', deps);
+    expect(reply).toMatch(/pick 1, 2, or 3/i);
+    expect(deps.addgearState.peek('chat-1')?.kind).toBe('awaiting-product-pick');
+  });
+
+  test('garbage reply re-prompts with options', async () => {
+    const deps = makeDeps({ lookupProduct: vi.fn(async () => twoCandidates) });
+    await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
+    const reply = await continueAddgear('chat-1', 'lol', deps);
+    expect(reply).toMatch(/pick 1, 2, or 3/i);
+    expect(deps.addgearState.peek('chat-1')?.kind).toBe('awaiting-product-pick');
+  });
+
+  test('when lookup returns no candidates, flow skips to awaiting-date (or confirm if hints filled)', async () => {
+    const deps = makeDeps({ lookupProduct: vi.fn(async () => []) });
+    const reply = await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    expect(reply).toMatch(/About to log/i);
+    const step = deps.addgearState.peek('chat-1');
+    expect(step?.kind).toBe('awaiting-confirm');
+    if (step?.kind === 'awaiting-confirm') {
+      expect(step.row.productUrl).toBe('');
+    }
+  });
+
+  test('lookup throws → flow continues with empty URL', async () => {
+    const deps = makeDeps({
+      lookupProduct: vi.fn(async () => { throw new Error('search service down'); }),
+    });
+    const reply = await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    expect(reply).toMatch(/About to log/i);
+    const step = deps.addgearState.peek('chat-1');
+    if (step?.kind === 'awaiting-confirm') {
+      expect(step.row.productUrl).toBe('');
+    }
+  });
+});
+
+describe('continueAddgear — url field correction at awaiting-confirm', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-14T12:00:00Z'));
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  test('"url: https://..." updates productUrl', async () => {
+    const deps = makeDeps();
+    await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    const reply = await continueAddgear('chat-1', 'url: https://patagonia.com/x', deps);
+    expect(reply).toContain('patagonia.com');
+    const step = deps.addgearState.peek('chat-1');
+    if (step?.kind === 'awaiting-confirm') {
+      expect(step.row.productUrl).toBe('https://patagonia.com/x');
+    }
+  });
+
+  test('"url: clear" blanks the productUrl', async () => {
+    const deps = makeDeps();
+    await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    await continueAddgear('chat-1', 'url: https://example.com/foo', deps);
+    await continueAddgear('chat-1', 'url: clear', deps);
+    const step = deps.addgearState.peek('chat-1');
+    if (step?.kind === 'awaiting-confirm') {
+      expect(step.row.productUrl).toBe('');
+    }
+  });
+
+  test('"url: not-a-url" is rejected', async () => {
+    const deps = makeDeps();
+    await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    const reply = await continueAddgear('chat-1', 'url: just-some-text', deps);
+    expect(reply).toMatch(/must start with http/i);
   });
 });

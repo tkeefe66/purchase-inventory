@@ -11,6 +11,7 @@ const minimalDraft: PartialDraft = {
   dateAcknowledgedUnknown: false,
   price: null,
   priceAcknowledgedUnknown: false,
+  productUrl: '',
   imageFileId: 'F1',
   domain: 'Outdoor',
   category: 'Hiking Gear',

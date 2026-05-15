@@ -41,6 +41,7 @@ function makeDeps(rows: MasterRow[], overrides: Partial<HandlerDeps> = {}): {
       downloadPhoto: vi.fn() as unknown as HandlerDeps['addgearInner']['downloadPhoto'],
       extractFromPhoto: vi.fn() as unknown as HandlerDeps['addgearInner']['extractFromPhoto'],
       classify: vi.fn() as unknown as HandlerDeps['addgearInner']['classify'],
+      lookupProduct: vi.fn() as unknown as HandlerDeps['addgearInner']['lookupProduct'],
       listExistingRows: () => [],
     },
     ...overrides,

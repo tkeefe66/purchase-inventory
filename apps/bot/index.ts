@@ -19,6 +19,7 @@ import { dispatchCommand, handlePhoto, handleAddgearContinuation, type HandlerDe
 import { extractLogDraft } from './commands/log.js';
 import { startAddgear, continueAddgear } from './commands/addgear.js';
 import { extractFromPhoto } from '../../lib/parsers/photo.js';
+import { lookupProduct } from '../../lib/parsers/product-lookup.js';
 import { createClassifier } from '../../lib/classifier.js';
 import { routeMessage, routePhoto } from './router.js';
 
@@ -124,6 +125,7 @@ async function main(): Promise<void> {
       extractFromPhoto: (bytes, caption) => extractFromPhoto(anthropic, bytes, caption),
       classify: (input) =>
         classifyFn({ itemName: `${input.brand} ${input.itemName}`.trim(), source: 'Image' }),
+      lookupProduct: (brand, itemName) => lookupProduct(anthropic, brand, itemName),
       listExistingRows: () =>
         cache.getSnapshot().map((r) => ({ brand: r.brand, itemName: r.itemName })),
     },
