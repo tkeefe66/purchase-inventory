@@ -33,7 +33,8 @@ export type Domain = (typeof DOMAIN_VALUES)[number];
 export const ITEM_TYPE_VALUES = ['Gear', 'Consumable', 'Service'] as const;
 export type ItemType = (typeof ITEM_TYPE_VALUES)[number];
 
-export type Source = 'REI' | 'Amazon';
+export const SOURCE_VALUES = ['REI', 'Amazon', 'Other'] as const;
+export type Source = (typeof SOURCE_VALUES)[number];
 
 /**
  * One row in the `All Purchases` tab. 18 columns. Position-independent —

@@ -16,7 +16,7 @@ export interface LogDraft {
   type: ItemType;
 }
 
-const KNOWN_SOURCES: readonly Source[] = ['REI', 'Amazon'];
+const KNOWN_SOURCES: readonly Source[] = ['REI', 'Amazon', 'Other'];
 const KNOWN_TYPES: readonly ItemType[] = ['Gear', 'Consumable', 'Service'];
 
 const SYSTEM_PROMPT = `You extract structured purchase fields from Tom's free-form /log text. He uses this for in-store / cash / marketplace purchases that didn't come through Gmail.
@@ -65,7 +65,7 @@ export async function extractLogDraft(
   }
   const requiredKeys = ['itemName', 'brand', 'price', 'source', 'date', 'category', 'subCategory', 'color', 'size', 'type'];
   if (!requiredKeys.every((k) => k in raw)) return null;
-  const source = KNOWN_SOURCES.includes(raw.source as Source) ? (raw.source as Source) : 'Amazon';
+  const source = KNOWN_SOURCES.includes(raw.source as Source) ? (raw.source as Source) : 'Other';
   const type = KNOWN_TYPES.includes(raw.type as ItemType) ? (raw.type as ItemType) : 'Gear';
   const date = typeof raw.date === 'string' && raw.date.length > 0 ? raw.date : todayIso;
   return {

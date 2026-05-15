@@ -56,13 +56,13 @@ describe('extractLogDraft', () => {
     expect(draft).toBeNull();
   });
 
-  test('clamps an invalid source to Amazon', async () => {
+  test('clamps an invalid source to Other', async () => {
     const anthropic = makeFakeAnthropic(JSON.stringify({
       itemName: 'X', brand: '', price: 1, source: 'EBay', date: '2026-05-14',
       category: 'X', subCategory: '', color: '', size: '', type: 'Gear',
     }));
     const draft = await extractLogDraft(anthropic as any, 'X', '2026-05-14');
-    expect(draft?.source).toBe('Amazon');
+    expect(draft?.source).toBe('Other');
   });
 
   test('clamps an invalid type to Gear', async () => {
