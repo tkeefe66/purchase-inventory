@@ -1,7 +1,7 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AddgearStateStore } from '../../../lib/addgearState.js';
 import { PendingActionStore } from '../../../lib/pendingActions.js';
-import { startAddgear, continueAddgear, parseUserDate, extractDatePrefix, extractPrice, type AddgearDeps } from '../../../apps/bot/commands/addgear.js';
+import { startAddgear, continueAddgear, parseUserDate, extractDatePrefix, extractPrice, parseCaptionHints, type AddgearDeps } from '../../../apps/bot/commands/addgear.js';
 import type { PhotoExtraction } from '../../../lib/parsers/photo.js';
 import type { ProductCandidate } from '../../../lib/parsers/product-lookup.js';
 import type { Classification } from '../../../lib/classifier.js';
@@ -261,6 +261,58 @@ describe('parseUserDate', () => {
 
   test('random text → null', () => {
     expect(parseUserDate('two thousand twenty-three')).toBeNull();
+  });
+});
+
+describe('parseCaptionHints', () => {
+  test('natural date + $ price ("12-11-21 $135.15")', () => {
+    const h = parseCaptionHints('12-11-21 $135.15');
+    expect(h.date).toBe('2021-12-11');
+    expect(h.price).toBe(135.15);
+    expect(h.rest).toBe('');
+  });
+
+  test('natural date + bare price ("12-11-21 135.15")', () => {
+    const h = parseCaptionHints('12-11-21 135.15');
+    expect(h.date).toBe('2021-12-11');
+    expect(h.price).toBe(135.15);
+  });
+
+  test('spelled-month + $ price ("May 5 2023 $99")', () => {
+    const h = parseCaptionHints('May 5 2023 $99');
+    expect(h.date).toBe('2023-05-05');
+    expect(h.price).toBe(99);
+  });
+
+  test('just a date with no price', () => {
+    const h = parseCaptionHints('12-11-21');
+    expect(h.date).toBe('2021-12-11');
+    expect(h.price).toBeUndefined();
+  });
+
+  test('just a $ price with no date', () => {
+    const h = parseCaptionHints('$135.15');
+    expect(h.date).toBeUndefined();
+    expect(h.price).toBe(135.15);
+  });
+
+  test('legacy tilde format still works', () => {
+    const h = parseCaptionHints('~2018 ~$120');
+    expect(h.date).toBe('2018-01-01');
+    expect(h.price).toBe(120);
+  });
+
+  test('caption-only freeform passes through as rest', () => {
+    const h = parseCaptionHints('bought at the climbing gym');
+    expect(h.date).toBeUndefined();
+    expect(h.price).toBeUndefined();
+    expect(h.rest).toBe('bought at the climbing gym');
+  });
+
+  test('mixed natural date + leftover descriptive text', () => {
+    const h = parseCaptionHints('2018 from a friend');
+    expect(h.date).toBe('2018-01-01');
+    expect(h.rest).toContain('from a friend');
   });
 });
 
@@ -549,6 +601,27 @@ describe('startAddgear — product lookup populates URL candidates', () => {
     const step = deps.addgearState.peek('chat-1');
     if (step?.kind === 'awaiting-confirm') {
       expect(step.row.productUrl).toBe('');
+    }
+  });
+});
+
+describe('startAddgear — natural caption hints reach awaiting-confirm directly', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-14T12:00:00Z'));
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  test('"/addgear 12-11-21 $135.15" skips date and price prompts entirely', async () => {
+    const deps = makeDeps();
+    const reply = await startAddgear('chat-1', 'FILE-1', '/addgear 12-11-21 $135.15', deps);
+    expect(reply).toMatch(/About to log/i);
+    const step = deps.addgearState.peek('chat-1');
+    expect(step?.kind).toBe('awaiting-confirm');
+    if (step?.kind === 'awaiting-confirm') {
+      expect(step.row.date).toBe('2021-12-11');
+      expect(step.row.year).toBe('2021');
+      expect(step.row.price).toBe(135.15);
     }
   });
 });

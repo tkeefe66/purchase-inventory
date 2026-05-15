@@ -20,33 +20,73 @@ export interface AddgearDeps {
 }
 
 interface CaptionHints {
-  year?: string;
+  date?: string;       // YYYY-MM-DD
   price?: number;
-  rest: string;
+  rest: string;        // anything left after stripping recognized hints; passed to vision as a caption
 }
 
-function parseCaptionHints(captionAfterCommand: string): CaptionHints {
+/**
+ * Pulls a date and/or price out of the caption after the /addgear command.
+ *
+ * Recognized formats — same as the mid-flow date/price prompts so the user
+ * doesn't have to learn two grammars:
+ *   "12-11-21 $135.15"     date + price
+ *   "May 5 2023 $99"        date + price
+ *   "12-11-21"              just date
+ *   "$135.15"               just price
+ *   "~2018 ~$120"           legacy tilde format (still works)
+ */
+export function parseCaptionHints(captionAfterCommand: string): CaptionHints {
   const out: CaptionHints = { rest: '' };
-  const yearMatch = captionAfterCommand.match(/~(\d{4})\b/);
-  if (yearMatch) out.year = yearMatch[1]!;
-  // Capture each ~number with its optional $ sign. Without $, treat
-  // year-range numbers (1900-2099) as years, not prices, so `~2018`
-  // doesn't get misread as a $2018 purchase. With $, accept any value
-  // (gear can legitimately cost $1500+, e.g. bikes, skis).
-  const pricePattern = /~(\$?)(\d+(?:\.\d{1,2})?)\b/g;
-  let m: RegExpExecArray | null;
-  while ((m = pricePattern.exec(captionAfterCommand)) !== null) {
-    const hasDollar = m[1] === '$';
-    const value = Number(m[2]);
-    if (!Number.isFinite(value)) continue;
-    if (!hasDollar && value >= 1900 && value <= 2099) continue;
-    out.price = value;
-    break;
+  let remaining = captionAfterCommand.trim();
+
+  // Natural date prefix at start: "12-11-21 ...", "May 5 2023 ...", "2018 ..."
+  const split = extractDatePrefix(remaining);
+  if (split) {
+    out.date = split.date;
+    remaining = split.rest;
   }
-  out.rest = captionAfterCommand
+
+  // Try a $-prefixed price anywhere in the remaining text. Anchored bare-number
+  // matching is too brittle when the price sits among other tokens, so we
+  // specifically scan for the explicit $ form first.
+  const dollarMatch = remaining.match(/\$\s?(\d+(?:\.\d{1,2})?)\b/);
+  if (dollarMatch) {
+    const n = Number(dollarMatch[1]);
+    if (Number.isFinite(n) && n >= 0) {
+      out.price = n;
+      remaining = remaining.replace(dollarMatch[0], '').trim();
+    }
+  } else {
+    // No $ — try extractPrice on the rest (handles bare "135.15", "for 120")
+    const fromText = extractPrice(remaining);
+    if (fromText !== null) {
+      out.price = fromText;
+      remaining = '';
+    }
+  }
+
+  // Legacy tilde patterns still supported.
+  if (out.date === undefined) {
+    const tildeYear = remaining.match(/~(\d{4})\b/);
+    if (tildeYear) out.date = `${tildeYear[1]}-01-01`;
+  }
+  if (out.price === undefined) {
+    const tildePrice = remaining.match(/~(\$?)(\d+(?:\.\d{1,2})?)\b/);
+    if (tildePrice) {
+      const hasDollar = tildePrice[1] === '$';
+      const value = Number(tildePrice[2]);
+      if (Number.isFinite(value) && (hasDollar || value < 1900 || value > 2099)) {
+        out.price = value;
+      }
+    }
+  }
+  remaining = remaining
     .replace(/~\d{4}\b/g, '')
     .replace(/~\$?\d+(?:\.\d{1,2})?\b/g, '')
     .trim();
+
+  out.rest = remaining;
   return out;
 }
 
@@ -253,7 +293,7 @@ export async function startAddgear(
     itemName: extraction.itemName,
     color: extraction.color,
     size: extraction.size,
-    date: hints.year ? `${hints.year}-01-01` : '',
+    date: hints.date ?? '',
     dateAcknowledgedUnknown: false,
     price: hints.price ?? null,
     priceAcknowledgedUnknown: false,
