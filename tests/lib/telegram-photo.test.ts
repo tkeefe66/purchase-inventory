@@ -8,7 +8,7 @@ describe('getFile', () => {
   afterEach(() => { vi.restoreAllMocks(); });
 
   test('returns file_path from Telegram getFile response', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
         JSON.stringify({ ok: true, result: { file_id: 'F1', file_path: 'photos/file_1.jpg' } }),
         { status: 200 },
@@ -16,11 +16,43 @@ describe('getFile', () => {
     );
     const result = await getFile(cfg, 'F1');
     expect(result.file_path).toBe('photos/file_1.jpg');
+    expect(spy).toHaveBeenCalledWith('https://api.telegram.org/botTEST-TOKEN/getFile?file_id=F1');
+  });
+
+  test('url-encodes the file_id', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ ok: true, result: { file_id: 'A B/C', file_path: 'p.jpg' } }),
+        { status: 200 },
+      ),
+    );
+    await getFile(cfg, 'A B/C');
+    expect(spy).toHaveBeenCalledWith('https://api.telegram.org/botTEST-TOKEN/getFile?file_id=A%20B%2FC');
   });
 
   test('throws on HTTP error', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Bad Request', { status: 400 }));
     await expect(getFile(cfg, 'F1')).rejects.toThrow(/HTTP 400/);
+  });
+
+  test('throws when Telegram returns ok=false on a 200', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ ok: false, description: 'invalid file_id' }),
+        { status: 200 },
+      ),
+    );
+    await expect(getFile(cfg, 'BAD')).rejects.toThrow(/ok=false.*invalid file_id/);
+  });
+
+  test('throws when result has no file_path', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ ok: true, result: { file_id: 'F1' } }),
+        { status: 200 },
+      ),
+    );
+    await expect(getFile(cfg, 'F1')).rejects.toThrow(/no file_path/);
   });
 });
 
