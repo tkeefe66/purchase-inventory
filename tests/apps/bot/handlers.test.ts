@@ -46,6 +46,7 @@ function makeDeps(rows: MasterRow[], overrides: Partial<HandlerDeps> = {}): {
       fetchProductInfo: vi.fn() as unknown as HandlerDeps['addgearInner']['fetchProductInfo'],
       listExistingRows: () => [],
     },
+    runScan: vi.fn() as unknown as HandlerDeps['runScan'],
     ...overrides,
   };
   return { deps, cache, updateCalls, appendCalls };
@@ -191,6 +192,66 @@ describe('dispatchCommand: /stats + /refresh', () => {
   });
 });
 
+describe('dispatchCommand: /scan', () => {
+  test('reports summary when the pipeline adds items', async () => {
+    const { deps, cache } = makeDeps([]);
+    await cache.refresh();
+    const fakeResult = {
+      startedAt: '', endedAt: '',
+      messagesScanned: 3, itemsAdded: 1,
+      itemsBySource: { Amazon: 1 }, itemsByDomain: { Home: 1 },
+      skippedNonReceipts: 1, duplicatesIgnored: 1,
+      labelsApplied: 3, returnsApplied: 0, returnsUnmatched: 0,
+      errors: [], dryRun: false,
+    };
+    deps.runScan = vi.fn(async () => fakeResult) as unknown as HandlerDeps['runScan'];
+    const out = await dispatchCommand('chat-1', '/scan', deps);
+    expect(out).toMatch(/Inbox scan complete/);
+    expect(out).toMatch(/1 new item/);
+    expect(out).toMatch(/Amazon: 1/);
+    expect(out).toMatch(/3 emails scanned/);
+  });
+
+  test('reports "no new items" when itemsAdded=0', async () => {
+    const { deps } = makeDeps([]);
+    const fakeResult = {
+      startedAt: '', endedAt: '',
+      messagesScanned: 0, itemsAdded: 0,
+      itemsBySource: {}, itemsByDomain: {},
+      skippedNonReceipts: 0, duplicatesIgnored: 0,
+      labelsApplied: 0, returnsApplied: 0, returnsUnmatched: 0,
+      errors: [], dryRun: false,
+    };
+    deps.runScan = vi.fn(async () => fakeResult) as unknown as HandlerDeps['runScan'];
+    const out = await dispatchCommand('chat-1', '/scan', deps);
+    expect(out).toMatch(/No new items/);
+  });
+
+  test('surfaces returns and errors', async () => {
+    const { deps } = makeDeps([]);
+    const fakeResult = {
+      startedAt: '', endedAt: '',
+      messagesScanned: 2, itemsAdded: 0,
+      itemsBySource: {}, itemsByDomain: {},
+      skippedNonReceipts: 0, duplicatesIgnored: 0,
+      labelsApplied: 2, returnsApplied: 1, returnsUnmatched: 1,
+      errors: [{ messageId: 'x', subject: 'y', error: 'z' }], dryRun: false,
+    };
+    deps.runScan = vi.fn(async () => fakeResult) as unknown as HandlerDeps['runScan'];
+    const out = await dispatchCommand('chat-1', '/scan', deps);
+    expect(out).toMatch(/1 row marked returned/);
+    expect(out).toMatch(/1 return\(s\) couldn't be matched/);
+    expect(out).toMatch(/1 error/);
+  });
+
+  test('returns a friendly error if the pipeline throws', async () => {
+    const { deps } = makeDeps([]);
+    deps.runScan = vi.fn(async () => { throw new Error('oauth expired'); }) as unknown as HandlerDeps['runScan'];
+    const out = await dispatchCommand('chat-1', '/scan', deps);
+    expect(out).toMatch(/Scan failed: oauth expired/);
+  });
+});
+
 describe('dispatchCommand: /help', () => {
   test('lists the major commands and links to the sheet', async () => {
     const { deps } = makeDeps([]);
@@ -200,6 +261,7 @@ describe('dispatchCommand: /help', () => {
     expect(out).toContain('/log');
     expect(out).toContain('/confirm');
     expect(out).toContain('/cancel');
+    expect(out).toContain('/scan');
     expect(out).toContain('/stats');
     expect(out).toContain('/refresh');
     expect(out).toContain(`https://docs.google.com/spreadsheets/d/${deps.spreadsheetId}/edit`);

@@ -12,6 +12,7 @@ import type { LogDraft } from './commands/log.js';
 import { startAddgear, continueAddgear, type AddgearDeps } from './commands/addgear.js';
 import { AddgearStateStore } from '../../lib/addgearState.js';
 import { formatLogPreview } from './preview.js';
+import type { PipelineResult } from '../cron/pipeline.js';
 
 const STATUS_CHANGE_COMMANDS: Record<string, Status> = {
   lost: 'lost', sold: 'sold', donated: 'donated', retired: 'retired', broken: 'broken',
@@ -32,6 +33,10 @@ export interface HandlerDeps {
   startAddgear: typeof startAddgear;
   continueAddgear: typeof continueAddgear;
   addgearInner: Omit<AddgearDeps, 'addgearState' | 'pendingActions' | 'today'>;
+  /** On-demand inbox scan triggered by `/scan`. Same code path as the
+   *  scheduled cron; suppresses the pipeline's own Telegram digest so the
+   *  bot returns one formatted reply instead of two messages. */
+  runScan: () => Promise<PipelineResult>;
 }
 
 export async function dispatchCommand(chatId: string, text: string, deps: HandlerDeps): Promise<string | null> {
@@ -45,6 +50,7 @@ export async function dispatchCommand(chatId: string, text: string, deps: Handle
   if (name === 'cancel') return handleCancel(chatId, deps);
   if (name === 'stats') return handleStats(deps);
   if (name === 'refresh') return handleRefresh(deps);
+  if (name === 'scan') return handleScan(deps);
   if (name === 'help') return handleHelp(deps);
   return null;
 }
@@ -156,6 +162,7 @@ function handleHelp(deps: HandlerDeps): string {
     `/cancel — discard the pending row`,
     ``,
     `*Status*`,
+    `/scan — force the bot to scan your email for new purchases right now (don't wait for the 6am/6pm cron)`,
     `/stats — agent + cache statistics`,
     `/refresh — force-reload inventory from the sheet`,
     `/help — this message`,
@@ -178,6 +185,48 @@ async function handleRefresh(deps: HandlerDeps): Promise<string> {
     hashChanged: deps.cache.lastRefreshChangedHash,
   });
   return `Refreshed in ${dt}ms — ${snap.length} total rows, ${activeOutdoor} active outdoor.`;
+}
+
+async function handleScan(deps: HandlerDeps): Promise<string> {
+  const t0 = Date.now();
+  let result: PipelineResult;
+  try {
+    result = await deps.runScan();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return `Scan failed: ${msg}`;
+  }
+  const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+
+  // Refresh the local cache if anything was written so subsequent agent
+  // queries see the new items without waiting for the 15-min cache TTL.
+  if (result.itemsAdded > 0 || result.returnsApplied > 0) {
+    try { await deps.cache.forceRefresh(); } catch { /* non-fatal */ }
+  }
+
+  const lines: string[] = [`Inbox scan complete (${elapsed}s).`];
+  if (result.itemsAdded > 0) {
+    lines.push(`✅ ${result.itemsAdded} new item${result.itemsAdded === 1 ? '' : 's'}`);
+    const bySource = Object.entries(result.itemsBySource).map(([k, v]) => `${k}: ${v}`).join(', ');
+    if (bySource) lines.push(`   ${bySource}`);
+  } else {
+    lines.push(`📭 No new items`);
+  }
+  if (result.returnsApplied > 0) {
+    lines.push(`↩️ ${result.returnsApplied} row${result.returnsApplied === 1 ? '' : 's'} marked returned`);
+  }
+  if (result.returnsUnmatched > 0) {
+    lines.push(`⚠️ ${result.returnsUnmatched} return(s) couldn't be matched to a row`);
+  }
+  lines.push(
+    `${result.messagesScanned} email${result.messagesScanned === 1 ? '' : 's'} scanned`
+    + `, ${result.skippedNonReceipts} skipped`
+    + `, ${result.duplicatesIgnored} duplicates filtered`,
+  );
+  if (result.errors.length > 0) {
+    lines.push(`❌ ${result.errors.length} error${result.errors.length === 1 ? '' : 's'} — check the cron logs.`);
+  }
+  return lines.join('\n');
 }
 
 export async function handlePhoto(

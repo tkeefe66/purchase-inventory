@@ -22,6 +22,7 @@ import { extractFromPhoto } from '../../lib/parsers/photo.js';
 import { lookupProduct, fetchProductName, fetchProductInfo } from '../../lib/parsers/product-lookup.js';
 import { createClassifier } from '../../lib/classifier.js';
 import { routeMessage, routePhoto } from './router.js';
+import { runPipeline } from '../cron/pipeline.js';
 
 const CACHE_REFRESH_MS = 15 * 60 * 1000;
 const POLL_TIMEOUT_S = 25;
@@ -35,6 +36,10 @@ interface Env {
   anthropicApiKey: string;
   telegramBotToken: string;
   authorizedChatIds: Set<string>;
+  /** Earliest YYYY-MM-DD to ingest from. Optional — when unset, /scan uses
+   *  the pipeline default ("newer_than:30d"). Must match cron's value so
+   *  scheduled and on-demand runs see the same Gmail window. */
+  ingestAfterDate: string | undefined;
 }
 
 function readEnv(): Env {
@@ -62,6 +67,7 @@ function readEnv(): Env {
     authorizedChatIds: new Set(
       required.TELEGRAM_AUTHORIZED_CHAT_IDS!.split(',').map((s) => s.trim()).filter(Boolean),
     ),
+    ingestAfterDate: process.env.INGEST_AFTER_DATE,
   };
 }
 
@@ -131,6 +137,22 @@ async function main(): Promise<void> {
       listExistingRows: () =>
         cache.getSnapshot().map((r) => ({ brand: r.brand, itemName: r.itemName })),
     },
+    // /scan triggers the same pipeline the cron runs. Telegram token is
+    // intentionally omitted so the pipeline doesn't send its own digest —
+    // the bot returns a formatted reply instead.
+    runScan: () => runPipeline({
+      dryRun: false,
+      reprocessSince: undefined,
+      maxMessages: undefined,
+      ingestAfterDate: env.ingestAfterDate,
+      spreadsheetId: env.spreadsheetId,
+      clientId: env.googleClientId,
+      clientSecret: env.googleClientSecret,
+      refreshToken: env.googleRefreshToken,
+      anthropicKey: env.anthropicApiKey,
+      telegramBotToken: undefined,
+      telegramChatId: undefined,
+    }),
   };
 
   const routerDeps = {

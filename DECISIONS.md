@@ -962,6 +962,27 @@ Strong key is checked **first**. Falls back to the existing full key (orderId + 
 
 ---
 
+## 2026-05-15 — `/scan` on-demand inbox scan from the bot
+
+**Context:** Twice-daily scheduled cron means up to ~12 hours of lag between a purchase email arriving and the row appearing in the sheet. Tom wanted a way to force a scan now ("did this thing get picked up yet?") without SSHing into Railway or waiting for the next 6am/6pm run.
+
+**Decision:** New bot command `/scan`. The bot calls `runPipeline()` directly — same code path as the cron — with telegram credentials intentionally omitted so the pipeline doesn't send its own digest. The bot returns a formatted summary as the chat reply.
+
+**Why:**
+- One pipeline implementation = one set of behaviors. Bot and cron stay in sync forever.
+- Reuses bot's existing Anthropic + sheets clients via env vars (bot service has the same env as cron on Railway).
+- No new Railway service needed; it's just a bot command.
+
+**Trade-off accepted:** if `/scan` runs at the exact same moment as the scheduled cron, both might process the same unlabeled messages → potential duplicate rows. Mitigations: the Gmail label is applied at the end of each run (race window is the pipeline's runtime, ~5–60s), strong-key dedup catches same-ASIN-same-order, and twice-daily cron means the collision probability is tiny. Not worth a real lock for v1.
+
+**How to apply:**
+- `apps/bot/commands/parse.ts`: `'scan'` added to `CommandName`/`KNOWN`.
+- `apps/bot/handlers.ts`: `handleScan()` calls `deps.runScan()`, formats `PipelineResult` as a Telegram-friendly summary, force-refreshes the inventory cache when items were added or returns applied.
+- `apps/bot/index.ts`: wires `runScan = () => runPipeline({...env, telegramBotToken: undefined, telegramChatId: undefined})`.
+- `/help` text lists `/scan`.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale
