@@ -152,6 +152,68 @@ describe('dedupItems', () => {
     expect(dedupItems(items, empty)).toHaveLength(1);
   });
 
+  test('strong key dedup: same orderId + same ASIN catches item-name drift', () => {
+    // Auto-confirm parsed by Haiku gives a short, clean name.
+    const autoConfirm = {
+      orderId: '113-8780872-2847422',
+      brand: 'Peak Design',
+      itemName: 'Capture Camera Clip V3',
+      color: '',
+      size: '',
+      productUrl: 'https://www.amazon.com/dp/B0CHX1W1XY',
+    };
+    const idx = buildExistingKeySet([autoConfirm]);
+
+    // Same item later arrives via shipment-tracking — IMG alt is much longer,
+    // brand is duplicated, color/extras inline. Normalized names DON'T match.
+    const shipment = {
+      orderId: '113-8780872-2847422',
+      brand: 'Peak Design',
+      itemName: 'Peak Design Peak Design Capture Camera Clip V3, Black with Plate, Holds DSLR, Compact and Point and Shoot Bodies',
+      color: 'Black',
+      size: '',
+      productUrl: 'https://www.amazon.com/Peak-Design-Capture-Camera-Clip/dp/B0CHX1W1XY?ref=ppx',
+    };
+    expect(dedupItems([shipment], idx)).toHaveLength(0);
+  });
+
+  test('strong key does NOT collapse different items in the same order', () => {
+    const idx = buildExistingKeySet([{
+      orderId: '113-1111111-1111111',
+      brand: 'Peak Design',
+      itemName: 'Capture Camera Clip V3',
+      color: '',
+      size: '',
+      productUrl: 'https://www.amazon.com/dp/B0CHX1W1XY',
+    }]);
+    // Same order, different product → different ASIN → not a dup.
+    const otherItem = {
+      orderId: '113-1111111-1111111',
+      brand: 'Sigma',
+      itemName: '18-50mm F2.8 DC DN Contemporary',
+      color: '',
+      size: '',
+      productUrl: 'https://www.amazon.com/dp/B09ZZZZZZZ',
+    };
+    expect(dedupItems([otherItem], idx)).toHaveLength(1);
+  });
+
+  test('strong key dedup within a single batch (defensive)', () => {
+    // Same order/ASIN appearing twice in one batch (e.g. retry / duplicate
+    // shipment notification) should collapse to one row.
+    const items = [
+      {
+        orderId: 'A1', brand: 'X', itemName: 'Foo', color: '', size: '',
+        productUrl: 'https://amazon.com/dp/B0AAAAAAAA',
+      },
+      {
+        orderId: 'A1', brand: 'X', itemName: 'Foo (different name)', color: '', size: '',
+        productUrl: 'https://amazon.com/dp/B0AAAAAAAA',
+      },
+    ];
+    expect(dedupItems(items, empty)).toHaveLength(1);
+  });
+
   test('cross-match TOLERATES color/size formatting differences (the Salomon case)', () => {
     // Historical row: REI's 3-component colorway, manually entered
     const historical = {

@@ -172,6 +172,7 @@ export async function readDedupKeys(
       itemName: r.itemName,
       color: r.color,
       size: r.size,
+      productUrl: r.productUrl,
     })),
   );
 }

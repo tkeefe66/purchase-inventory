@@ -24,12 +24,18 @@
  * - Same item shipping multiple times under the same Order ID is treated as a
  *   duplicate (key matches exactly).
  */
+import { extractProductId } from './productId.js';
+
 export interface DedupKeyInput {
   orderId: string;
   brand: string;
   itemName: string;
   color: string;
   size: string;
+  /** Optional. When present, (orderId, productId) becomes the primary dedup
+   *  key — bulletproof against item-name drift between auto-confirm
+   *  (Haiku-extracted) and shipment (IMG-alt) emails for the same order. */
+  productUrl?: string;
 }
 
 function normalizeItemName(itemName: string, brand: string): string {
@@ -76,27 +82,47 @@ export function makeContentKey(input: { brand: string; itemName: string }): stri
 }
 
 /**
+ * Strong key — `(orderId, productId)` where productId is the ASIN (Amazon)
+ * or numeric product ID (REI) extracted from `productUrl`. This survives
+ * item-name drift between auto-confirm and shipment-tracking emails for the
+ * same order. Returns null when either side is missing.
+ */
+export function makeStrongKey(input: DedupKeyInput): string | null {
+  const orderId = input.orderId.trim();
+  if (!orderId) return null;
+  const pid = extractProductId(input.productUrl ?? '');
+  if (!pid) return null;
+  return `${orderId}||${pid}`;
+}
+
+/**
  * Per-row dedup index. Each existing row contributes:
  *   - Its full key (always) → exact-match lookups.
  *   - Its content key (only if Order ID is blank) → cross-match lookups,
  *     so a new fresh-email row can match a historical row with the same
  *     brand+name regardless of color/size formatting differences.
+ *   - Its strong key (when productUrl yields a productId AND orderId is
+ *     present) → catches cross-source item-name drift within the same order.
  */
 export interface DedupIndex {
   fullKeys: Set<string>;
   blankOrderContentKeys: Set<string>;
+  strongKeys: Set<string>;
 }
 
 export function buildExistingKeySet(rows: readonly DedupKeyInput[]): DedupIndex {
   const fullKeys = new Set<string>();
   const blankOrderContentKeys = new Set<string>();
+  const strongKeys = new Set<string>();
   for (const r of rows) {
     fullKeys.add(makeDedupKey(r));
     if (!r.orderId.trim()) {
       blankOrderContentKeys.add(makeContentKey(r));
     }
+    const strong = makeStrongKey(r);
+    if (strong) strongKeys.add(strong);
   }
-  return { fullKeys, blankOrderContentKeys };
+  return { fullKeys, blankOrderContentKeys, strongKeys };
 }
 
 // ---------------------------------------------------------------------------
@@ -163,8 +189,16 @@ export function dedupItems<T extends DedupKeyInput>(
   existing: DedupIndex,
 ): T[] {
   const seenInBatch = new Set<string>();
+  const seenStrongInBatch = new Set<string>();
   const out: T[] = [];
   for (const item of newItems) {
+    // Strong key first: (orderId, productId) survives item-name drift between
+    // auto-confirm (Haiku) and shipment-tracking (IMG-alt) for the same order.
+    const strongKey = makeStrongKey(item);
+    if (strongKey) {
+      if (existing.strongKeys.has(strongKey)) continue;
+      if (seenStrongInBatch.has(strongKey)) continue;
+    }
     const exactKey = makeDedupKey(item);
     if (existing.fullKeys.has(exactKey)) continue;
     if (seenInBatch.has(exactKey)) continue;
@@ -176,6 +210,7 @@ export function dedupItems<T extends DedupKeyInput>(
       if (existing.blankOrderContentKeys.has(contentKey)) continue;
     }
     seenInBatch.add(exactKey);
+    if (strongKey) seenStrongInBatch.add(strongKey);
     out.push(item);
   }
   return out;
