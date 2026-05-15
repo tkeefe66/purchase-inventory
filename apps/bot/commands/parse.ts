@@ -9,7 +9,8 @@ export type CommandName =
   | 'confirm'
   | 'cancel'
   | 'stats'
-  | 'refresh';
+  | 'refresh'
+  | 'help';
 
 export interface ParsedCommand {
   name: CommandName;
@@ -17,7 +18,7 @@ export interface ParsedCommand {
 }
 
 const KNOWN: readonly CommandName[] = [
-  'log', 'addgear', 'lost', 'sold', 'donated', 'retired', 'broken', 'confirm', 'cancel', 'stats', 'refresh',
+  'log', 'addgear', 'lost', 'sold', 'donated', 'retired', 'broken', 'confirm', 'cancel', 'stats', 'refresh', 'help',
 ];
 
 export function parseCommand(text: string): ParsedCommand | null {

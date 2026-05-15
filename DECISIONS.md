@@ -808,6 +808,32 @@ await telegram.sendMessage(chatId, reply);
 
 ---
 
+## 2026-05-15 — Image-sourced gear capture via `/addgear`
+
+**Decision:** Tom can add already-owned gear (no receipt) by sending a photo to the bot with a `/addgear` caption. A Sonnet 4.6 vision call extracts brand/itemName/color/size/date/price from photo+caption together. A web_search call (parallel to the classifier) returns up to 3 candidate product pages. The bot then prompts for missing fields, runs fuzzy dedup, and parks the row in `PendingActionStore` so the existing `/confirm` writes it. New rows carry `Source = "Image"` and `Order ID = "IMG-<YYYYMMDD>-<6hex SHA-256>"`. Full spec: `docs/superpowers/specs/2026-05-14-image-gear-capture-design.md`. Plan: `docs/superpowers/plans/2026-05-14-image-gear-capture.md`.
+
+**Why a separate flow from `/log`:** `/log` was free-text-only for in-store cash purchases. `/addgear` is photo-driven for gear that exists physically but has no receipt anywhere (gifts, hand-me-downs, pre-ingestion purchases). They share the terminal `PendingActionStore` + `/confirm` step but diverge upstream.
+
+**Why "Image" not "Manual" as the Source value:** Tom's choice (2026-05-14 brainstorm). Photo-sourced is the only manual-entry path right now, and "Image" reads better in the Sheet at a glance. `SOURCE_VALUES` is `['REI', 'Amazon', 'Other', 'Image']`. The Sheet's `Source` column dropdown was updated to include `Image` (one-time manual step).
+
+**Why vision parses the caption, not a separate Haiku call:** Sonnet vision already sees the caption alongside the image. Asking it to *also* extract date/price from the caption is one extra instruction, zero extra round-trips. Earlier iteration used a regex caption parser that was fragile (anchored to start-of-string, missed `LL Bean 12-11-21 $135.15`). Regex is still a fallback if vision misses something obvious.
+
+**Why pre-park the row at preview time:** First UX iteration parked the row in `PendingActionStore` only after the user typed "yes", then asked them to type `/confirm`. Two-step. Tom typed `/confirm` directly per the preview text and got "Nothing to confirm" because the pending store was empty. Fix: park the row the moment we show the preview, so `/confirm` works as the message promises. `handleConfirm` clears `addgearState` after a successful write so it doesn't linger.
+
+**Why always enter the product-pick step (even with 0 candidates):** First iteration silently skipped the pick step when web_search returned no candidates, landing the row with URL blank. Tom hit this with L.L.Bean boots — vision-only item name was wrong (`Bean Boots 8"` instead of the actual model) and there was no chance to supply a URL. Fix: always enter `awaiting-product-pick`. With 0 candidates the bot says "Couldn't find a confident product page — paste a URL or 'skip'".
+
+**Why curated allowed_domains + auto-retry fallback:** The Anthropic web_search tool rejects the *entire* call with 400 if any `allowed_domains` entry is blocked from their crawler. Initial list included `sony.com`, `nikon.com`, `gopro.com`, etc. — all blocked, all of which broke every lookup. Now: trimmed to outdoor-focused retailers and mid-size gear brands. Plus, if Anthropic adds future blocks, `lookupProduct` parses the blocked-domain list from the 400 message and retries with those domains removed (up to 3 attempts). One-time crawler-policy changes upstream no longer require a code push.
+
+**Why URL paste also re-fetches the page for canonical name:** When the user pastes their own URL (because lookup missed), we do a direct HTTP `fetch` of the page and extract the canonical product name from `og:title` (preferred) or `<title>`, strip trailing site-name patterns ("... | REI Co-op", "... – L.L.Bean"), and strip the brand prefix. No LLM call needed — `<title>`/`og:title` is reliable on every major outdoor retailer's product pages. 8-second timeout, presents as a normal browser UA. Silent fallback to vision's name on any failure.
+
+**Two-stage UX flow:** photo + caption → vision (with web_search lookup) → product-pick → (missing-field prompts: date, price) → fuzzy-dedup → confirm-preview → `/confirm`. Cancel works at every step via `/cancel` (clears both `pendingActions` and `addgearState`). Field corrections at the confirm step (`color: olive`, `url: https://...`, `item: Bean Boots Men's 10"`) re-park the patched row so the next `/confirm` reflects the edit.
+
+**Cost per `/addgear` call:** ~$0.02-0.04 (Sonnet vision + classifier + web_search at $0.01/search). Per-call latency: 6–13s (vision and lookup run in parallel after extraction; lookup includes the web_search round-trip). Acceptable for a deliberate-action flow.
+
+**Models referenced:** `VISION_MODEL = MODELS.sonnet` (added 2026-05-14 to `lib/models.ts`). All `/addgear` Claude calls use it. Update when a newer Sonnet ships.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale

@@ -188,3 +188,17 @@ describe('dispatchCommand: /stats + /refresh', () => {
     expect(out).toMatch(/2/);
   });
 });
+
+describe('dispatchCommand: /help', () => {
+  test('lists the major commands including /addgear and /log', async () => {
+    const { deps } = makeDeps([]);
+    const out = await dispatchCommand('chat-1', '/help', deps);
+    expect(out).not.toBeNull();
+    expect(out).toContain('/addgear');
+    expect(out).toContain('/log');
+    expect(out).toContain('/confirm');
+    expect(out).toContain('/cancel');
+    expect(out).toContain('/stats');
+    expect(out).toContain('/refresh');
+  });
+});

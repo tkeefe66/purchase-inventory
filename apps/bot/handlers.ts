@@ -44,6 +44,7 @@ export async function dispatchCommand(chatId: string, text: string, deps: Handle
   if (name === 'cancel') return handleCancel(chatId, deps);
   if (name === 'stats') return handleStats(deps);
   if (name === 'refresh') return handleRefresh(deps);
+  if (name === 'help') return handleHelp();
   return null;
 }
 
@@ -135,6 +136,31 @@ function handleStats(deps: HandlerDeps): string {
     activeOutdoorRows: activeOutdoor,
     freeContextTokens: 200_000 - approxTokens,
   });
+}
+
+function handleHelp(): string {
+  return [
+    `*Outdoor inventory bot — commands*`,
+    ``,
+    `*Capture*`,
+    `/addgear <caption> — send a photo of gear you own. Caption can include date and price, e.g. "12/21/23 $135.15". Bot extracts brand/name/color/size from the photo, looks up a product URL, and asks for any missing info.`,
+    `/log <description> — free-form text for in-store / cash purchases without a receipt.`,
+    ``,
+    `*Status changes*`,
+    `/retired <name or 6-char id> — mark as no longer in active rotation`,
+    `/lost | /sold | /donated | /broken <name or id> — corresponding status`,
+    ``,
+    `*Confirm flow*`,
+    `/confirm — write the pending row (after /log or /addgear preview)`,
+    `/cancel — discard the pending row`,
+    ``,
+    `*Status*`,
+    `/stats — agent + cache statistics`,
+    `/refresh — force-reload inventory from the sheet`,
+    `/help — this message`,
+    ``,
+    `Or just chat — outdoor questions go to the agent.`,
+  ].join('\n');
 }
 
 async function handleRefresh(deps: HandlerDeps): Promise<string> {
