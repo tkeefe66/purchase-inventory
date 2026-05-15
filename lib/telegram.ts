@@ -41,8 +41,18 @@ export async function sendMessage(
   }
 }
 
-export async function getUpdates(cfg: TelegramConfig): Promise<TelegramUpdate[]> {
-  const resp = await fetch(`${TELEGRAM_API_BASE}/bot${cfg.botToken}/getUpdates`);
+export interface GetUpdatesOptions {
+  offset?: number;
+  timeout?: number;
+}
+
+export async function getUpdates(cfg: TelegramConfig, opts: GetUpdatesOptions = {}): Promise<TelegramUpdate[]> {
+  const params = new URLSearchParams();
+  if (opts.offset !== undefined) params.set('offset', String(opts.offset));
+  if (opts.timeout !== undefined) params.set('timeout', String(opts.timeout));
+  const qs = params.toString();
+  const url = `${TELEGRAM_API_BASE}/bot${cfg.botToken}/getUpdates${qs ? `?${qs}` : ''}`;
+  const resp = await fetch(url);
   if (!resp.ok) {
     const body = await resp.text();
     throw new Error(`Telegram getUpdates failed (HTTP ${resp.status}): ${body}`);
