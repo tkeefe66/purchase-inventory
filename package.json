@@ -29,6 +29,7 @@
     "label-historical": "tsx scripts/label-historical.ts",
     "dedup-existing": "tsx scripts/dedup-existing.ts",
     "smoke-cache": "tsx scripts/smoke-cache.ts",
+    "smoke-agent": "tsx scripts/smoke-agent.ts",
     "bot": "tsx apps/bot/index.ts"
   },
   "dependencies": {
