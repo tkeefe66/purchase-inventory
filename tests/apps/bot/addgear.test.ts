@@ -29,7 +29,6 @@ function makeDeps(overrides: Partial<AddgearDeps> = {}): AddgearDeps {
       reasoning: 'classified',
     })),
     listExistingRows: vi.fn((): readonly { brand: string; itemName: string }[] => []),
-    randomHash: () => 'abc123',
     ...overrides,
   };
 }
@@ -179,5 +178,37 @@ describe('startAddgear — vision cannot read', () => {
     const reply = await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
     expect(reply).toMatch(/couldn't read/i);
     expect(deps.addgearState.peek('chat-1')).toBeNull();
+  });
+});
+
+describe('startAddgear — caption price hints across the year-range', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-14T12:00:00Z'));
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  test('dollar-prefixed $1500 is parsed as a price (not skipped as year-like)', async () => {
+    const deps = makeDeps();
+    await startAddgear('chat-1', 'FILE-1', '/addgear ~2019 ~$1500', deps);
+    const step = deps.addgearState.peek('chat-1');
+    expect(step?.kind).toBe('awaiting-confirm');
+    if (step?.kind === 'awaiting-confirm') {
+      expect(step.row.price).toBe(1500);
+      expect(step.row.date).toBe('2019-01-01');
+    }
+  });
+
+  test('bare 2018 (no dollar sign) is treated as a year, not a price', async () => {
+    const deps = makeDeps();
+    const reply = await startAddgear('chat-1', 'FILE-1', '/addgear ~2018', deps);
+    // year filled, price still missing → flow stops at awaiting-price
+    expect(reply).toMatch(/what did you pay/i);
+    const step = deps.addgearState.peek('chat-1');
+    expect(step?.kind).toBe('awaiting-price');
+    if (step?.kind === 'awaiting-price') {
+      expect(step.draft.date).toBe('2018-01-01');
+      expect(step.draft.price).toBeNull();
+    }
   });
 });

@@ -5,7 +5,7 @@ import type { FuzzyMatch } from './dedup.js';
  * Per-chat state for the /addgear capture flow.
  *
  * The flow walks chatId through:
- *   awaiting-date -> awaiting-price -> [awaiting-size] -> [awaiting-dedup] -> awaiting-confirm
+ *   awaiting-date -> awaiting-price -> [awaiting-dedup] -> awaiting-confirm
  *
  * Each step holds a partial draft; awaiting-confirm holds a complete MasterRow.
  * On terminal success (write succeeds) or user /cancel, the entry is cleared.
@@ -33,7 +33,6 @@ export interface PartialDraft {
 export type AddgearStep =
   | { kind: 'awaiting-date'; draft: PartialDraft }
   | { kind: 'awaiting-price'; draft: PartialDraft }
-  | { kind: 'awaiting-size'; draft: PartialDraft }
   | { kind: 'awaiting-dedup'; draft: PartialDraft; candidates: FuzzyMatch[] }
   | { kind: 'awaiting-confirm'; row: MasterRow };
 

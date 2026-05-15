@@ -14,7 +14,6 @@ export interface AddgearDeps {
   extractFromPhoto: (bytes: Buffer, caption: string) => Promise<PhotoExtraction | null>;
   classify: (input: { brand: string; itemName: string }) => Promise<Classification>;
   listExistingRows: () => readonly FuzzyCandidateRow[];
-  randomHash: () => string;
 }
 
 interface CaptionHints {
@@ -27,13 +26,19 @@ function parseCaptionHints(captionAfterCommand: string): CaptionHints {
   const out: CaptionHints = { rest: '' };
   const yearMatch = captionAfterCommand.match(/~(\d{4})\b/);
   if (yearMatch) out.year = yearMatch[1]!;
-  const priceMatch = captionAfterCommand.match(/~\$?(\d+(?:\.\d{1,2})?)\b/g);
-  if (priceMatch) {
-    const candidates = priceMatch
-      .map((m) => Number(m.replace(/[~$]/g, '')))
-      .filter((n) => !Number.isNaN(n) && (n < 1000 || n > 3000));
-    const first = candidates[0];
-    if (first !== undefined) out.price = first;
+  // Capture each ~number with its optional $ sign. Without $, treat
+  // year-range numbers (1900-2099) as years, not prices, so `~2018`
+  // doesn't get misread as a $2018 purchase. With $, accept any value
+  // (gear can legitimately cost $1500+, e.g. bikes, skis).
+  const pricePattern = /~(\$?)(\d+(?:\.\d{1,2})?)\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = pricePattern.exec(captionAfterCommand)) !== null) {
+    const hasDollar = m[1] === '$';
+    const value = Number(m[2]);
+    if (!Number.isFinite(value)) continue;
+    if (!hasDollar && value >= 1900 && value <= 2099) continue;
+    out.price = value;
+    break;
   }
   out.rest = captionAfterCommand
     .replace(/~\d{4}\b/g, '')
