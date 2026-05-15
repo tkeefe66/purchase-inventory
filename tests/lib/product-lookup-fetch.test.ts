@@ -69,6 +69,52 @@ describe('fetchProductName', () => {
     const result = await fetchProductName('https://llbean.com/x', 'LL Bean');
     expect(result).toBe('Bean Boots');
   });
+
+  test('skips Amazon URLs entirely (bot-shield serves junk titles)', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const result = await fetchProductName(
+      'https://www.amazon.com/Forbidden-Road-380T-Nylon-Portable/dp/B072WQ8BJW',
+      'Forbidden Road',
+    );
+    expect(result).toBeNull();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  test('rejects a title that is just the source hostname (Amazon.com)', async () => {
+    // Belt-and-suspenders: even on hosts we don't preemptively skip, if the
+    // extracted title equals the domain, treat it as junk.
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(htmlResponse(`
+      <html><head><meta property="og:title" content="Example.com"></head></html>
+    `));
+    const result = await fetchProductName('https://example.com/x', 'Forbidden Road');
+    expect(result).toBeNull();
+  });
+
+  test('rejects "Robot Check" / bot-shield titles', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(htmlResponse(`
+      <html><head><title>Robot Check</title></head></html>
+    `));
+    const result = await fetchProductName('https://example.com/x', 'Forbidden Road');
+    expect(result).toBeNull();
+  });
+
+  test('rejects a title that is just the brand', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(htmlResponse(`
+      <html><head><title>Patagonia</title></head></html>
+    `));
+    const result = await fetchProductName('https://patagonia.com/x', 'Patagonia');
+    expect(result).toBeNull();
+  });
+
+  test('rejects "Sign In" / "Just a moment" / "404" pages', async () => {
+    for (const title of ['Sign In', 'Just a moment...', '404 Not Found', 'Page Not Found']) {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(htmlResponse(`
+        <html><head><title>${title}</title></head></html>
+      `));
+      const result = await fetchProductName('https://example.com/x', 'Forbidden Road');
+      expect(result, `should reject "${title}"`).toBeNull();
+    }
+  });
 });
 
 describe('lookupProduct — domain-fallback on blocked-by-Anthropic 400', () => {

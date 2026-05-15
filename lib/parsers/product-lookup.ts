@@ -116,18 +116,36 @@ export async function lookupProduct(
   return out;
 }
 
+// Retailers that aggressively serve a bot-shield / generic landing page to
+// non-browser User-Agents — the title we'd extract is junk like "Amazon.com"
+// or "Robot Check". Vision's itemName beats that, so we skip refinement and
+// let the caller fall back to it.
+const FETCH_BLOCKED_HOSTS: ReadonlySet<string> = new Set([
+  'amazon.com', 'amzn.to', 'amzn.com', 'smile.amazon.com',
+]);
+
 /**
  * Fetch a product page and extract its canonical name from <title> or og:title.
  * Strips the brand prefix and common trailing site-name patterns
  * ("... | REI Co-op", "... - L.L.Bean").
  *
- * Returns null on network error, non-2xx, parse failure, or empty extraction.
+ * Returns null on network error, non-2xx, parse failure, empty extraction, or
+ * a junk-looking title (hostname-only, bot-shield phrases, brand-only).
  * Pure heuristic — no LLM call. Sufficient for the major outdoor retailer
  * and brand sites, which all render product name into <title>/og:title
  * server-side.
  */
 export async function fetchProductName(url: string, brand: string): Promise<string | null> {
   if (!/^https?:\/\//i.test(url)) return null;
+
+  let host = '';
+  try { host = new URL(url).hostname.replace(/^www\./, '').toLowerCase(); }
+  catch { return null; }
+  if (FETCH_BLOCKED_HOSTS.has(host)) {
+    console.info(`[product-lookup] skipping title-refine for known-blocked host ${host}`);
+    return null;
+  }
+
   let html: string;
   try {
     const resp = await fetch(url, {
@@ -176,7 +194,53 @@ export async function fetchProductName(url: string, brand: string): Promise<stri
     }
   }
 
-  return name.length > 0 ? name : null;
+  if (name.length === 0) return null;
+  if (isJunkTitle(name, host, brand)) {
+    console.warn(`[product-lookup] rejecting junk title "${name}" from ${url}`);
+    return null;
+  }
+  return name;
+}
+
+/**
+ * Reject titles that clearly aren't a product name — they tend to come from
+ * bot-shield landing pages or error pages. Caller falls back to vision's
+ * itemName when this fires.
+ */
+function isJunkTitle(name: string, host: string, brand: string): boolean {
+  const lower = name.toLowerCase().trim();
+  if (lower.length < 3) return true;
+
+  // Title equals the source hostname or its bare domain — common bot-shield
+  // signature ("Amazon.com", "ebay"). The strict equality is intentional;
+  // a real product title like "Bean Boots — L.L.Bean" has already been
+  // trimmed of the site suffix by this point.
+  if (host) {
+    if (lower === host) return true;
+    const bareDomain = host.split('.')[0];
+    if (bareDomain && lower === bareDomain) return true;
+  }
+
+  // Title is just the brand — nothing identifying about it.
+  if (brand && lower === brand.toLowerCase().trim()) return true;
+
+  // Common error / captcha / sign-in / not-found markers.
+  const junkPatterns: readonly RegExp[] = [
+    /^robot check\b/i,
+    /^sorry\b/i,
+    /^sign[- ]?in\b/i,
+    /^login\b/i,
+    /^page not found\b/i,
+    /^not found\b/i,
+    /^access denied\b/i,
+    /^are you a robot\b/i,
+    /\bcaptcha\b/i,
+    /^just a moment\b/i,
+    /^attention required\b/i,
+    /^404\b/,
+    /^error\b/i,
+  ];
+  return junkPatterns.some((p) => p.test(name));
 }
 
 function decodeBasicEntities(s: string): string {
