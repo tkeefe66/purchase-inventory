@@ -4,6 +4,7 @@ import type { SheetsClient } from '../../lib/sheets.js';
 import type { Status } from '../../lib/types.js';
 import { ConversationStore } from '../../lib/conversations.js';
 import { Stats } from '../../apps/bot/stats.js';
+import { callWithRetry } from '../../lib/anthropic-retry.js';
 import { createTools, TOOL_SCHEMAS, type ToolHandlers } from './tools.js';
 
 export interface SystemPromptInput {
@@ -93,13 +94,15 @@ export class OutdoorAgent {
 
     for (let loop = 0; loop < MAX_TOOL_LOOPS; loop += 1) {
       const callStart = Date.now();
-      const resp = await this.opts.anthropic.messages.create({
-        model: SONNET_MODEL,
-        max_tokens: MAX_TOKENS,
-        system,
-        messages: messages as Anthropic.Messages.MessageParam[],
-        tools: TOOL_SCHEMAS as unknown as Anthropic.Messages.Tool[],
-      });
+      const resp = await callWithRetry(() =>
+        this.opts.anthropic.messages.create({
+          model: SONNET_MODEL,
+          max_tokens: MAX_TOKENS,
+          system,
+          messages: messages as Anthropic.Messages.MessageParam[],
+          tools: TOOL_SCHEMAS as unknown as Anthropic.Messages.Tool[],
+        }),
+      );
       if (loop === 0) {
         firstTokenMs = Date.now() - callStart;
         wasCacheHit = (resp.usage.cache_read_input_tokens ?? 0) > 0;

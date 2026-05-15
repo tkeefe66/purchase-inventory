@@ -216,4 +216,44 @@ describe('OutdoorAgent.handleMessage', () => {
     });
     await expect(agent.handleMessage('chat-1', 'hi')).rejects.toThrow(/tool-call loop/i);
   });
+
+  test('retries the Anthropic call on a transient 529 Overloaded and recovers', async () => {
+    const { cache, conversations, stats } = makeAgentDeps([FIXTURE_THERMAREST]);
+    await cache.refresh();
+    let callCount = 0;
+    const successResp = {
+      content: [{ type: 'text', text: 'second try worked' }],
+      stop_reason: 'end_turn' as const,
+      usage: { input_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 2400, output_tokens: 5 },
+    };
+    const anthropic = {
+      messages: {
+        create: vi.fn(async () => {
+          callCount += 1;
+          if (callCount === 1) {
+            const Anthropic = (await import('@anthropic-ai/sdk')).default;
+            throw new Anthropic.APIError(
+              529,
+              { error: { type: 'overloaded_error', message: 'Overloaded' } } as never,
+              'Overloaded',
+              undefined,
+            );
+          }
+          return successResp;
+        }),
+      },
+    };
+    const agent = new OutdoorAgent({
+      cache,
+      conversations,
+      stats,
+      anthropic: anthropic as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['anthropic'],
+      sheets: {} as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['sheets'],
+      spreadsheetId: 'TEST',
+      updateRowStatus: vi.fn() as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['updateRowStatus'],
+    });
+    const out = await agent.handleMessage('chat-1', 'hi');
+    expect(out).toBe('second try worked');
+    expect(callCount).toBe(2);
+  });
 });
