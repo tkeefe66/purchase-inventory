@@ -33,7 +33,7 @@ export async function routePhoto(
   try {
     const reply = await deps.handlePhoto(chatId, photoFileId, caption);
     if (reply !== null) return reply;
-    return `Got a photo, but I only know what to do with photos captioned "/addgear". Send /help for options.`;
+    return `Got a photo, but I only know what to do with photos captioned "/addgear ...".`;
   } catch (err) {
     console.error(`[router] photo error from ${chatId}:`, err instanceof Error ? err.stack ?? err.message : err);
     return GENERIC_ERROR;

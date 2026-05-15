@@ -163,12 +163,7 @@ async function main(): Promise<void> {
           const largest = msg.photo[msg.photo.length - 1]!;
           const caption = msg.caption ?? '';
           console.log(`[bot] ${chatId} -> [photo file_id=${largest.file_id} caption="${caption.slice(0, 60)}"]`);
-          try {
-            reply = await routePhoto(chatId, largest.file_id, caption, routerDeps);
-          } catch (err) {
-            console.error(`[bot] photo handling failed for ${chatId}:`, err instanceof Error ? err.stack ?? err.message : err);
-            continue;
-          }
+          reply = await routePhoto(chatId, largest.file_id, caption, routerDeps);
         } else if (msg.text) {
           const text = msg.text;
           console.log(`[bot] ${chatId} -> "${text.slice(0, 80)}"`);
