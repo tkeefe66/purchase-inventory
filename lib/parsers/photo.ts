@@ -11,6 +11,10 @@ export interface PhotoExtraction {
   itemName: string;
   color: string;
   size: string;
+  // Optional caption-derived hints. Only filled if the user wrote them in
+  // the /addgear caption; never inferred from the photo alone.
+  date?: string;        // YYYY-MM-DD
+  price?: number;       // post-discount USD
   confidence: {
     brand: Confidence;
     itemName: Confidence;
@@ -32,7 +36,7 @@ export function mediaTypeFromPath(filePath: string): ImageMediaType {
   return 'image/jpeg';
 }
 
-const SYSTEM_PROMPT = `You extract structured product info from a photograph of a piece of outdoor gear. The user has taken the photo to log an already-owned item into a personal inventory. There is no receipt — you are reading hang tags, labels, embroidered logos, and the gear itself.
+const SYSTEM_PROMPT = `You extract structured product info from a photograph of a piece of outdoor gear plus an optional free-form caption the user typed. The user took the photo to log an already-owned item; there is no receipt.
 
 Return JSON only with this exact shape:
 {
@@ -40,6 +44,8 @@ Return JSON only with this exact shape:
   "itemName": "<product name, brand stripped, empty string if not visible>",
   "color": "<color or empty>",
   "size": "<size from tag, e.g. 'M', '32x32', empty if not visible>",
+  "date": "<YYYY-MM-DD, only if a purchase date appears in the caption, otherwise omit this field entirely>",
+  "price": <number, only if a price appears in the caption, otherwise omit this field entirely>,
   "confidence": {
     "brand": "high" | "low" | "missing",
     "itemName": "high" | "low" | "missing",
@@ -53,7 +59,10 @@ Rules:
 - "low" = you can guess from style/shape but it isn't printed
 - "missing" = no signal at all; the field is an empty string in that case
 - Item name should NOT include the brand prefix (we store brand separately)
-- If the user caption (passed as text below the image) names the gear, weight it but still verify against the photo
+- The CAPTION is highly authoritative. If the caption explicitly names the brand or product, USE that — do not let an unclear tag in the photo override an explicit caption.
+- The caption may include a date in many shapes: "12-11-21", "12/21/23", "May 5 2023", "Sept. 12 2019", "2018", "December 2020". Resolve to YYYY-MM-DD. US convention: M/D/Y. 2-digit years assume 2000s. Year-only → YYYY-01-01. Month+year → YYYY-MM-01.
+- The caption may include a price in many shapes: "$135.15", "135.15", "for 120", "$1500". Bare 4-digit numbers in 1900–2099 with no $ are years, not prices.
+- If a field is not in the caption, OMIT date / price (do not include them with empty values).
 - Return JSON only, no prose, no markdown fences`;
 
 export async function extractFromPhoto(
@@ -94,7 +103,8 @@ export async function extractFromPhoto(
   const conf = raw.confidence as Record<string, unknown>;
   const validConf = (v: unknown): Confidence =>
     v === 'high' || v === 'low' || v === 'missing' ? v : 'missing';
-  return {
+
+  const out: PhotoExtraction = {
     brand: String(raw.brand ?? ''),
     itemName: String(raw.itemName ?? ''),
     color: String(raw.color ?? ''),
@@ -106,4 +116,11 @@ export async function extractFromPhoto(
       size: validConf(conf.size),
     },
   };
+  if (typeof raw.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.date)) {
+    out.date = raw.date;
+  }
+  if (typeof raw.price === 'number' && Number.isFinite(raw.price) && raw.price >= 0) {
+    out.price = raw.price;
+  }
+  return out;
 }

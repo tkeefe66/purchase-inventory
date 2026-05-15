@@ -288,14 +288,19 @@ export async function startAddgear(
     }),
   ]);
 
+  // Vision parses caption end-to-end (date/price too); regex hints are a
+  // belt-and-suspenders fallback if vision missed something obvious.
+  const resolvedDate = extraction.date ?? hints.date ?? '';
+  const resolvedPrice = extraction.price ?? hints.price ?? null;
+
   const draft: PartialDraft = {
     brand: extraction.brand,
     itemName: extraction.itemName,
     color: extraction.color,
     size: extraction.size,
-    date: hints.date ?? '',
+    date: resolvedDate,
     dateAcknowledgedUnknown: false,
-    price: hints.price ?? null,
+    price: resolvedPrice,
     priceAcknowledgedUnknown: false,
     productUrl: '',
     imageFileId: photoFileId,

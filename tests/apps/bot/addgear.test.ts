@@ -624,6 +624,32 @@ describe('startAddgear — natural caption hints reach awaiting-confirm directly
       expect(step.row.price).toBe(135.15);
     }
   });
+
+  test('vision-extracted date+price (caption parser missed them) still populate the draft', async () => {
+    // Simulates "/addgear LL Bean 12-11-21 $135.15": regex caption parser
+    // catches the price but misses the date (LL Bean prefix), so vision
+    // returns the resolved date itself.
+    const deps = makeDeps({
+      extractFromPhoto: vi.fn(async (): Promise<PhotoExtraction> => ({
+        brand: 'L.L.Bean',
+        itemName: 'Bean Boot',
+        color: 'Brown',
+        size: '10',
+        date: '2021-12-11',
+        price: 135.15,
+        confidence: { brand: 'high', itemName: 'high', color: 'high', size: 'high' },
+      })),
+    });
+    const reply = await startAddgear('chat-1', 'FILE-1', '/addgear LL Bean 12-11-21 $135.15', deps);
+    expect(reply).toMatch(/About to log/i);
+    const step = deps.addgearState.peek('chat-1');
+    expect(step?.kind).toBe('awaiting-confirm');
+    if (step?.kind === 'awaiting-confirm') {
+      expect(step.row.date).toBe('2021-12-11');
+      expect(step.row.price).toBe(135.15);
+      expect(step.row.brand).toBe('L.L.Bean');
+    }
+  });
 });
 
 describe('continueAddgear — url field correction at awaiting-confirm', () => {
