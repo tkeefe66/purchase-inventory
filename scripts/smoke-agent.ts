@@ -23,12 +23,19 @@ async function main(): Promise<void> {
 
   const sheets = createSheetsClient({ clientId, clientSecret, refreshToken });
   const cache = new InventoryCache(() => readMasterRows(sheets, spreadsheetId));
+  const t0 = Date.now();
   await cache.refresh();
+  const refreshMs = Date.now() - t0;
   const activeOutdoor = filterToActiveOutdoor(cache.getSnapshot());
   console.log(`Loaded ${activeOutdoor.length} active outdoor rows (${cache.getCompactView().text.length} chars in compact view)`);
 
   const anthropic = new Anthropic({ apiKey: anthropicKey });
   const stats = new Stats();
+  stats.recordRefresh({
+    rowCount: cache.getSnapshot().length,
+    durationMs: refreshMs,
+    hashChanged: cache.lastRefreshChangedHash,
+  });
   const conversations = new ConversationStore({ idleTtlMs: 30 * 60 * 1000 });
 
   const agent = new OutdoorAgent({

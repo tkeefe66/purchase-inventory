@@ -46,7 +46,8 @@ export function buildSystemPrompt(input: SystemPromptInput): SystemBlock[] {
   ];
 }
 
-const SONNET_MODEL = 'claude-sonnet-4-6';
+const PRIMARY_MODEL = 'claude-sonnet-4-6';
+const FALLBACK_MODELS = ['claude-opus-4-6', 'claude-haiku-4-5'] as const;
 const MAX_TOKENS = 1024;
 const MAX_TOOL_LOOPS = 8;
 
@@ -91,18 +92,12 @@ export class OutdoorAgent {
     const t0 = Date.now();
     let wasCacheHit = false;
     let totalSystemTokens = 0;
+    let usedFallbackModel: string | null = null;
 
     for (let loop = 0; loop < MAX_TOOL_LOOPS; loop += 1) {
       const callStart = Date.now();
-      const resp = await callWithRetry(() =>
-        this.opts.anthropic.messages.create({
-          model: SONNET_MODEL,
-          max_tokens: MAX_TOKENS,
-          system,
-          messages: messages as Anthropic.Messages.MessageParam[],
-          tools: TOOL_SCHEMAS as unknown as Anthropic.Messages.Tool[],
-        }),
-      );
+      const { resp, modelUsed } = await this.callWithModelFallback(system, messages);
+      if (modelUsed !== PRIMARY_MODEL) usedFallbackModel = modelUsed;
       if (loop === 0) {
         firstTokenMs = Date.now() - callStart;
         wasCacheHit = (resp.usage.cache_read_input_tokens ?? 0) > 0;
@@ -136,6 +131,10 @@ export class OutdoorAgent {
       throw new Error('Agent tool-call loop exceeded max iterations without producing a text response');
     }
 
+    if (usedFallbackModel) {
+      console.warn(`[outdoorAgent] primary model ${PRIMARY_MODEL} returned 529; fell back to ${usedFallbackModel}`);
+    }
+
     const totalResponseMs = Date.now() - t0;
     this.opts.stats.recordQuery({
       systemPromptTokens: totalSystemTokens,
@@ -148,6 +147,34 @@ export class OutdoorAgent {
     this.opts.conversations.append(chatId, { role: 'assistant', content: assistantText });
 
     return assistantText;
+  }
+
+  private async callWithModelFallback(
+    system: SystemBlock[],
+    messages: AnthropicMessage[],
+  ): Promise<{ resp: Anthropic.Messages.Message; modelUsed: string }> {
+    const baseArgs = {
+      max_tokens: MAX_TOKENS,
+      system,
+      messages: messages as Anthropic.Messages.MessageParam[],
+      tools: TOOL_SCHEMAS as unknown as Anthropic.Messages.Tool[],
+    };
+    const chain = [PRIMARY_MODEL, ...FALLBACK_MODELS];
+    let lastErr: unknown;
+    for (const model of chain) {
+      try {
+        const resp = await callWithRetry(
+          () => this.opts.anthropic.messages.create({ ...baseArgs, model }),
+          { maxRetries: model === PRIMARY_MODEL ? 5 : 2 },
+        );
+        return { resp, modelUsed: model };
+      } catch (err) {
+        lastErr = err;
+        if (err instanceof Anthropic.APIError && err.status === 529) continue;
+        throw err;
+      }
+    }
+    throw lastErr;
   }
 
   private async dispatchTool(name: string, input: unknown): Promise<unknown> {

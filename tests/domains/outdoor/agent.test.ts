@@ -217,6 +217,49 @@ describe('OutdoorAgent.handleMessage', () => {
     await expect(agent.handleMessage('chat-1', 'hi')).rejects.toThrow(/tool-call loop/i);
   });
 
+  test('falls back to opus-4-6 when sonnet-4-6 returns sustained 529s', async () => {
+    const { cache, conversations, stats } = makeAgentDeps([FIXTURE_THERMAREST]);
+    await cache.refresh();
+    const Anthropic = (await import('@anthropic-ai/sdk')).default;
+    const successResp = {
+      content: [{ type: 'text', text: 'opus answered' }],
+      stop_reason: 'end_turn' as const,
+      usage: { input_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 5 },
+    };
+    const seenModels: string[] = [];
+    const anthropic = {
+      messages: {
+        create: vi.fn(async (args: { model: string }) => {
+          seenModels.push(args.model);
+          if (args.model === 'claude-sonnet-4-6') {
+            throw new Anthropic.APIError(
+              529,
+              { error: { type: 'overloaded_error', message: 'Overloaded' } } as never,
+              'Overloaded',
+              undefined,
+            );
+          }
+          return successResp;
+        }),
+      },
+    };
+    const agent = new OutdoorAgent({
+      cache,
+      conversations,
+      stats,
+      anthropic: anthropic as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['anthropic'],
+      sheets: {} as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['sheets'],
+      spreadsheetId: 'TEST',
+      updateRowStatus: vi.fn() as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['updateRowStatus'],
+    });
+    const out = await agent.handleMessage('chat-1', 'hi');
+    expect(out).toBe('opus answered');
+    const sonnetAttempts = seenModels.filter((m) => m === 'claude-sonnet-4-6');
+    const opusAttempts = seenModels.filter((m) => m === 'claude-opus-4-6');
+    expect(sonnetAttempts.length).toBeGreaterThanOrEqual(5); // primary retried fully first
+    expect(opusAttempts.length).toBeGreaterThanOrEqual(1);
+  }, 60000);
+
   test('retries the Anthropic call on a transient 529 Overloaded and recovers', async () => {
     const { cache, conversations, stats } = makeAgentDeps([FIXTURE_THERMAREST]);
     await cache.refresh();
