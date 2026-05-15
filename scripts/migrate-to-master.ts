@@ -4,11 +4,11 @@ import Anthropic from '@anthropic-ai/sdk';
 import { parse as parseDate, isValid } from 'date-fns';
 import { buildFallbackProductUrl } from '../lib/url-fallback.js';
 import { PARSER_MODEL } from '../lib/models.js';
+import { callWithRetry } from '../lib/anthropic-retry.js';
 const TARGET_TAB = 'All Purchases';
 const REI_TAB = 'REI All Purchases';
 const AMAZON_TAB = 'Amazon Purchases';
 const CONCURRENCY = parseInt(process.env.MIGRATE_CONCURRENCY ?? '3', 10);
-const MAX_RETRIES = 5;
 const SAMPLE_SIZE = 8;
 
 const STATUS_VALUES = [
@@ -607,27 +607,6 @@ Return the four fields.`;
     type: parsed.type,
     reasoning: parsed.reasoning,
   };
-}
-
-async function callWithRetry<T>(fn: () => Promise<T>): Promise<T> {
-  let lastErr: unknown;
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastErr = err;
-      const isRetryable =
-        err instanceof Anthropic.RateLimitError ||
-        err instanceof Anthropic.InternalServerError ||
-        err instanceof Anthropic.APIConnectionError ||
-        err instanceof Anthropic.APIConnectionTimeoutError ||
-        (err instanceof Anthropic.APIError && (err.status === 529 || err.status === 503 || err.status === 504));
-      if (!isRetryable || attempt === MAX_RETRIES - 1) throw err;
-      const delayMs = Math.min(1000 * 2 ** attempt, 30000) + Math.floor(Math.random() * 500);
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
-  }
-  throw lastErr;
 }
 
 function amazonRowFallback(
