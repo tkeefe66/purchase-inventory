@@ -80,18 +80,33 @@ export async function lookupProduct(
 
   const textBlocks = resp.content.filter((b): b is Anthropic.TextBlock => b.type === 'text');
   const lastText = textBlocks[textBlocks.length - 1];
-  if (!lastText) return [];
-
-  let raw: { candidates?: unknown };
-  try {
-    raw = JSON.parse(lastText.text) as { candidates?: unknown };
-  } catch {
+  if (!lastText) {
+    console.warn(`[product-lookup] no text block in response for "${query}"`);
     return [];
   }
 
-  if (!Array.isArray(raw.candidates)) return [];
+  // Strip common JSON wrappers Claude sometimes adds despite "no markdown fences"
+  // (```json ... ``` or stray prose before/after the object).
+  const cleaned = extractJsonObject(lastText.text);
+  if (!cleaned) {
+    console.warn(`[product-lookup] could not isolate JSON in response for "${query}": ${lastText.text.slice(0, 200)}`);
+    return [];
+  }
 
-  return raw.candidates
+  let raw: { candidates?: unknown };
+  try {
+    raw = JSON.parse(cleaned) as { candidates?: unknown };
+  } catch (err) {
+    console.warn(`[product-lookup] JSON parse failed for "${query}": ${err instanceof Error ? err.message : err}`);
+    return [];
+  }
+
+  if (!Array.isArray(raw.candidates)) {
+    console.info(`[product-lookup] no candidates in response for "${query}"`);
+    return [];
+  }
+
+  const out = raw.candidates
     .filter((c): c is { itemName: string; productUrl: string; source?: string } =>
       typeof c === 'object' && c !== null
       && typeof (c as Record<string, unknown>).itemName === 'string'
@@ -107,4 +122,19 @@ export async function lookupProduct(
       }
       return { itemName: c.itemName, productUrl: c.productUrl, source };
     });
+  console.info(`[product-lookup] "${query}" → ${out.length} candidate(s)`);
+  return out;
+}
+
+/**
+ * Find the first balanced JSON object in a string, tolerating wrapping markdown
+ * fences and any leading/trailing prose. Returns null if no object is found.
+ */
+function extractJsonObject(text: string): string | null {
+  const fence = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/i);
+  if (fence) return fence[1] ?? null;
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) return null;
+  return text.slice(start, end + 1);
 }

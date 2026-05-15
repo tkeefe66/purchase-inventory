@@ -30,11 +30,27 @@ function makeDeps(overrides: Partial<AddgearDeps> = {}): AddgearDeps {
       reasoning: 'classified',
     })),
     listExistingRows: vi.fn((): readonly { brand: string; itemName: string }[] => []),
-    // Default: lookup returns no candidates → skip the awaiting-product-pick step.
-    // Tests that exercise the pick step override this.
+    // Default: lookup returns no candidates → user lands in awaiting-product-pick.
+    // Tests that focus on downstream states (date / price / confirm) should use
+    // startAddgearSkippingPick() to walk past the pick step.
     lookupProduct: vi.fn(async () => []),
     ...overrides,
   };
+}
+
+/**
+ * Helper for tests that don't care about the product-pick step. Calls startAddgear
+ * then immediately replies "skip" so the flow advances to date / price / confirm.
+ */
+async function startAddgearSkippingPick(
+  chatId: string,
+  photoFileId: string,
+  caption: string,
+  deps: AddgearDeps,
+): Promise<string> {
+  await startAddgear(chatId, photoFileId, caption, deps);
+  const reply = await continueAddgear(chatId, 'skip', deps);
+  return reply ?? '';
 }
 
 describe('startAddgear — vision extracts everything', () => {
@@ -46,7 +62,7 @@ describe('startAddgear — vision extracts everything', () => {
 
   test('with vision filling all fields and caption "~2018 ~$120", lands in awaiting-confirm', async () => {
     const deps = makeDeps();
-    const reply = await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    const reply = await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
     expect(reply).toMatch(/About to log/i);
     expect(reply).toContain('Patagonia');
     expect(reply).toContain('Houdini Jacket');
@@ -58,7 +74,7 @@ describe('startAddgear — vision extracts everything', () => {
 describe('startAddgear — missing date triggers prompt', () => {
   test('with no caption hints, asks for date', async () => {
     const deps = makeDeps();
-    const reply = await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
+    const reply = await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear', deps);
     expect(reply).toMatch(/when did you buy it/i);
     const step = deps.addgearState.peek('chat-1');
     expect(step?.kind).toBe('awaiting-date');
@@ -66,7 +82,7 @@ describe('startAddgear — missing date triggers prompt', () => {
 
   test('user replies with a year and flow advances to awaiting-price', async () => {
     const deps = makeDeps();
-    await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
+    await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear', deps);
     const reply = await continueAddgear('chat-1', '2018', deps);
     expect(reply).toMatch(/what did you pay/i);
     const step = deps.addgearState.peek('chat-1');
@@ -80,7 +96,7 @@ describe('startAddgear — missing date triggers prompt', () => {
 describe('startAddgear — missing price triggers prompt after date', () => {
   test('user replies with a price and flow advances to confirm', async () => {
     const deps = makeDeps();
-    await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
+    await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear', deps);
     await continueAddgear('chat-1', '2018', deps);
     const reply = await continueAddgear('chat-1', '120', deps);
     expect(reply).toMatch(/About to log/i);
@@ -95,7 +111,7 @@ describe('startAddgear — missing price triggers prompt after date', () => {
 
   test('user replies "unknown" for price and flow advances to confirm', async () => {
     const deps = makeDeps();
-    await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
+    await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear', deps);
     await continueAddgear('chat-1', '2018', deps);
     const reply = await continueAddgear('chat-1', 'unknown', deps);
     expect(reply).toMatch(/About to log/i);
@@ -112,7 +128,7 @@ describe('startAddgear — fuzzy dedup match', () => {
     const deps = makeDeps({
       listExistingRows: () => [{ brand: 'Patagonia', itemName: 'Houdini Jacket' }],
     });
-    const reply = await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    const reply = await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
     expect(reply).toMatch(/similar to existing rows/i);
     expect(reply).toContain('Patagonia');
     const step = deps.addgearState.peek('chat-1');
@@ -123,7 +139,7 @@ describe('startAddgear — fuzzy dedup match', () => {
     const deps = makeDeps({
       listExistingRows: () => [{ brand: 'Patagonia', itemName: 'Houdini Jacket' }],
     });
-    await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
     const reply = await continueAddgear('chat-1', 'add anyway', deps);
     expect(reply).toMatch(/About to log/i);
     const step = deps.addgearState.peek('chat-1');
@@ -134,7 +150,7 @@ describe('startAddgear — fuzzy dedup match', () => {
 describe('continueAddgear — confirm, correct, cancel', () => {
   test('row is pre-parked in pendingActions when awaiting-confirm is reached', async () => {
     const deps = makeDeps();
-    await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
     expect(deps.addgearState.peek('chat-1')?.kind).toBe('awaiting-confirm');
     const pending = deps.pendingActions.peek('chat-1');
     expect(pending).not.toBeNull();
@@ -144,7 +160,7 @@ describe('continueAddgear — confirm, correct, cancel', () => {
 
   test('"yes" alias points the user at /confirm (does not write directly)', async () => {
     const deps = makeDeps();
-    await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
     const reply = await continueAddgear('chat-1', 'yes', deps);
     expect(reply).toMatch(/\/confirm/);
     // Row is still parked, state is still awaiting-confirm — user just needs to type /confirm
@@ -154,7 +170,7 @@ describe('continueAddgear — confirm, correct, cancel', () => {
 
   test('"color: red" patches the row and re-parks the new version', async () => {
     const deps = makeDeps();
-    await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
     const reply = await continueAddgear('chat-1', 'color: red', deps);
     expect(reply).toContain('red');
     const step = deps.addgearState.peek('chat-1');
@@ -169,7 +185,7 @@ describe('continueAddgear — confirm, correct, cancel', () => {
 
   test('"/cancel" clears both state stores', async () => {
     const deps = makeDeps();
-    await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
     // Pre-condition: both stores populated
     expect(deps.pendingActions.peek('chat-1')).not.toBeNull();
     const reply = await continueAddgear('chat-1', '/cancel', deps);
@@ -359,7 +375,7 @@ describe('continueAddgear — combined date+price during awaiting-date', () => {
 
   test('accepts "12-11-21 for 135.15" — sets date AND price, skips awaiting-price', async () => {
     const deps = makeDeps();
-    await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
+    await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear', deps);
     const reply = await continueAddgear('chat-1', '12-11-21 for 135.15', deps);
     expect(reply).toMatch(/About to log/i);
     const step = deps.addgearState.peek('chat-1');
@@ -372,7 +388,7 @@ describe('continueAddgear — combined date+price during awaiting-date', () => {
 
   test('accepts "May 5 2023 $99" — sets date AND price', async () => {
     const deps = makeDeps();
-    await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
+    await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear', deps);
     const reply = await continueAddgear('chat-1', 'May 5 2023 $99', deps);
     expect(reply).toMatch(/About to log/i);
     const step = deps.addgearState.peek('chat-1');
@@ -384,7 +400,7 @@ describe('continueAddgear — combined date+price during awaiting-date', () => {
 
   test('plain date still works — advances to awaiting-price', async () => {
     const deps = makeDeps();
-    await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
+    await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear', deps);
     const reply = await continueAddgear('chat-1', '12-11-21', deps);
     expect(reply).toMatch(/what did you pay/i);
     const step = deps.addgearState.peek('chat-1');
@@ -404,7 +420,7 @@ describe('continueAddgear — looser price parsing during awaiting-price', () =>
 
   test('accepts "$135.15"', async () => {
     const deps = makeDeps();
-    await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
+    await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear', deps);
     await continueAddgear('chat-1', '2021', deps);
     await continueAddgear('chat-1', '$135.15', deps);
     const step = deps.addgearState.peek('chat-1');
@@ -415,7 +431,7 @@ describe('continueAddgear — looser price parsing during awaiting-price', () =>
 
   test('accepts "for 120"', async () => {
     const deps = makeDeps();
-    await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
+    await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear', deps);
     await continueAddgear('chat-1', '2021', deps);
     await continueAddgear('chat-1', 'for 120', deps);
     const step = deps.addgearState.peek('chat-1');
@@ -434,7 +450,7 @@ describe('continueAddgear — date input variations during awaiting-date', () =>
 
   test('accepts slash date "12/21/23"', async () => {
     const deps = makeDeps();
-    await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
+    await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear', deps);
     const reply = await continueAddgear('chat-1', '12/21/23', deps);
     expect(reply).toMatch(/what did you pay/i);
     const step = deps.addgearState.peek('chat-1');
@@ -446,7 +462,7 @@ describe('continueAddgear — date input variations during awaiting-date', () =>
 
   test('accepts spelled-out date "May 5 2023"', async () => {
     const deps = makeDeps();
-    await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
+    await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear', deps);
     const reply = await continueAddgear('chat-1', 'May 5 2023', deps);
     expect(reply).toMatch(/what did you pay/i);
     const step = deps.addgearState.peek('chat-1');
@@ -457,7 +473,7 @@ describe('continueAddgear — date input variations during awaiting-date', () =>
 
   test('rejects garbage with a helpful hint', async () => {
     const deps = makeDeps();
-    await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
+    await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear', deps);
     const reply = await continueAddgear('chat-1', 'lol idk', deps);
     expect(reply).toMatch(/couldn't read/i);
     expect(reply).toMatch(/12\/21\/23|May 5 2023/);
@@ -475,7 +491,7 @@ describe('startAddgear — caption price hints across the year-range', () => {
 
   test('dollar-prefixed $1500 is parsed as a price (not skipped as year-like)', async () => {
     const deps = makeDeps();
-    await startAddgear('chat-1', 'FILE-1', '/addgear ~2019 ~$1500', deps);
+    await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear ~2019 ~$1500', deps);
     const step = deps.addgearState.peek('chat-1');
     expect(step?.kind).toBe('awaiting-confirm');
     if (step?.kind === 'awaiting-confirm') {
@@ -486,7 +502,7 @@ describe('startAddgear — caption price hints across the year-range', () => {
 
   test('bare 2018 (no dollar sign) is treated as a year, not a price', async () => {
     const deps = makeDeps();
-    const reply = await startAddgear('chat-1', 'FILE-1', '/addgear ~2018', deps);
+    const reply = await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear ~2018', deps);
     // year filled, price still missing → flow stops at awaiting-price
     expect(reply).toMatch(/what did you pay/i);
     const step = deps.addgearState.peek('chat-1');
@@ -581,9 +597,19 @@ describe('startAddgear — product lookup populates URL candidates', () => {
     expect(deps.addgearState.peek('chat-1')?.kind).toBe('awaiting-product-pick');
   });
 
-  test('when lookup returns no candidates, flow skips to awaiting-date (or confirm if hints filled)', async () => {
+  test('when lookup returns no candidates, still enters awaiting-product-pick (URL paste / skip)', async () => {
     const deps = makeDeps({ lookupProduct: vi.fn(async () => []) });
     const reply = await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    expect(reply).toMatch(/couldn't find a confident product page/i);
+    expect(reply).toMatch(/paste a product url/i);
+    const step = deps.addgearState.peek('chat-1');
+    expect(step?.kind).toBe('awaiting-product-pick');
+  });
+
+  test('no-candidates state: "skip" advances to confirm with blank URL', async () => {
+    const deps = makeDeps({ lookupProduct: vi.fn(async () => []) });
+    await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    const reply = await continueAddgear('chat-1', 'skip', deps);
     expect(reply).toMatch(/About to log/i);
     const step = deps.addgearState.peek('chat-1');
     expect(step?.kind).toBe('awaiting-confirm');
@@ -592,16 +618,32 @@ describe('startAddgear — product lookup populates URL candidates', () => {
     }
   });
 
-  test('lookup throws → flow continues with empty URL', async () => {
+  test('no-candidates state: pasting a URL sets productUrl and advances', async () => {
+    const deps = makeDeps({ lookupProduct: vi.fn(async () => []) });
+    await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    const reply = await continueAddgear('chat-1', 'https://llbean.com/bean-boots', deps);
+    expect(reply).toMatch(/About to log/i);
+    const step = deps.addgearState.peek('chat-1');
+    if (step?.kind === 'awaiting-confirm') {
+      expect(step.row.productUrl).toBe('https://llbean.com/bean-boots');
+    }
+  });
+
+  test('no-candidates state: replying "1" tells user to paste a URL', async () => {
+    const deps = makeDeps({ lookupProduct: vi.fn(async () => []) });
+    await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    const reply = await continueAddgear('chat-1', '1', deps);
+    expect(reply).toMatch(/no candidates were found/i);
+    expect(deps.addgearState.peek('chat-1')?.kind).toBe('awaiting-product-pick');
+  });
+
+  test('lookup throws → caught upstream, flow enters awaiting-product-pick with 0 candidates', async () => {
     const deps = makeDeps({
       lookupProduct: vi.fn(async () => { throw new Error('search service down'); }),
     });
     const reply = await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
-    expect(reply).toMatch(/About to log/i);
-    const step = deps.addgearState.peek('chat-1');
-    if (step?.kind === 'awaiting-confirm') {
-      expect(step.row.productUrl).toBe('');
-    }
+    expect(reply).toMatch(/couldn't find a confident product page/i);
+    expect(deps.addgearState.peek('chat-1')?.kind).toBe('awaiting-product-pick');
   });
 });
 
@@ -614,7 +656,7 @@ describe('startAddgear — natural caption hints reach awaiting-confirm directly
 
   test('"/addgear 12-11-21 $135.15" skips date and price prompts entirely', async () => {
     const deps = makeDeps();
-    const reply = await startAddgear('chat-1', 'FILE-1', '/addgear 12-11-21 $135.15', deps);
+    const reply = await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear 12-11-21 $135.15', deps);
     expect(reply).toMatch(/About to log/i);
     const step = deps.addgearState.peek('chat-1');
     expect(step?.kind).toBe('awaiting-confirm');
@@ -640,7 +682,7 @@ describe('startAddgear — natural caption hints reach awaiting-confirm directly
         confidence: { brand: 'high', itemName: 'high', color: 'high', size: 'high' },
       })),
     });
-    const reply = await startAddgear('chat-1', 'FILE-1', '/addgear LL Bean 12-11-21 $135.15', deps);
+    const reply = await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear LL Bean 12-11-21 $135.15', deps);
     expect(reply).toMatch(/About to log/i);
     const step = deps.addgearState.peek('chat-1');
     expect(step?.kind).toBe('awaiting-confirm');
@@ -661,7 +703,7 @@ describe('continueAddgear — url field correction at awaiting-confirm', () => {
 
   test('"url: https://..." updates productUrl', async () => {
     const deps = makeDeps();
-    await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
     const reply = await continueAddgear('chat-1', 'url: https://patagonia.com/x', deps);
     expect(reply).toContain('patagonia.com');
     const step = deps.addgearState.peek('chat-1');
@@ -672,7 +714,7 @@ describe('continueAddgear — url field correction at awaiting-confirm', () => {
 
   test('"url: clear" blanks the productUrl', async () => {
     const deps = makeDeps();
-    await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
     await continueAddgear('chat-1', 'url: https://example.com/foo', deps);
     await continueAddgear('chat-1', 'url: clear', deps);
     const step = deps.addgearState.peek('chat-1');
@@ -683,7 +725,7 @@ describe('continueAddgear — url field correction at awaiting-confirm', () => {
 
   test('"url: not-a-url" is rejected', async () => {
     const deps = makeDeps();
-    await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
     const reply = await continueAddgear('chat-1', 'url: just-some-text', deps);
     expect(reply).toMatch(/must start with http/i);
   });

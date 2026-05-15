@@ -311,8 +311,12 @@ export async function startAddgear(
     reasoning: 'captured via /addgear photo',
   };
 
+  // Always enter the product-pick step. Even with 0 candidates the user
+  // should have a chance to paste a URL — silently skipping was the
+  // worst UX (Tom hit this with a pair of L.L.Bean boots where the lookup
+  // returned empty and the row landed with URL blank + a vision-guessed name).
+  deps.addgearState.set(chatId, { kind: 'awaiting-product-pick', draft, candidates });
   if (candidates.length > 0) {
-    deps.addgearState.set(chatId, { kind: 'awaiting-product-pick', draft, candidates });
     const lines = candidates.map(
       (c, i) => `  ${i + 1}. ${draft.brand} ${c.itemName} — ${c.source}\n     ${c.productUrl}`,
     );
@@ -323,8 +327,11 @@ export async function startAddgear(
       `Reply 1, 2, or 3 to pick, paste a URL to use that instead, or 'skip' to leave URL blank.`,
     ].join('\n');
   }
-
-  return advanceFlow(chatId, draft, deps);
+  return [
+    `Vision read: ${draft.brand} ${draft.itemName}.`,
+    `Couldn't find a confident product page via web search.`,
+    `Paste a product URL to use (and refine the name), or reply 'skip' to leave URL blank.`,
+  ].join('\n');
 }
 
 function advanceFlow(chatId: string, draft: PartialDraft, deps: AddgearDeps): string {
@@ -375,8 +382,12 @@ export async function continueAddgear(
   }
 
   if (step.kind === 'awaiting-product-pick') {
+    const hasCandidates = step.candidates.length > 0;
     const pick = reply.match(/^([123])$/);
     if (pick) {
+      if (!hasCandidates) {
+        return `No candidates were found via web search — paste a URL or reply 'skip'.`;
+      }
       const idx = Number(pick[1]) - 1;
       const candidate = step.candidates[idx];
       if (!candidate) {
@@ -393,7 +404,9 @@ export async function continueAddgear(
     if (/^skip$/i.test(reply)) {
       return advanceFlow(chatId, step.draft, deps);
     }
-    return `Pick 1, 2, or 3, paste a full URL (https://...), or reply 'skip' to leave URL blank.`;
+    return hasCandidates
+      ? `Pick 1, 2, or 3, paste a full URL (https://...), or reply 'skip' to leave URL blank.`
+      : `Paste a product URL (https://...) or reply 'skip' to leave URL blank.`;
   }
 
   if (step.kind === 'awaiting-date') {
