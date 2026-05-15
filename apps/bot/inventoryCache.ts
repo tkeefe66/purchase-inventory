@@ -4,8 +4,15 @@ import { itemId } from '../../domains/outdoor/types.js';
 
 export type Fetcher = () => Promise<MasterRow[]>;
 
+export interface RefreshInfo {
+  rowCount: number;
+  durationMs: number;
+  hashChanged: boolean;
+}
+
 export interface StartOptions {
   refreshIntervalMs: number;
+  onRefresh?: (info: RefreshInfo) => void;
 }
 
 export class InventoryCache {
@@ -18,12 +25,24 @@ export class InventoryCache {
   constructor(private readonly fetcher: Fetcher) {}
 
   async start(opts: StartOptions): Promise<void> {
-    await this.refresh();
+    await this.refreshAndNotify(opts.onRefresh);
     this.timer = setInterval(() => {
-      this.refresh().catch((err) => {
+      this.refreshAndNotify(opts.onRefresh).catch((err) => {
         console.error('[inventoryCache] refresh failed:', err);
       });
     }, opts.refreshIntervalMs);
+  }
+
+  private async refreshAndNotify(onRefresh: ((info: RefreshInfo) => void) | undefined): Promise<void> {
+    const t0 = Date.now();
+    await this.refresh();
+    if (onRefresh) {
+      onRefresh({
+        rowCount: this.snapshot.length,
+        durationMs: Date.now() - t0,
+        hashChanged: this.lastRefreshChangedHash,
+      });
+    }
   }
 
   stop(): void {

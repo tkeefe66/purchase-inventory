@@ -71,13 +71,16 @@ async function main(): Promise<void> {
   const anthropic = new Anthropic({ apiKey: env.anthropicApiKey });
   const telegramCfg: TelegramConfig = { botToken: env.telegramBotToken };
 
-  const cache = new InventoryCache(() => readMasterRows(sheets, env.spreadsheetId));
-  await cache.start({ refreshIntervalMs: CACHE_REFRESH_MS });
-  console.log(`[bot] inventory loaded: ${cache.getSnapshot().length} rows`);
-
   const stats = new Stats();
   const conversations = new ConversationStore({ idleTtlMs: 30 * 60 * 1000 });
   const pendingActions = new PendingActionStore({ ttlMs: 5 * 60 * 1000 });
+
+  const cache = new InventoryCache(() => readMasterRows(sheets, env.spreadsheetId));
+  await cache.start({
+    refreshIntervalMs: CACHE_REFRESH_MS,
+    onRefresh: (info) => stats.recordRefresh(info),
+  });
+  console.log(`[bot] inventory loaded: ${cache.getSnapshot().length} rows`);
 
   const agent = new OutdoorAgent({
     cache,

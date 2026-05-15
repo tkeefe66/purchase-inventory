@@ -134,4 +134,27 @@ describe('InventoryCache', () => {
     expect(fetcher.calls).toBe(3); // no further calls after stop
     vi.useRealTimers();
   });
+
+  test('start() invokes onRefresh callback on initial + each scheduled refresh', async () => {
+    vi.useFakeTimers();
+    const fetcher = makeFetcher([
+      [FIXTURE_THERMAREST],
+      [FIXTURE_THERMAREST, FIXTURE_NO_BRAND],
+    ]);
+    const calls: { rowCount: number; hashChanged: boolean }[] = [];
+    const cache = new InventoryCache(fetcher.fetch);
+    await cache.start({
+      refreshIntervalMs: 1000,
+      onRefresh: (info) => calls.push({ rowCount: info.rowCount, hashChanged: info.hashChanged }),
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ rowCount: 1, hashChanged: true });
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toMatchObject({ rowCount: 2, hashChanged: true });
+
+    cache.stop();
+    vi.useRealTimers();
+  });
 });
