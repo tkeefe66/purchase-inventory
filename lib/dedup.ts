@@ -99,6 +99,65 @@ export function buildExistingKeySet(rows: readonly DedupKeyInput[]): DedupIndex 
   return { fullKeys, blankOrderContentKeys };
 }
 
+// ---------------------------------------------------------------------------
+// Fuzzy match — used by /addgear to warn before writing a likely duplicate.
+// ---------------------------------------------------------------------------
+
+/**
+ * Used by /addgear flow to warn before writing a duplicate. Returns the top
+ * 3 existing rows with score >= 0.5 ranked by token-overlap (Jaccard).
+ *
+ * Score is Jaccard over the token set of (normalizedBrand + normalizedItemName).
+ * Normalization: lowercase, trim, collapse internal whitespace.
+ */
+export interface FuzzyMatch {
+  rowIndex: number;
+  brand: string;
+  itemName: string;
+  score: number;
+}
+
+export interface FuzzyCandidateRow {
+  brand: string;
+  itemName: string;
+}
+
+function tokenize(s: string): Set<string> {
+  return new Set(
+    s.toLowerCase().trim().split(/\s+/).filter((t) => t.length > 0),
+  );
+}
+
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 && b.size === 0) return 0;
+  let inter = 0;
+  for (const t of a) if (b.has(t)) inter++;
+  const union = a.size + b.size - inter;
+  return union === 0 ? 0 : inter / union;
+}
+
+export function fuzzyMatchExisting(
+  brand: string,
+  itemName: string,
+  rows: readonly FuzzyCandidateRow[],
+): FuzzyMatch[] {
+  const target = tokenize(`${brand} ${itemName}`);
+  const scored: FuzzyMatch[] = [];
+  rows.forEach((row, idx) => {
+    const candidate = tokenize(`${row.brand} ${row.itemName}`);
+    const score = jaccard(target, candidate);
+    if (score >= 0.5) {
+      scored.push({ rowIndex: idx, brand: row.brand, itemName: row.itemName, score });
+    }
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, 3);
+}
+
+// ---------------------------------------------------------------------------
+// Standard dedup — used by the ingest pipeline.
+// ---------------------------------------------------------------------------
+
 export function dedupItems<T extends DedupKeyInput>(
   newItems: readonly T[],
   existing: DedupIndex,
