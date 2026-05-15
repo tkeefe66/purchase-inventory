@@ -36,6 +36,15 @@ describe('fuzzyMatchExisting', () => {
     expect(result).toEqual([]);
   });
 
+  test('score exactly 0.5 is included (>= boundary)', () => {
+    // target tokens = {patagonia, houdini}; candidate = {patagonia}
+    // |inter|=1, |union|=2, jaccard = 0.5
+    const rows = [{ brand: 'Patagonia', itemName: '' }];
+    const result = fuzzyMatchExisting('Patagonia', 'Houdini', rows);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.score).toBeCloseTo(0.5, 5);
+  });
+
   test('caps results at 3 even when more match', () => {
     const rows = Array.from({ length: 5 }, (_, i) => ({
       brand: 'Patagonia',
