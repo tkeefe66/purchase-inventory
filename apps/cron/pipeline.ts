@@ -12,7 +12,7 @@ import {
   listMessages,
   type GmailClient,
 } from '../../lib/gmail.js';
-import { parseAmazonEmail } from '../../lib/parsers/amazon.js';
+import { parseAmazonShipmentEmail, parseAmazonOrderEmail } from '../../lib/parsers/amazon.js';
 import { parseReiEmail } from '../../lib/parsers/rei.js';
 import type { ParsedOrder } from '../../lib/parsers/types.js';
 import { routeItem } from '../../lib/router.js';
@@ -114,7 +114,7 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineResult
   for (const msgId of messageIds) {
     result.messagesScanned++;
     try {
-      const rows = await processMessage(gmail, msgId, classify);
+      const rows = await processMessage(gmail, msgId, classify, anthropic);
       if (rows === 'non-receipt') {
         result.skippedNonReceipts++;
         messagesToLabel.push(msgId);
@@ -202,6 +202,7 @@ async function processMessage(
   gmail: GmailClient,
   msgId: string,
   classify: ReturnType<typeof createClassifier>,
+  anthropic: Anthropic,
 ): Promise<MasterRow[] | 'non-receipt'> {
   const msg = await getMessage(gmail, msgId);
   const subject = getHeader(msg, 'Subject') ?? '(no subject)';
@@ -223,7 +224,7 @@ async function processMessage(
     return 'non-receipt';
   }
 
-  const parsedOrders = parseEmail(source, html);
+  const parsedOrders = await parseEmail(source, html, anthropic);
   if (!parsedOrders || parsedOrders.length === 0) {
     log(`  [skip] ${msgId} ${source} non-receipt — "${subject.slice(0, 50)}"`);
     return 'non-receipt';
@@ -243,13 +244,21 @@ async function processMessage(
   return rows;
 }
 
-function parseEmail(source: Source, html: string): ParsedOrder[] | null {
+async function parseEmail(
+  source: Source,
+  html: string,
+  anthropic: Anthropic,
+): Promise<ParsedOrder[] | null> {
   if (source === 'REI') {
     const r = parseReiEmail(html);
     return r ? [r] : null;
   }
   if (source === 'Amazon') {
-    return parseAmazonEmail(html);
+    // Shipment-tracking is the fast path (cheerio, no LLM). Falls through to
+    // the Haiku-based order-confirm parser if this isn't a shipment email.
+    const shipment = parseAmazonShipmentEmail(html);
+    if (shipment) return shipment;
+    return await parseAmazonOrderEmail(anthropic, html);
   }
   return null;
 }

@@ -1,4 +1,7 @@
 import { load } from 'cheerio';
+import type Anthropic from '@anthropic-ai/sdk';
+import { PARSER_MODEL } from '../models.js';
+import { callWithRetry } from '../anthropic-retry.js';
 import type { ParsedItem, ParsedOrder } from './types.js';
 
 const ORDER_ID_REGEX = /\b\d{3}-\d{7}-\d{7}\b/g;
@@ -14,12 +17,22 @@ const TYPOGRAPHIC_PRICE_REGEX =
 const RECOMMENDATION_BOUNDARY_REGEX =
   /Continue shopping deals|Related to items you[' ]?ve viewed|You might also like|Deals related to your purchases|Top picks for you|Customers also bought|Recommended for you/i;
 
-// Order-confirmation emails ("Ordered: …") only show the order total, not
-// per-item prices. We don't ingest from those — we wait for the shipment
-// notification. See DECISIONS.md (2026-05-01: "Amazon parser sources
-// shipment-tracking only").
 function isShipmentEmail(bodyText: string): boolean {
   return /package\s+was\s+shipped/i.test(bodyText);
+}
+
+/**
+ * Detect "Ordered: …" auto-confirm emails. These were originally skipped
+ * (DECISIONS.md 2026-05-01) because the shipment email carries cleaner
+ * per-item prices, but skipping them means a 1–3 day delay before a purchase
+ * shows up in the sheet. We now parse them with Haiku so the row appears
+ * immediately; the shipment email arriving later dedups against the same
+ * (orderId, brand, itemName, color, size) tuple.
+ */
+function isOrderConfirmEmail(bodyText: string): boolean {
+  return /\bthanks?\s+for\s+your\s+order\b/i.test(bodyText)
+    || /\border\s+confirmation\b/i.test(bodyText)
+    || /\byour\s+order\s+is\s+confirmed\b/i.test(bodyText);
 }
 
 function truncateAtRecommendations(html: string): string {
@@ -28,7 +41,7 @@ function truncateAtRecommendations(html: string): string {
   return html;
 }
 
-export function parseAmazonEmail(html: string): ParsedOrder[] | null {
+export function parseAmazonShipmentEmail(html: string): ParsedOrder[] | null {
   const $fullDoc = load(html);
   $fullDoc('head, style, script').remove();
   const fullBodyText = $fullDoc('body').text();
@@ -87,4 +100,128 @@ export function parseAmazonEmail(html: string): ParsedOrder[] | null {
     orderId,
     items: idx === 0 ? items : [],
   }));
+}
+
+const ORDER_EMAIL_SYSTEM_PROMPT = `You extract per-line-item product info from an Amazon "Ordered:" auto-confirm email.
+
+Return JSON only:
+{
+  "orderId": "<the Order # in 113-1234567-1234567 format, or empty>",
+  "items": [
+    {
+      "itemName": "<full product title>",
+      "quantity": <integer, default 1>,
+      "price": <per-item paid price in USD AFTER discounts, or 0 if not visible>,
+      "productUrl": "<canonical amazon.com product URL, or empty>"
+    }
+  ]
+}
+
+Rules:
+- One entry per LINE ITEM. Quantity-2 of the same product is ONE entry with quantity=2.
+- Exclude shipping, tax, gift wrap, gift cards, subscribe-and-save fees, and any "Recommended for you" / "Customers also bought" / "Sponsored" items.
+- price = per-item PAID price (not subtotal, not order total). If only an order total is shown, set price to 0 — do not divide.
+- itemName = the displayed product title.
+- productUrl = the amazon.com/dp/<ASIN> or amazon.com/gp/product/<ASIN> link if visible. Strip tracking query params.
+- Return JSON only, no prose, no markdown fences.`;
+
+/**
+ * Parse an Amazon "Ordered:" auto-confirm email using Haiku. We hit Haiku
+ * because the order-email HTML varies enough between cart shapes (single
+ * item, "and N more items", Subscribe & Save, gift orders) that pure cheerio
+ * regularly miscounts or grabs the order total instead of per-item prices.
+ *
+ * Returns null if the email doesn't look like an order confirmation or if
+ * Haiku can't extract anything usable.
+ */
+export async function parseAmazonOrderEmail(
+  anthropic: Anthropic,
+  html: string,
+): Promise<ParsedOrder[] | null> {
+  const $ = load(html);
+  $('head, style, script').remove();
+  const bodyText = cleanBodyText($('body').text());
+  if (!isOrderConfirmEmail(bodyText)) return null;
+
+  const orderIds = [...new Set(bodyText.match(ORDER_ID_REGEX) ?? [])];
+  if (orderIds.length === 0) return null;
+
+  // Truncate at recommendations and chop preview-padding garbage out so the
+  // prompt is small and focused on the actual order summary.
+  const truncatedText = truncateAtRecommendations(bodyText).slice(0, 12000);
+
+  let resp: Anthropic.Messages.Message;
+  try {
+    resp = await callWithRetry(() =>
+      anthropic.messages.create({
+        model: PARSER_MODEL,
+        max_tokens: 2048,
+        system: [{ type: 'text', text: ORDER_EMAIL_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+        messages: [{ role: 'user', content: truncatedText }],
+      }),
+    );
+  } catch (err) {
+    console.warn(`[amazon] parseAmazonOrderEmail Haiku call failed: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+
+  const textBlock = resp.content.find((b): b is Anthropic.TextBlock => b.type === 'text');
+  if (!textBlock) return null;
+
+  const cleaned = extractJsonObject(textBlock.text);
+  if (!cleaned) {
+    console.warn(`[amazon] parseAmazonOrderEmail: could not isolate JSON in response: ${textBlock.text.slice(0, 200)}`);
+    return null;
+  }
+
+  let parsed: { orderId?: unknown; items?: unknown };
+  try { parsed = JSON.parse(cleaned) as typeof parsed; }
+  catch (err) {
+    console.warn(`[amazon] parseAmazonOrderEmail: JSON.parse failed: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+
+  if (!Array.isArray(parsed.items) || parsed.items.length === 0) return null;
+
+  const items: ParsedItem[] = parsed.items
+    .filter((it): it is { itemName: string; quantity?: unknown; price?: unknown; productUrl?: unknown } =>
+      typeof it === 'object' && it !== null
+      && typeof (it as Record<string, unknown>).itemName === 'string'
+      && ((it as Record<string, unknown>).itemName as string).trim().length > 0,
+    )
+    .map((it) => ({
+      itemName: (it.itemName as string).trim(),
+      quantity: Number.isFinite(it.quantity) && (it.quantity as number) > 0 ? Math.floor(it.quantity as number) : 1,
+      price: Number.isFinite(it.price) && (it.price as number) >= 0 ? (it.price as number) : 0,
+      productUrl: typeof it.productUrl === 'string' ? it.productUrl.trim() : '',
+    }));
+
+  if (items.length === 0) return null;
+
+  // Prefer the orderId Haiku returned (it knows which one was the customer's
+  // Order # vs a referenced "previous order"), fall back to the first one
+  // we regex-scraped.
+  const responseOrderId = typeof parsed.orderId === 'string' ? parsed.orderId.trim() : '';
+  const isValidOrderId = (id: string): boolean => /^\d{3}-\d{7}-\d{7}$/.test(id);
+  const orderId = isValidOrderId(responseOrderId) ? responseOrderId : (orderIds[0] ?? '');
+  if (!orderId) return null;
+
+  return [{ source: 'Amazon' as const, orderId, items }];
+}
+
+/** Strip Amazon's preview-padding zero-width characters so Haiku doesn't waste tokens on them. */
+function cleanBodyText(text: string): string {
+  return text
+    .replace(/[\u00AD\u034F\u200B-\u200D\u2007\u2060\uFEFF]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractJsonObject(text: string): string | null {
+  const fence = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/i);
+  if (fence) return fence[1] ?? null;
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) return null;
+  return text.slice(start, end + 1);
 }

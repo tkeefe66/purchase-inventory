@@ -3,7 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createClassifier } from '../lib/classifier.js';
-import { parseAmazonEmail } from '../lib/parsers/amazon.js';
+import { parseAmazonShipmentEmail } from '../lib/parsers/amazon.js';
 import { parseReiEmail } from '../lib/parsers/rei.js';
 import { routeItem } from '../lib/router.js';
 import { buildVocab, createSheetsClient } from '../lib/sheets.js';
@@ -28,7 +28,7 @@ async function main(): Promise<void> {
     resolve('tests/fixtures/amazon/19ddb0594086a4ab__Shipped-_-Sony_Alpha_a6700_Mirrorless...-.html'),
     'utf-8',
   );
-  const amazonParsed = parseAmazonEmail(amazonHtml);
+  const amazonParsed = parseAmazonShipmentEmail(amazonHtml);
   if (amazonParsed && amazonParsed[0]?.items[0]) {
     const order = amazonParsed[0];
     const item = order.items[0]!;
