@@ -42,17 +42,17 @@ describe('Stats.coldFirstTokenP50Ms', () => {
 
 describe('estimateMonthlyCost', () => {
   test('extrapolates 7-day cold/warm counts to 30 days', () => {
-    // 28 cold writes + 142 warm reads in 7 days at 12K tokens
+    // 28 cold writes + 142 warm reads in 7 days at 12K tokens. Opus 4.7 pricing:
+    // (28/7)*30 = 120 cold writes -> 120 * 12000 * $18.75/MTok = $27.00
+    // (142/7)*30 ≈ 608 warm reads -> 608 * 12000 * $1.50/MTok ≈ $10.94
+    // total ≈ $37.94
     const cost = estimateMonthlyCost({
       coldWrites7d: 28,
       warmReads7d: 142,
       avgSystemPromptTokens: 12000,
     });
-    // (28/7)*30 = 120 cold writes -> 120 * 12000 * $3.75/MTok = $5.40
-    // (142/7)*30 ≈ 608 warm reads -> 608 * 12000 * $0.30/MTok ≈ $2.19
-    // total ≈ $7.59
-    expect(cost).toBeGreaterThan(7);
-    expect(cost).toBeLessThan(9);
+    expect(cost).toBeGreaterThan(35);
+    expect(cost).toBeLessThan(42);
   });
 
   test('returns 0 for no activity', () => {

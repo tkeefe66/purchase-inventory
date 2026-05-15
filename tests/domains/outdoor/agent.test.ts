@@ -217,7 +217,7 @@ describe('OutdoorAgent.handleMessage', () => {
     await expect(agent.handleMessage('chat-1', 'hi')).rejects.toThrow(/tool-call loop/i);
   });
 
-  test('falls back to opus-4-6 when sonnet-4-6 returns sustained 529s', async () => {
+  test('falls back to sonnet-4-6 when opus-4-7 returns sustained 529s', async () => {
     const { cache, conversations, stats } = makeAgentDeps([FIXTURE_THERMAREST]);
     await cache.refresh();
     const Anthropic = (await import('@anthropic-ai/sdk')).default;
@@ -231,7 +231,7 @@ describe('OutdoorAgent.handleMessage', () => {
       messages: {
         create: vi.fn(async (args: { model: string }) => {
           seenModels.push(args.model);
-          if (args.model === 'claude-sonnet-4-6') {
+          if (args.model === 'claude-opus-4-7') {
             throw new Anthropic.APIError(
               529,
               { error: { type: 'overloaded_error', message: 'Overloaded' } } as never,
@@ -254,10 +254,10 @@ describe('OutdoorAgent.handleMessage', () => {
     });
     const out = await agent.handleMessage('chat-1', 'hi');
     expect(out).toBe('opus answered');
+    const opusAttempts = seenModels.filter((m) => m === 'claude-opus-4-7');
     const sonnetAttempts = seenModels.filter((m) => m === 'claude-sonnet-4-6');
-    const opusAttempts = seenModels.filter((m) => m === 'claude-opus-4-6');
-    expect(sonnetAttempts.length).toBeGreaterThanOrEqual(5); // primary retried fully first
-    expect(opusAttempts.length).toBeGreaterThanOrEqual(1);
+    expect(opusAttempts.length).toBeGreaterThanOrEqual(5); // primary retried fully first
+    expect(sonnetAttempts.length).toBeGreaterThanOrEqual(1);
   }, 60000);
 
   test('retries the Anthropic call on a transient 529 Overloaded and recovers', async () => {

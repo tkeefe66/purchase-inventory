@@ -46,8 +46,11 @@ export function buildSystemPrompt(input: SystemPromptInput): SystemBlock[] {
   ];
 }
 
-const PRIMARY_MODEL = 'claude-sonnet-4-6';
-const FALLBACK_MODELS = ['claude-opus-4-6', 'claude-haiku-4-5'] as const;
+// Default to the most capable current Claude model. Update both this constant
+// and the cache-pricing constants in apps/bot/stats.ts when Anthropic releases
+// a newer Opus. Fallback chain degrades in capability + cost on sustained 529.
+const PRIMARY_MODEL = 'claude-opus-4-7';
+const FALLBACK_MODELS = ['claude-sonnet-4-6', 'claude-haiku-4-5'] as const;
 const MAX_TOKENS = 1024;
 const MAX_TOOL_LOOPS = 8;
 

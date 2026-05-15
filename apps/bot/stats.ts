@@ -80,8 +80,11 @@ export class Stats {
   }
 }
 
-const PRICE_CACHE_WRITE_5MIN_USD_PER_MTOK = 3.75;
-const PRICE_CACHE_READ_USD_PER_MTOK = 0.30;
+// Claude Opus 4.7 prompt-cache pricing per million tokens.
+// Update alongside PRIMARY_MODEL in domains/outdoor/agent.ts when a newer model lands.
+// Base input is $15/MTok; cache-write-5min = 1.25x = $18.75; cache-read = 0.1x = $1.50.
+const PRICE_CACHE_WRITE_5MIN_USD_PER_MTOK = 18.75;
+const PRICE_CACHE_READ_USD_PER_MTOK = 1.50;
 
 export function estimateMonthlyCost(input: {
   coldWrites7d: number;

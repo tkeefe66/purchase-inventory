@@ -103,7 +103,7 @@ ledger/                     # current folder name: outdoor-inventory
 | Reprocess | `--reprocess --since=<date>` bypasses label filter |
 | OAuth consent screen | Must be **published** (not Testing) — refresh tokens expire after 7 days otherwise |
 | Notifications | Telegram for failure alerts and daily digest; optional v1.5 conversational interface |
-| Agent model | Sonnet 4.6 for outdoor agent (better reasoning); Haiku 4.5 for Amazon parser fallback (cost) |
+| Agent model | Opus 4.7 primary, Sonnet 4.6 / Haiku 4.5 fallback chain (see 2026-05-14 DECISIONS entry); Haiku 4.5 for Amazon parser fallback (cost). **Always update to the latest Claude model when a new release lands.** |
 | Prompt caching | Always on (per global CLAUDE.md). System prompts + tool definitions cached. |
 | Web UI v1 | Read-only dashboard; editing deferred |
 | Multi-domain in v1 | NO — outdoor only. Other domain stubs are README.md only. |

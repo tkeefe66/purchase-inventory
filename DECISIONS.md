@@ -723,6 +723,27 @@ Three implementation choices that aren't bugs but warrant explicit recording so 
 
 ---
 
+## 2026-05-14 — Upgrade primary agent model to Opus 4.7; supersedes the 2026-05-01 Sonnet 4.6 choice
+
+**Decision:** The outdoor agent's primary model is now `claude-opus-4-7`. The fallback chain on sustained 529 is `claude-sonnet-4-6` → `claude-haiku-4-5`. Constants live in `domains/outdoor/agent.ts` (`PRIMARY_MODEL`, `FALLBACK_MODELS`).
+
+**Why:** The original 2026-05-01 choice of Sonnet 4.6 was a cost/speed compromise. Anthropic's standing guidance is to default to the latest and most capable model; Opus 4.7 is the current Opus release and is the right primary for a knowledge-grounded companion agent (broader knowledge, better reasoning over the inventory + activity questions).
+
+**Cost impact:** Opus 4.7 is roughly 5x Sonnet 4.6 on input pricing ($15 vs. $3 per MTok). For Tom's expected usage (handful of questions/day with prompt caching), this moves the agent from an estimated ~$0.04/month to ~$0.20–0.50/month — still well below the `monthly_cost > $30` threshold in `evaluateThresholds`. Cache-pricing constants in `apps/bot/stats.ts` were updated to match Opus 4.7 (cache-write-5min: $18.75/MTok, cache-read: $1.50/MTok). The fallback steps will use Sonnet or Haiku pricing in reality but `Stats` reports a single set of constants — the overestimate is conservative.
+
+**Policy: always default to the latest Claude model.** When a newer Opus / Sonnet / Haiku releases, update:
+1. `PRIMARY_MODEL` and `FALLBACK_MODELS` in `domains/outdoor/agent.ts`
+2. `PRICE_CACHE_WRITE_5MIN_USD_PER_MTOK` and `PRICE_CACHE_READ_USD_PER_MTOK` in `apps/bot/stats.ts`
+3. The test in `tests/domains/outdoor/agent.test.ts` that hardcodes model IDs
+4. The model row in CLAUDE.md and the Phase 2.4 entry in `docs/PLAN.md`
+5. Add a dated entry here noting the bump
+
+There is no Anthropic API for "give me the current latest model," so this stays a manual maintenance step. Discovery via [docs.claude.com](https://docs.claude.com) on model announcements.
+
+**Earlier-mistake correction:** the prior commit (2026-05-14, `f1cfa49`) introduced a fallback chain containing `claude-opus-4-6`, which is not a real model ID. The smoke test that succeeded did so by skipping past Opus on a 529 and landing on Haiku. This entry corrects both the primary and the fallback names.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale

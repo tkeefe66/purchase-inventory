@@ -8,7 +8,7 @@ The **outdoor agent** is positioned as Tom's broad outdoor *companion / guru* �
 
 **Architecture:** Three independent apps (`cron`, `bot`, `web`) sharing a `lib/` for cross-cutting infra (Sheets, Gmail, Claude, Telegram). Domain logic lives under `domains/<name>/` with its own categorizer rules, agent prompt, tools, and integrations. Adding a new domain = adding one folder. Google Sheets is the source of truth in v1 (no separate DB). Read-only with respect to retailers — only Gmail (read + label) and Sheets (read + append) are touched.
 
-**Tech Stack:** Node.js 20 + TypeScript 5, vitest, googleapis SDK, cheerio, `@anthropic-ai/sdk` (Claude Haiku 4.5 for parser fallback, Sonnet 4.6 for agents), Next.js for web UI, node-telegram-bot-api for the bot. Hosted on Railway.
+**Tech Stack:** Node.js 20 + TypeScript 5, vitest, googleapis SDK, cheerio, `@anthropic-ai/sdk` (Claude Haiku 4.5 for parser fallback, **Opus 4.7** primary for agents with Sonnet 4.6 / Haiku 4.5 fallback), Next.js for web UI, node-telegram-bot-api for the bot. Hosted on Railway.
 
 ---
 
@@ -460,7 +460,7 @@ For now, every message goes to the outdoor domain handler. (Multi-domain routing
 
 Tools NOT included in v1 (deferred to the soft-threshold flip per spec): `search_inventory`, `get_spending`, `summarize_by_category`, `get_item_details`. The agent computes these from the in-context inventory directly.
 
-**Model:** Sonnet 4.6 (better reasoning than Haiku for this; Haiku stays in the parser fallback).
+**Model:** **Opus 4.7** primary (most capable current Claude model). On sustained 529 from the primary, falls back to Sonnet 4.6, then Haiku 4.5. Always update to the latest Claude release when one lands — single source of truth lives in `domains/outdoor/agent.ts` (`PRIMARY_MODEL`).
 
 **Caching:** Compact-inventory block in the system prompt has `cache_control: { type: 'ephemeral' }` per spec.
 
