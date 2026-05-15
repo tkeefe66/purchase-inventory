@@ -132,6 +132,47 @@ export function parseUserDate(input: string): string | null {
   return null;
 }
 
+/**
+ * Same date alternations as parseUserDate, but anchored to the START of the
+ * input only — used when the user bundles a date with other info, e.g.
+ * "12-11-21 for 135.15" or "May 5 2023 $99". Returns the parsed date and
+ * whatever text followed it (for downstream price extraction).
+ */
+export function extractDatePrefix(input: string): { date: string; rest: string } | null {
+  const s = input.trim();
+  if (!s) return null;
+  const prefix = s.match(
+    /^(\d{4}-\d{2}-\d{2}|\d{4}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|[A-Za-z]+\.?\s+\d{1,2}(?:,)?\s+\d{2,4}|[A-Za-z]+\.?\s+\d{2,4})\b/,
+  );
+  if (!prefix) return null;
+  const parsed = parseUserDate(prefix[1]!);
+  if (!parsed) return null;
+  return { date: parsed, rest: s.slice(prefix[1]!.length).trim() };
+}
+
+/**
+ * Extract a price from text. Accepts `$135.15`, `135.15`, `$120`, `120`,
+ * with optional leading connector words ("for", "paid", "at", "cost").
+ * Bare 4-digit integers in the 1900–2099 range are rejected as year-like.
+ */
+export function extractPrice(input: string): number | null {
+  const trimmed = input.trim().replace(/^(?:for|at|paid|cost|price)\s+/i, '').trim();
+  if (!trimmed) return null;
+  const withDollar = trimmed.match(/\$\s?(\d+(?:\.\d{1,2})?)/);
+  if (withDollar) {
+    const n = Number(withDollar[1]);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  }
+  const bare = trimmed.match(/^(\d+(?:\.\d{1,2})?)$/);
+  if (bare) {
+    const n = Number(bare[1]);
+    if (!Number.isFinite(n) || n < 0) return null;
+    if (Number.isInteger(n) && n >= 1900 && n <= 2099) return null;
+    return n;
+  }
+  return null;
+}
+
 function makeHash(parts: readonly string[]): string {
   return createHash('sha256').update(parts.join('|')).digest('hex');
 }
@@ -223,7 +264,7 @@ export async function startAddgear(
 function advanceFlow(chatId: string, draft: PartialDraft, deps: AddgearDeps): string {
   if (!draft.date && !draft.dateAcknowledgedUnknown) {
     deps.addgearState.set(chatId, { kind: 'awaiting-date', draft });
-    return `Got ${draft.brand} ${draft.itemName}. When did you buy it? (year is fine, e.g. "2018", or "unknown")`;
+    return `Got ${draft.brand} ${draft.itemName}. When did you buy it? (e.g. "2018", "12/21/23", or "12-11-21 for $135.15" to give both at once)`;
   }
   if (draft.price === null && !draft.priceAcknowledgedUnknown) {
     deps.addgearState.set(chatId, { kind: 'awaiting-price', draft });
@@ -271,11 +312,22 @@ export async function continueAddgear(
     if (/^unknown$/i.test(reply)) {
       step.draft.dateAcknowledgedUnknown = true;
     } else {
-      const parsed = parseUserDate(reply);
-      if (!parsed) {
-        return `Couldn't read "${reply}" as a date. Try a year ("2018"), a slash date ("12/21/23"), a spelled-out month ("May 5 2023"), or "unknown".`;
+      // Try the whole-input shape first; if that fails, try date-prefix +
+      // optional trailing price (e.g. "12-11-21 for 135.15").
+      const whole = parseUserDate(reply);
+      if (whole) {
+        step.draft.date = whole;
+      } else {
+        const split = extractDatePrefix(reply);
+        if (!split) {
+          return `Couldn't read "${reply}" as a date. Try a year ("2018"), a slash date ("12/21/23"), a spelled-out month ("May 5 2023"), or "unknown". You can include the price too, e.g. "12/21/23 for 135.15".`;
+        }
+        step.draft.date = split.date;
+        if (split.rest) {
+          const bonusPrice = extractPrice(split.rest);
+          if (bonusPrice !== null) step.draft.price = bonusPrice;
+        }
       }
-      step.draft.date = parsed;
     }
     return advanceFlow(chatId, step.draft, deps);
   }
@@ -284,9 +336,9 @@ export async function continueAddgear(
     if (/^unknown$/i.test(reply)) {
       step.draft.priceAcknowledgedUnknown = true;
     } else {
-      const n = Number(reply.replace(/^\$/, ''));
-      if (!Number.isFinite(n) || n < 0) {
-        return `Couldn't read that as a price. Reply with a number like "120" or "unknown".`;
+      const n = extractPrice(reply);
+      if (n === null) {
+        return `Couldn't read "${reply}" as a price. Try a number like "120", "$135.15", or "unknown".`;
       }
       step.draft.price = n;
     }

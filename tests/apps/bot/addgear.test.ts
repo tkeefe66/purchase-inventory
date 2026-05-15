@@ -1,7 +1,7 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AddgearStateStore } from '../../../lib/addgearState.js';
 import { PendingActionStore } from '../../../lib/pendingActions.js';
-import { startAddgear, continueAddgear, parseUserDate, type AddgearDeps } from '../../../apps/bot/commands/addgear.js';
+import { startAddgear, continueAddgear, parseUserDate, extractDatePrefix, extractPrice, type AddgearDeps } from '../../../apps/bot/commands/addgear.js';
 import type { PhotoExtraction } from '../../../lib/parsers/photo.js';
 import type { Classification } from '../../../lib/classifier.js';
 
@@ -257,6 +257,115 @@ describe('parseUserDate', () => {
 
   test('random text → null', () => {
     expect(parseUserDate('two thousand twenty-three')).toBeNull();
+  });
+});
+
+describe('extractDatePrefix + extractPrice', () => {
+  test('extractDatePrefix returns date and remaining text', () => {
+    expect(extractDatePrefix('12-11-21 for 135.15')).toEqual({ date: '2021-12-11', rest: 'for 135.15' });
+    expect(extractDatePrefix('May 5 2023 $99')).toEqual({ date: '2023-05-05', rest: '$99' });
+    expect(extractDatePrefix('2018 paid $120')).toEqual({ date: '2018-01-01', rest: 'paid $120' });
+    expect(extractDatePrefix('2018-06-15')).toEqual({ date: '2018-06-15', rest: '' });
+  });
+
+  test('extractDatePrefix returns null when no date at the start', () => {
+    expect(extractDatePrefix('lol no date here')).toBeNull();
+    expect(extractDatePrefix('')).toBeNull();
+    expect(extractDatePrefix('$120')).toBeNull();
+  });
+
+  test('extractPrice handles decimals, dollar signs, and connector words', () => {
+    expect(extractPrice('135.15')).toBe(135.15);
+    expect(extractPrice('$135.15')).toBe(135.15);
+    expect(extractPrice('for 135.15')).toBe(135.15);
+    expect(extractPrice('for $135.15')).toBe(135.15);
+    expect(extractPrice('paid 120')).toBe(120);
+    expect(extractPrice('$1500')).toBe(1500);
+  });
+
+  test('extractPrice rejects bare 4-digit years', () => {
+    expect(extractPrice('2018')).toBeNull();
+    expect(extractPrice('1999')).toBeNull();
+  });
+
+  test('extractPrice rejects garbage', () => {
+    expect(extractPrice('lol')).toBeNull();
+    expect(extractPrice('')).toBeNull();
+  });
+});
+
+describe('continueAddgear — combined date+price during awaiting-date', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-14T12:00:00Z'));
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  test('accepts "12-11-21 for 135.15" — sets date AND price, skips awaiting-price', async () => {
+    const deps = makeDeps();
+    await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
+    const reply = await continueAddgear('chat-1', '12-11-21 for 135.15', deps);
+    expect(reply).toMatch(/About to log/i);
+    const step = deps.addgearState.peek('chat-1');
+    expect(step?.kind).toBe('awaiting-confirm');
+    if (step?.kind === 'awaiting-confirm') {
+      expect(step.row.date).toBe('2021-12-11');
+      expect(step.row.price).toBe(135.15);
+    }
+  });
+
+  test('accepts "May 5 2023 $99" — sets date AND price', async () => {
+    const deps = makeDeps();
+    await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
+    const reply = await continueAddgear('chat-1', 'May 5 2023 $99', deps);
+    expect(reply).toMatch(/About to log/i);
+    const step = deps.addgearState.peek('chat-1');
+    if (step?.kind === 'awaiting-confirm') {
+      expect(step.row.date).toBe('2023-05-05');
+      expect(step.row.price).toBe(99);
+    }
+  });
+
+  test('plain date still works — advances to awaiting-price', async () => {
+    const deps = makeDeps();
+    await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
+    const reply = await continueAddgear('chat-1', '12-11-21', deps);
+    expect(reply).toMatch(/what did you pay/i);
+    const step = deps.addgearState.peek('chat-1');
+    expect(step?.kind).toBe('awaiting-price');
+    if (step?.kind === 'awaiting-price') {
+      expect(step.draft.date).toBe('2021-12-11');
+    }
+  });
+});
+
+describe('continueAddgear — looser price parsing during awaiting-price', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-14T12:00:00Z'));
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  test('accepts "$135.15"', async () => {
+    const deps = makeDeps();
+    await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
+    await continueAddgear('chat-1', '2021', deps);
+    await continueAddgear('chat-1', '$135.15', deps);
+    const step = deps.addgearState.peek('chat-1');
+    if (step?.kind === 'awaiting-confirm') {
+      expect(step.row.price).toBe(135.15);
+    }
+  });
+
+  test('accepts "for 120"', async () => {
+    const deps = makeDeps();
+    await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
+    await continueAddgear('chat-1', '2021', deps);
+    await continueAddgear('chat-1', 'for 120', deps);
+    const step = deps.addgearState.peek('chat-1');
+    if (step?.kind === 'awaiting-confirm') {
+      expect(step.row.price).toBe(120);
+    }
   });
 });
 
