@@ -1,7 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { Domain, ItemType, Source, Vocab } from './types.js';
-
-const HAIKU_MODEL = 'claude-haiku-4-5';
+import { PARSER_MODEL } from './models.js';
 const MAX_RETRIES = 5;
 
 export interface ClassifyInput {
@@ -68,7 +67,7 @@ export function createClassifier(opts: ClassifierOptions): (input: ClassifyInput
 
     const resp = await callWithRetry(() =>
       opts.anthropic.messages.create({
-        model: HAIKU_MODEL,
+        model: PARSER_MODEL,
         max_tokens: 512,
         system: [
           {

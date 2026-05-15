@@ -5,6 +5,7 @@ import { InventoryCache } from '../../../apps/bot/inventoryCache.js';
 import { ConversationStore } from '../../../lib/conversations.js';
 import { Stats } from '../../../apps/bot/stats.js';
 import { itemId } from '../../../domains/outdoor/types.js';
+import { AGENT_PRIMARY_MODEL, AGENT_FALLBACK_MODELS } from '../../../lib/models.js';
 import type { MasterRow } from '../../../lib/types.js';
 import {
   FIXTURE_THERMAREST,
@@ -217,12 +218,12 @@ describe('OutdoorAgent.handleMessage', () => {
     await expect(agent.handleMessage('chat-1', 'hi')).rejects.toThrow(/tool-call loop/i);
   });
 
-  test('falls back to sonnet-4-6 when opus-4-7 returns sustained 529s', async () => {
+  test('falls back to the next model in the chain when primary returns sustained 529s', async () => {
     const { cache, conversations, stats } = makeAgentDeps([FIXTURE_THERMAREST]);
     await cache.refresh();
     const Anthropic = (await import('@anthropic-ai/sdk')).default;
     const successResp = {
-      content: [{ type: 'text', text: 'opus answered' }],
+      content: [{ type: 'text', text: 'fallback answered' }],
       stop_reason: 'end_turn' as const,
       usage: { input_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 5 },
     };
@@ -231,7 +232,7 @@ describe('OutdoorAgent.handleMessage', () => {
       messages: {
         create: vi.fn(async (args: { model: string }) => {
           seenModels.push(args.model);
-          if (args.model === 'claude-opus-4-7') {
+          if (args.model === AGENT_PRIMARY_MODEL) {
             throw new Anthropic.APIError(
               529,
               { error: { type: 'overloaded_error', message: 'Overloaded' } } as never,
@@ -253,11 +254,11 @@ describe('OutdoorAgent.handleMessage', () => {
       updateRowStatus: vi.fn() as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['updateRowStatus'],
     });
     const out = await agent.handleMessage('chat-1', 'hi');
-    expect(out).toBe('opus answered');
-    const opusAttempts = seenModels.filter((m) => m === 'claude-opus-4-7');
-    const sonnetAttempts = seenModels.filter((m) => m === 'claude-sonnet-4-6');
-    expect(opusAttempts.length).toBeGreaterThanOrEqual(5); // primary retried fully first
-    expect(sonnetAttempts.length).toBeGreaterThanOrEqual(1);
+    expect(out).toBe('fallback answered');
+    const primaryAttempts = seenModels.filter((m) => m === AGENT_PRIMARY_MODEL);
+    const firstFallbackAttempts = seenModels.filter((m) => m === AGENT_FALLBACK_MODELS[0]);
+    expect(primaryAttempts.length).toBeGreaterThanOrEqual(5);
+    expect(firstFallbackAttempts.length).toBeGreaterThanOrEqual(1);
   }, 60000);
 
   test('retries the Anthropic call on a transient 529 Overloaded and recovers', async () => {

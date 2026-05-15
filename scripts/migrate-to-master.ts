@@ -3,8 +3,7 @@ import { google, sheets_v4 } from 'googleapis';
 import Anthropic from '@anthropic-ai/sdk';
 import { parse as parseDate, isValid } from 'date-fns';
 import { buildFallbackProductUrl } from '../lib/url-fallback.js';
-
-const HAIKU_MODEL = 'claude-haiku-4-5';
+import { PARSER_MODEL } from '../lib/models.js';
 const TARGET_TAB = 'All Purchases';
 const REI_TAB = 'REI All Purchases';
 const AMAZON_TAB = 'Amazon Purchases';
@@ -147,7 +146,7 @@ async function main(): Promise<void> {
       `${vocab.brands.length} brands.\n`,
   );
 
-  console.log(`Classifying ${amazonRaw.length} Amazon rows via ${HAIKU_MODEL}...`);
+  console.log(`Classifying ${amazonRaw.length} Amazon rows via ${PARSER_MODEL}...`);
   console.log(`  Concurrency: ${CONCURRENCY}, prompt caching: enabled`);
   const start = Date.now();
   const cacheStats = { creation: 0, reads: 0, uncached: 0 };
@@ -553,7 +552,7 @@ Return the four fields.`;
 
   const resp = await callWithRetry(() =>
     anthropic.messages.create({
-      model: HAIKU_MODEL,
+      model: PARSER_MODEL,
       max_tokens: 512,
       system: [
         {

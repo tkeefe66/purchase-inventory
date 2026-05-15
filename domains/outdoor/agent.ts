@@ -5,6 +5,7 @@ import type { Status } from '../../lib/types.js';
 import { ConversationStore } from '../../lib/conversations.js';
 import { Stats } from '../../apps/bot/stats.js';
 import { callWithRetry } from '../../lib/anthropic-retry.js';
+import { AGENT_PRIMARY_MODEL, AGENT_FALLBACK_MODELS } from '../../lib/models.js';
 import { createTools, TOOL_SCHEMAS, type ToolHandlers } from './tools.js';
 
 export interface SystemPromptInput {
@@ -46,11 +47,6 @@ export function buildSystemPrompt(input: SystemPromptInput): SystemBlock[] {
   ];
 }
 
-// Default to the most capable current Claude model. Update both this constant
-// and the cache-pricing constants in apps/bot/stats.ts when Anthropic releases
-// a newer Opus. Fallback chain degrades in capability + cost on sustained 529.
-const PRIMARY_MODEL = 'claude-opus-4-7';
-const FALLBACK_MODELS = ['claude-sonnet-4-6', 'claude-haiku-4-5'] as const;
 const MAX_TOKENS = 1024;
 const MAX_TOOL_LOOPS = 8;
 
@@ -100,7 +96,7 @@ export class OutdoorAgent {
     for (let loop = 0; loop < MAX_TOOL_LOOPS; loop += 1) {
       const callStart = Date.now();
       const { resp, modelUsed } = await this.callWithModelFallback(system, messages);
-      if (modelUsed !== PRIMARY_MODEL) usedFallbackModel = modelUsed;
+      if (modelUsed !== AGENT_PRIMARY_MODEL) usedFallbackModel = modelUsed;
       if (loop === 0) {
         firstTokenMs = Date.now() - callStart;
         wasCacheHit = (resp.usage.cache_read_input_tokens ?? 0) > 0;
@@ -135,7 +131,7 @@ export class OutdoorAgent {
     }
 
     if (usedFallbackModel) {
-      console.warn(`[outdoorAgent] primary model ${PRIMARY_MODEL} returned 529; fell back to ${usedFallbackModel}`);
+      console.warn(`[outdoorAgent] primary model ${AGENT_PRIMARY_MODEL} returned 529; fell back to ${usedFallbackModel}`);
     }
 
     const totalResponseMs = Date.now() - t0;
@@ -162,13 +158,13 @@ export class OutdoorAgent {
       messages: messages as Anthropic.Messages.MessageParam[],
       tools: TOOL_SCHEMAS as unknown as Anthropic.Messages.Tool[],
     };
-    const chain = [PRIMARY_MODEL, ...FALLBACK_MODELS];
+    const chain = [AGENT_PRIMARY_MODEL, ...AGENT_FALLBACK_MODELS];
     let lastErr: unknown;
     for (const model of chain) {
       try {
         const resp = await callWithRetry(
           () => this.opts.anthropic.messages.create({ ...baseArgs, model }),
-          { maxRetries: model === PRIMARY_MODEL ? 5 : 2 },
+          { maxRetries: model === AGENT_PRIMARY_MODEL ? 5 : 2 },
         );
         return { resp, modelUsed: model };
       } catch (err) {

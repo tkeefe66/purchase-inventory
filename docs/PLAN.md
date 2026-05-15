@@ -460,7 +460,7 @@ For now, every message goes to the outdoor domain handler. (Multi-domain routing
 
 Tools NOT included in v1 (deferred to the soft-threshold flip per spec): `search_inventory`, `get_spending`, `summarize_by_category`, `get_item_details`. The agent computes these from the in-context inventory directly.
 
-**Model:** **Opus 4.7** primary (most capable current Claude model). On sustained 529 from the primary, falls back to Sonnet 4.6, then Haiku 4.5. Always update to the latest Claude release when one lands — single source of truth lives in `domains/outdoor/agent.ts` (`PRIMARY_MODEL`).
+**Model:** **Opus 4.7** primary (most capable current Claude model). On sustained 529 from the primary, falls back to Sonnet 4.6, then Haiku 4.5. Always update to the latest Claude release when one lands — single source of truth lives in `lib/models.ts` (`AGENT_PRIMARY_MODEL`, `AGENT_FALLBACK_MODELS`, `AGENT_PRICING_PER_MTOK`).
 
 **Caching:** Compact-inventory block in the system prompt has `cache_control: { type: 'ephemeral' }` per spec.
 

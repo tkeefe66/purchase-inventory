@@ -731,14 +731,15 @@ Three implementation choices that aren't bugs but warrant explicit recording so 
 
 **Cost impact:** Opus 4.7 is roughly 5x Sonnet 4.6 on input pricing ($15 vs. $3 per MTok). For Tom's expected usage (handful of questions/day with prompt caching), this moves the agent from an estimated ~$0.04/month to ~$0.20–0.50/month — still well below the `monthly_cost > $30` threshold in `evaluateThresholds`. Cache-pricing constants in `apps/bot/stats.ts` were updated to match Opus 4.7 (cache-write-5min: $18.75/MTok, cache-read: $1.50/MTok). The fallback steps will use Sonnet or Haiku pricing in reality but `Stats` reports a single set of constants — the overestimate is conservative.
 
-**Policy: always default to the latest Claude model.** When a newer Opus / Sonnet / Haiku releases, update:
-1. `PRIMARY_MODEL` and `FALLBACK_MODELS` in `domains/outdoor/agent.ts`
-2. `PRICE_CACHE_WRITE_5MIN_USD_PER_MTOK` and `PRICE_CACHE_READ_USD_PER_MTOK` in `apps/bot/stats.ts`
-3. The test in `tests/domains/outdoor/agent.test.ts` that hardcodes model IDs
-4. The model row in CLAUDE.md and the Phase 2.4 entry in `docs/PLAN.md`
-5. Add a dated entry here noting the bump
+**Policy: always default to the latest Claude model.** When a newer Opus / Sonnet / Haiku releases, update **one file**:
 
-There is no Anthropic API for "give me the current latest model," so this stays a manual maintenance step. Discovery via [docs.claude.com](https://docs.claude.com) on model announcements.
+- `lib/models.ts` — contains `MODELS`, `AGENT_PRIMARY_MODEL`, `AGENT_FALLBACK_MODELS`, `PARSER_MODEL`, and `AGENT_PRICING_PER_MTOK`. Every consumer (agent, classifier, migration script, stats, tests) imports from here.
+
+Then add a dated entry in this file noting the bump and the rationale (which model became primary, why, any cost-impact notes). Tests use `AGENT_PRIMARY_MODEL` / `AGENT_FALLBACK_MODELS` directly so they adapt automatically.
+
+There is no Anthropic API for "give me the current latest model," so the model-version check stays a manual maintenance step. Discovery via [docs.claude.com](https://docs.claude.com) on model announcements.
+
+**Earlier (2026-05-14) version of this entry listed 5 places to update.** The 2026-05-14 follow-up consolidated all model + agent-pricing constants into `lib/models.ts`, so the maintenance burden is now one file.
 
 **Earlier-mistake correction:** the prior commit (2026-05-14, `f1cfa49`) introduced a fallback chain containing `claude-opus-4-6`, which is not a real model ID. The smoke test that succeeded did so by skipping past Opus on a 529 and landing on Haiku. This entry corrects both the primary and the fallback names.
 
