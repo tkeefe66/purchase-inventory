@@ -1,7 +1,7 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AddgearStateStore } from '../../../lib/addgearState.js';
 import { PendingActionStore } from '../../../lib/pendingActions.js';
-import { startAddgear, continueAddgear, type AddgearDeps } from '../../../apps/bot/commands/addgear.js';
+import { startAddgear, continueAddgear, parseUserDate, type AddgearDeps } from '../../../apps/bot/commands/addgear.js';
 import type { PhotoExtraction } from '../../../lib/parsers/photo.js';
 import type { Classification } from '../../../lib/classifier.js';
 
@@ -178,6 +178,109 @@ describe('startAddgear — vision cannot read', () => {
     const reply = await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
     expect(reply).toMatch(/couldn't read/i);
     expect(deps.addgearState.peek('chat-1')).toBeNull();
+  });
+});
+
+describe('parseUserDate', () => {
+  test('year-only → Jan 1', () => {
+    expect(parseUserDate('2018')).toBe('2018-01-01');
+  });
+
+  test('ISO date is preserved', () => {
+    expect(parseUserDate('2018-06-15')).toBe('2018-06-15');
+  });
+
+  test('US slash with 2-digit year', () => {
+    expect(parseUserDate('12/21/23')).toBe('2023-12-21');
+  });
+
+  test('US slash with 4-digit year', () => {
+    expect(parseUserDate('12/21/2023')).toBe('2023-12-21');
+  });
+
+  test('US dash with 2-digit year', () => {
+    expect(parseUserDate('5-7-24')).toBe('2024-05-07');
+  });
+
+  test('spelled-out month full + day + year', () => {
+    expect(parseUserDate('May 5 2023')).toBe('2023-05-05');
+  });
+
+  test('spelled-out month full + day + comma + year', () => {
+    expect(parseUserDate('May 5, 2023')).toBe('2023-05-05');
+  });
+
+  test('abbreviated month with period + day + year', () => {
+    expect(parseUserDate('Sept. 12 2019')).toBe('2019-09-12');
+  });
+
+  test('month-only + year defaults to the 1st', () => {
+    expect(parseUserDate('May 2023')).toBe('2023-05-01');
+  });
+
+  test('case-insensitive month name', () => {
+    expect(parseUserDate('DECEMBER 3 2020')).toBe('2020-12-03');
+  });
+
+  test('invalid month number → null', () => {
+    expect(parseUserDate('13/21/2023')).toBeNull();
+  });
+
+  test('invalid day number → null', () => {
+    expect(parseUserDate('5/32/2023')).toBeNull();
+  });
+
+  test('unknown month name → null', () => {
+    expect(parseUserDate('Mayyy 5 2023')).toBeNull();
+  });
+
+  test('empty string → null', () => {
+    expect(parseUserDate('')).toBeNull();
+  });
+
+  test('random text → null', () => {
+    expect(parseUserDate('two thousand twenty-three')).toBeNull();
+  });
+});
+
+describe('continueAddgear — date input variations during awaiting-date', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-14T12:00:00Z'));
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  test('accepts slash date "12/21/23"', async () => {
+    const deps = makeDeps();
+    await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
+    const reply = await continueAddgear('chat-1', '12/21/23', deps);
+    expect(reply).toMatch(/what did you pay/i);
+    const step = deps.addgearState.peek('chat-1');
+    expect(step?.kind).toBe('awaiting-price');
+    if (step?.kind === 'awaiting-price') {
+      expect(step.draft.date).toBe('2023-12-21');
+    }
+  });
+
+  test('accepts spelled-out date "May 5 2023"', async () => {
+    const deps = makeDeps();
+    await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
+    const reply = await continueAddgear('chat-1', 'May 5 2023', deps);
+    expect(reply).toMatch(/what did you pay/i);
+    const step = deps.addgearState.peek('chat-1');
+    if (step?.kind === 'awaiting-price') {
+      expect(step.draft.date).toBe('2023-05-05');
+    }
+  });
+
+  test('rejects garbage with a helpful hint', async () => {
+    const deps = makeDeps();
+    await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
+    const reply = await continueAddgear('chat-1', 'lol idk', deps);
+    expect(reply).toMatch(/couldn't read/i);
+    expect(reply).toMatch(/12\/21\/23|May 5 2023/);
+    // still in awaiting-date (we don't advance on bad input)
+    expect(deps.addgearState.peek('chat-1')?.kind).toBe('awaiting-date');
   });
 });
 

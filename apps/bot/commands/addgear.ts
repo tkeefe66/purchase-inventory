@@ -53,6 +53,85 @@ function makeOrderId(today: string, hash: string): string {
   return `IMG-${compactDate}-${hash.slice(0, 6)}`;
 }
 
+const MONTH_NAMES: Readonly<Record<string, number>> = {
+  jan: 1, january: 1,
+  feb: 2, february: 2,
+  mar: 3, march: 3,
+  apr: 4, april: 4,
+  may: 5,
+  jun: 6, june: 6,
+  jul: 7, july: 7,
+  aug: 8, august: 8,
+  sep: 9, sept: 9, september: 9,
+  oct: 10, october: 10,
+  nov: 11, november: 11,
+  dec: 12, december: 12,
+};
+
+function pad2(n: number): string { return n < 10 ? `0${n}` : String(n); }
+function expandYear(y: number): number { return y < 100 ? 2000 + y : y; }
+
+/**
+ * Parses the variety of date formats Tom might type after a /addgear prompt.
+ * Returns YYYY-MM-DD, or null if the input doesn't look like any supported
+ * date shape. Year-only inputs default to Jan 1; month-only inputs default
+ * to the 1st of the month.
+ *
+ * Supported:
+ *   2018                → 2018-01-01
+ *   2018-06-15          → 2018-06-15
+ *   12/21/23            → 2023-12-21       (US M/D/Y)
+ *   12/21/2023          → 2023-12-21
+ *   12-21-23            → 2023-12-21
+ *   May 5 2023          → 2023-05-05
+ *   May 5, 2023         → 2023-05-05
+ *   May 2023            → 2023-05-01
+ *   Sept. 12 2019       → 2019-09-12
+ */
+export function parseUserDate(input: string): string | null {
+  const s = input.trim();
+  if (!s) return null;
+
+  // ISO: YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+  // Year-only: YYYY
+  const yearOnly = s.match(/^(\d{4})$/);
+  if (yearOnly) return `${yearOnly[1]}-01-01`;
+
+  // US numeric: M/D/Y or M-D-Y (1-2 digit month/day, 2-4 digit year)
+  const numeric = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+  if (numeric) {
+    const mon = Number(numeric[1]);
+    const day = Number(numeric[2]);
+    const yr = expandYear(Number(numeric[3]));
+    if (mon < 1 || mon > 12 || day < 1 || day > 31) return null;
+    return `${yr}-${pad2(mon)}-${pad2(day)}`;
+  }
+
+  // Spelled-out month + day + year: "May 5 2023", "May 5, 2023", "Sept. 12 2019"
+  const named = s.match(/^([A-Za-z]+)\.?\s+(\d{1,2})(?:,)?\s+(\d{2,4})$/);
+  if (named) {
+    const mon = MONTH_NAMES[named[1]!.toLowerCase()];
+    if (!mon) return null;
+    const day = Number(named[2]);
+    const yr = expandYear(Number(named[3]));
+    if (day < 1 || day > 31) return null;
+    return `${yr}-${pad2(mon)}-${pad2(day)}`;
+  }
+
+  // Spelled-out month + year: "May 2023", "December 2019"
+  const monYear = s.match(/^([A-Za-z]+)\.?\s+(\d{2,4})$/);
+  if (monYear) {
+    const mon = MONTH_NAMES[monYear[1]!.toLowerCase()];
+    if (!mon) return null;
+    const yr = expandYear(Number(monYear[2]));
+    return `${yr}-${pad2(mon)}-01`;
+  }
+
+  return null;
+}
+
 function makeHash(parts: readonly string[]): string {
   return createHash('sha256').update(parts.join('|')).digest('hex');
 }
@@ -175,16 +254,14 @@ export async function continueAddgear(
   }
 
   if (step.kind === 'awaiting-date') {
-    const yearMatch = reply.match(/^(\d{4})$/);
-    const fullDateMatch = reply.match(/^\d{4}-\d{2}-\d{2}$/);
-    if (yearMatch) {
-      step.draft.date = `${yearMatch[1]}-01-01`;
-    } else if (fullDateMatch) {
-      step.draft.date = reply;
-    } else if (/^unknown$/i.test(reply)) {
+    if (/^unknown$/i.test(reply)) {
       step.draft.dateAcknowledgedUnknown = true;
     } else {
-      return `Couldn't read that as a date. Reply with a year like "2018", a full date "2018-06-15", or "unknown".`;
+      const parsed = parseUserDate(reply);
+      if (!parsed) {
+        return `Couldn't read "${reply}" as a date. Try a year ("2018"), a slash date ("12/21/23"), a spelled-out month ("May 5 2023"), or "unknown".`;
+      }
+      step.draft.date = parsed;
     }
     return advanceFlow(chatId, step.draft, deps);
   }
@@ -240,7 +317,15 @@ export async function continueAddgear(
           updated.price = p;
           break;
         }
-        case 'date':        updated.date = value; updated.year = value.slice(0, 4); break;
+        case 'date': {
+          const parsed = parseUserDate(value);
+          if (!parsed) {
+            return `Couldn't read "${value}" as a date. Try "2018", "12/21/23", "May 5 2023", or "2018-06-15".`;
+          }
+          updated.date = parsed;
+          updated.year = parsed.slice(0, 4);
+          break;
+        }
         case 'category':    updated.category = value; break;
         case 'subcategory':
         case 'sub-category':updated.subCategory = value; break;
