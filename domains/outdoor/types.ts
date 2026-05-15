@@ -2,13 +2,6 @@ import { createHash } from 'node:crypto';
 import type { MasterRow } from '../../lib/types.js';
 
 /**
- * A MasterRow narrowed to active outdoor items. Same shape as MasterRow;
- * a phantom-typed alias keeps the agent's data flow visibly distinct from
- * raw sheet rows.
- */
-export type OutdoorItem = MasterRow & { readonly __outdoor: unique symbol };
-
-/**
  * Stable 6-char base36 id derived from natural-key fields only.
  * Survives sheet refreshes and ignores cosmetic fields (reasoning, notes,
  * productUrl) so an admin edit to those does not change the agent's
