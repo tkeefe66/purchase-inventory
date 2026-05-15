@@ -3,6 +3,7 @@ import { dispatchCommand, type HandlerDeps } from '../../../apps/bot/handlers.js
 import { InventoryCache } from '../../../apps/bot/inventoryCache.js';
 import { Stats } from '../../../apps/bot/stats.js';
 import { PendingActionStore } from '../../../lib/pendingActions.js';
+import { AddgearStateStore } from '../../../lib/addgearState.js';
 import { itemId } from '../../../domains/outdoor/types.js';
 import type { MasterRow, Status } from '../../../lib/types.js';
 import {
@@ -33,6 +34,15 @@ function makeDeps(rows: MasterRow[], overrides: Partial<HandlerDeps> = {}): {
     appendMasterRow: vi.fn(async (_s, _id, row) => { appendCalls.push(row); return { rowIndex: 99 }; }) as unknown as HandlerDeps['appendMasterRow'],
     extractLogDraft: vi.fn() as unknown as HandlerDeps['extractLogDraft'],
     today: () => TODAY,
+    addgearState: new AddgearStateStore({ ttlMs: 5 * 60 * 1000 }),
+    startAddgear: vi.fn() as unknown as HandlerDeps['startAddgear'],
+    continueAddgear: vi.fn() as unknown as HandlerDeps['continueAddgear'],
+    addgearInner: {
+      downloadPhoto: vi.fn() as unknown as HandlerDeps['addgearInner']['downloadPhoto'],
+      extractFromPhoto: vi.fn() as unknown as HandlerDeps['addgearInner']['extractFromPhoto'],
+      classify: vi.fn() as unknown as HandlerDeps['addgearInner']['classify'],
+      listExistingRows: () => [],
+    },
     ...overrides,
   };
   return { deps, cache, updateCalls, appendCalls };

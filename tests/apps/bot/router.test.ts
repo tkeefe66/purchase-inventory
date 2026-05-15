@@ -4,7 +4,9 @@ import { routeMessage, type RouterDeps } from '../../../apps/bot/router.js';
 function makeDeps(overrides: Partial<RouterDeps> = {}): RouterDeps {
   return {
     dispatchCommand: vi.fn(async () => null) as unknown as RouterDeps['dispatchCommand'],
+    handleAddgearContinuation: vi.fn(async () => null) as unknown as RouterDeps['handleAddgearContinuation'],
     handleAgentMessage: vi.fn(async () => 'agent reply') as unknown as RouterDeps['handleAgentMessage'],
+    handlePhoto: vi.fn(async () => null) as unknown as RouterDeps['handlePhoto'],
     ...overrides,
   };
 }

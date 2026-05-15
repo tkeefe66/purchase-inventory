@@ -6,16 +6,21 @@ import {
   readMasterRows,
   updateRowStatus,
   appendMasterRow,
+  buildVocab,
 } from '../../lib/sheets.js';
-import { sendMessage, getUpdates, type TelegramConfig } from '../../lib/telegram.js';
+import { sendMessage, getUpdates, getFile, downloadFile, type TelegramConfig } from '../../lib/telegram.js';
 import { InventoryCache } from './inventoryCache.js';
 import { Stats } from './stats.js';
 import { ConversationStore } from '../../lib/conversations.js';
 import { PendingActionStore } from '../../lib/pendingActions.js';
+import { AddgearStateStore } from '../../lib/addgearState.js';
 import { OutdoorAgent } from '../../domains/outdoor/agent.js';
-import { dispatchCommand, type HandlerDeps } from './handlers.js';
+import { dispatchCommand, handlePhoto, handleAddgearContinuation, type HandlerDeps } from './handlers.js';
 import { extractLogDraft } from './commands/log.js';
-import { routeMessage } from './router.js';
+import { startAddgear, continueAddgear } from './commands/addgear.js';
+import { extractFromPhoto } from '../../lib/parsers/photo.js';
+import { createClassifier } from '../../lib/classifier.js';
+import { routeMessage, routePhoto } from './router.js';
 
 const CACHE_REFRESH_MS = 15 * 60 * 1000;
 const POLL_TIMEOUT_S = 25;
@@ -74,6 +79,7 @@ async function main(): Promise<void> {
   const stats = new Stats();
   const conversations = new ConversationStore({ idleTtlMs: 30 * 60 * 1000 });
   const pendingActions = new PendingActionStore({ ttlMs: 5 * 60 * 1000 });
+  const addgearState = new AddgearStateStore({ ttlMs: 5 * 60 * 1000 });
 
   const cache = new InventoryCache(() => readMasterRows(sheets, env.spreadsheetId));
   await cache.start({
@@ -81,6 +87,9 @@ async function main(): Promise<void> {
     onRefresh: (info) => stats.recordRefresh(info),
   });
   console.log(`[bot] inventory loaded: ${cache.getSnapshot().length} rows`);
+
+  const vocab = await buildVocab(sheets, env.spreadsheetId);
+  const classifyFn = createClassifier({ vocab, anthropic });
 
   const agent = new OutdoorAgent({
     cache,
@@ -103,11 +112,30 @@ async function main(): Promise<void> {
     appendMasterRow,
     extractLogDraft,
     today: () => formatInTimeZone(new Date(), TZ, 'yyyy-MM-dd'),
+    addgearState,
+    startAddgear,
+    continueAddgear,
+    addgearInner: {
+      downloadPhoto: async (fileId: string) => {
+        const f = await getFile(telegramCfg, fileId);
+        const bytes = await downloadFile(telegramCfg, f.file_path!);
+        return bytes;
+      },
+      extractFromPhoto: (bytes, caption) => extractFromPhoto(anthropic, bytes, caption),
+      classify: (input) =>
+        classifyFn({ itemName: `${input.brand} ${input.itemName}`.trim(), source: 'Image' }),
+      listExistingRows: () =>
+        cache.getSnapshot().map((r) => ({ brand: r.brand, itemName: r.itemName })),
+    },
   };
 
   const routerDeps = {
     dispatchCommand: (chatId: string, text: string) => dispatchCommand(chatId, text, handlerDeps),
     handleAgentMessage: (chatId: string, text: string) => agent.handleMessage(chatId, text),
+    handleAddgearContinuation: (chatId: string, text: string) =>
+      handleAddgearContinuation(chatId, text, handlerDeps),
+    handlePhoto: (chatId: string, photoFileId: string, caption: string) =>
+      handlePhoto(chatId, photoFileId, caption, handlerDeps),
   };
 
   let offset: number | undefined;
@@ -123,37 +151,47 @@ async function main(): Promise<void> {
       for (const update of updates) {
         offset = update.update_id + 1;
         const msg = update.message ?? update.edited_message;
-        if (!msg?.text) continue;
+        if (!msg) continue;
         const chatId = String(msg.chat.id);
         if (!env.authorizedChatIds.has(chatId)) {
           console.warn(`[bot] rejected message from unauthorized chat ${chatId}`);
           continue;
         }
-        const text = msg.text;
-        console.log(`[bot] ${chatId} -> "${text.slice(0, 80)}"`);
-        try {
-          const reply = await routeMessage(chatId, text, routerDeps);
+
+        let reply: string;
+        if (msg.photo && msg.photo.length > 0) {
+          const largest = msg.photo[msg.photo.length - 1]!;
+          const caption = msg.caption ?? '';
+          console.log(`[bot] ${chatId} -> [photo file_id=${largest.file_id} caption="${caption.slice(0, 60)}"]`);
           try {
-            await sendMessage(telegramCfg, {
-              chat_id: chatId,
-              text: reply,
-              parse_mode: 'Markdown',
-              link_preview_options: { is_disabled: true },
-            });
-          } catch (mdErr) {
-            console.warn(
-              `[bot] markdown send failed for ${chatId}, retrying as plain text:`,
-              mdErr instanceof Error ? mdErr.message : mdErr,
-            );
-            await sendMessage(telegramCfg, { chat_id: chatId, text: reply });
+            reply = await routePhoto(chatId, largest.file_id, caption, routerDeps);
+          } catch (err) {
+            console.error(`[bot] photo handling failed for ${chatId}:`, err instanceof Error ? err.stack ?? err.message : err);
+            continue;
           }
-          console.log(`[bot] ${chatId} <- "${reply.slice(0, 80)}"`);
-        } catch (sendErr) {
-          console.error(
-            `[bot] failed to send reply to ${chatId}:`,
-            sendErr instanceof Error ? sendErr.message : sendErr,
-          );
+        } else if (msg.text) {
+          const text = msg.text;
+          console.log(`[bot] ${chatId} -> "${text.slice(0, 80)}"`);
+          reply = await routeMessage(chatId, text, routerDeps);
+        } else {
+          continue;
         }
+
+        try {
+          await sendMessage(telegramCfg, {
+            chat_id: chatId,
+            text: reply,
+            parse_mode: 'Markdown',
+            link_preview_options: { is_disabled: true },
+          });
+        } catch (mdErr) {
+          console.warn(
+            `[bot] markdown send failed for ${chatId}, retrying as plain text:`,
+            mdErr instanceof Error ? mdErr.message : mdErr,
+          );
+          await sendMessage(telegramCfg, { chat_id: chatId, text: reply });
+        }
+        console.log(`[bot] ${chatId} <- "${reply.slice(0, 80)}"`);
       }
     } catch (loopErr) {
       console.error(

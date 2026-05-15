@@ -9,6 +9,8 @@ import { filterToActiveOutdoor, findByFuzzyName, getById } from '../../domains/o
 import { itemId } from '../../domains/outdoor/types.js';
 import { parseCommand } from './commands/parse.js';
 import type { LogDraft } from './commands/log.js';
+import { startAddgear, continueAddgear, type AddgearDeps } from './commands/addgear.js';
+import { AddgearStateStore } from '../../lib/addgearState.js';
 
 const STATUS_CHANGE_COMMANDS: Record<string, Status> = {
   lost: 'lost', sold: 'sold', donated: 'donated', retired: 'retired', broken: 'broken',
@@ -25,6 +27,10 @@ export interface HandlerDeps {
   appendMasterRow: (sheets: SheetsClient, spreadsheetId: string, row: MasterRow) => Promise<{ rowIndex: number }>;
   extractLogDraft: (anthropic: Anthropic, userText: string, todayIso: string) => Promise<LogDraft | null>;
   today: () => string;
+  addgearState: AddgearStateStore;
+  startAddgear: typeof startAddgear;
+  continueAddgear: typeof continueAddgear;
+  addgearInner: Omit<AddgearDeps, 'addgearState' | 'pendingActions' | 'today'>;
 }
 
 export async function dispatchCommand(chatId: string, text: string, deps: HandlerDeps): Promise<string | null> {
@@ -33,6 +39,7 @@ export async function dispatchCommand(chatId: string, text: string, deps: Handle
   const { name, args } = parsed;
   if (STATUS_CHANGE_COMMANDS[name]) return handleStatusChange(STATUS_CHANGE_COMMANDS[name]!, args, deps);
   if (name === 'log') return handleLog(chatId, args, deps);
+  if (name === 'addgear') return `Send a photo of the gear with the caption "/addgear [optional notes]". A photo is required.`;
   if (name === 'confirm') return handleConfirm(chatId, deps);
   if (name === 'cancel') return handleCancel(chatId, deps);
   if (name === 'stats') return handleStats(deps);
@@ -110,9 +117,11 @@ async function handleConfirm(chatId: string, deps: HandlerDeps): Promise<string>
 }
 
 async function handleCancel(chatId: string, deps: HandlerDeps): Promise<string> {
-  const pending = deps.pendingActions.peek(chatId);
-  if (!pending) return `Nothing to cancel.`;
+  const hadPending = deps.pendingActions.peek(chatId);
+  const hadAddgear = deps.addgearState.peek(chatId);
+  if (!hadPending && !hadAddgear) return `Nothing to cancel.`;
   deps.pendingActions.clear(chatId);
+  deps.addgearState.clear(chatId);
   return `Cancelled.`;
 }
 
@@ -138,4 +147,33 @@ async function handleRefresh(deps: HandlerDeps): Promise<string> {
     hashChanged: deps.cache.lastRefreshChangedHash,
   });
   return `Refreshed in ${dt}ms — ${snap.length} total rows, ${activeOutdoor} active outdoor.`;
+}
+
+export async function handlePhoto(
+  chatId: string,
+  photoFileId: string,
+  caption: string,
+  deps: HandlerDeps,
+): Promise<string | null> {
+  if (!/^\/addgear\b/i.test(caption.trim())) return null;
+  return deps.startAddgear(chatId, photoFileId, caption, {
+    ...deps.addgearInner,
+    addgearState: deps.addgearState,
+    pendingActions: deps.pendingActions,
+    today: deps.today,
+  });
+}
+
+export async function handleAddgearContinuation(
+  chatId: string,
+  text: string,
+  deps: HandlerDeps,
+): Promise<string | null> {
+  if (!deps.addgearState.peek(chatId)) return null;
+  return deps.continueAddgear(chatId, text, {
+    ...deps.addgearInner,
+    addgearState: deps.addgearState,
+    pendingActions: deps.pendingActions,
+    today: deps.today,
+  });
 }
