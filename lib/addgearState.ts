@@ -1,4 +1,4 @@
-import type { MasterRow } from './types.js';
+import type { MasterRow, Domain, ItemType } from './types.js';
 import type { FuzzyMatch } from './dedup.js';
 
 /**
@@ -15,15 +15,18 @@ export interface PartialDraft {
   itemName: string;
   color: string;
   size: string;
+  // date is '' until filled; the *AcknowledgedUnknown flag flips to true when
+  // the user explicitly said "I don't know" — so the bot won't re-ask on each
+  // advanceFlow() call.
   date: string;
   dateAcknowledgedUnknown: boolean;
   price: number | null;
   priceAcknowledgedUnknown: boolean;
   imageFileId: string;
-  domain: string;
+  domain: Domain;
   category: string;
   subCategory: string;
-  type: 'Gear' | 'Consumable' | 'Service';
+  type: ItemType;
   reasoning: string;
 }
 

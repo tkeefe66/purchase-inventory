@@ -1,5 +1,23 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
-import { AddgearStateStore } from '../../lib/addgearState.js';
+import { AddgearStateStore, type PartialDraft } from '../../lib/addgearState.js';
+import type { MasterRow } from '../../lib/types.js';
+
+const minimalDraft: PartialDraft = {
+  brand: 'Patagonia',
+  itemName: 'Houdini',
+  color: '',
+  size: '',
+  date: '',
+  dateAcknowledgedUnknown: false,
+  price: null,
+  priceAcknowledgedUnknown: false,
+  imageFileId: 'F1',
+  domain: 'Outdoor',
+  category: 'Hiking Gear',
+  subCategory: 'Shell',
+  type: 'Gear',
+  reasoning: '',
+};
 
 describe('AddgearStateStore', () => {
   beforeEach(() => {
@@ -15,15 +33,7 @@ describe('AddgearStateStore', () => {
 
   test('set + peek returns the step', () => {
     const store = new AddgearStateStore({ ttlMs: 5 * 60 * 1000 });
-    const draft = {
-      brand: 'Patagonia', itemName: 'Houdini', color: '', size: '',
-      date: '', dateAcknowledgedUnknown: false,
-      price: null, priceAcknowledgedUnknown: false,
-      imageFileId: 'F1',
-      domain: 'Outdoor', category: 'Hiking Gear', subCategory: 'Shell',
-      type: 'Gear' as const, reasoning: '',
-    };
-    store.set('chat-1', { kind: 'awaiting-date', draft });
+    store.set('chat-1', { kind: 'awaiting-date', draft: minimalDraft });
     const step = store.peek('chat-1');
     expect(step?.kind).toBe('awaiting-date');
     if (step?.kind === 'awaiting-date') {
@@ -31,42 +41,55 @@ describe('AddgearStateStore', () => {
     }
   });
 
+  test('set + peek preserves awaiting-confirm row', () => {
+    const store = new AddgearStateStore({ ttlMs: 5 * 60 * 1000 });
+    const row: MasterRow = {
+      year: '2026',
+      date: '2026-05-14',
+      category: 'Hiking Gear',
+      subCategory: 'Shell',
+      brand: 'Patagonia',
+      itemName: 'Houdini',
+      color: 'Blue',
+      size: 'M',
+      qty: 1,
+      price: 149,
+      source: 'Image',
+      orderId: 'IMG-20260514-abc123',
+      status: 'active',
+      domain: 'Outdoor',
+      productUrl: '',
+      type: 'Gear',
+      reasoning: 'captured via /addgear photo',
+      notes: '',
+    };
+    store.set('chat-1', { kind: 'awaiting-confirm', row });
+    const step = store.peek('chat-1');
+    expect(step?.kind).toBe('awaiting-confirm');
+    if (step?.kind === 'awaiting-confirm') {
+      expect(step.row.brand).toBe('Patagonia');
+      expect(step.row.source).toBe('Image');
+    }
+  });
+
   test('expires entry after ttl', () => {
     const store = new AddgearStateStore({ ttlMs: 5 * 60 * 1000 });
-    const draft = {
-      brand: 'X', itemName: 'Y', color: '', size: '', date: '', dateAcknowledgedUnknown: false,
-      price: null, priceAcknowledgedUnknown: false,
-      imageFileId: 'F1', domain: 'Outdoor', category: '', subCategory: '',
-      type: 'Gear' as const, reasoning: '',
-    };
-    store.set('chat-1', { kind: 'awaiting-date', draft });
+    store.set('chat-1', { kind: 'awaiting-date', draft: minimalDraft });
     vi.advanceTimersByTime(6 * 60 * 1000);
     expect(store.peek('chat-1')).toBeNull();
   });
 
   test('clear removes entry', () => {
     const store = new AddgearStateStore({ ttlMs: 5 * 60 * 1000 });
-    const draft = {
-      brand: 'X', itemName: 'Y', color: '', size: '', date: '', dateAcknowledgedUnknown: false,
-      price: null, priceAcknowledgedUnknown: false,
-      imageFileId: 'F1', domain: 'Outdoor', category: '', subCategory: '',
-      type: 'Gear' as const, reasoning: '',
-    };
-    store.set('chat-1', { kind: 'awaiting-date', draft });
+    store.set('chat-1', { kind: 'awaiting-date', draft: minimalDraft });
     store.clear('chat-1');
     expect(store.peek('chat-1')).toBeNull();
   });
 
   test('isolates entries by chat id', () => {
     const store = new AddgearStateStore({ ttlMs: 5 * 60 * 1000 });
-    const draftA = {
-      brand: 'A', itemName: 'A', color: '', size: '', date: '', dateAcknowledgedUnknown: false,
-      price: null, priceAcknowledgedUnknown: false,
-      imageFileId: 'F1', domain: 'Outdoor', category: '', subCategory: '',
-      type: 'Gear' as const, reasoning: '',
-    };
-    const draftB = { ...draftA, brand: 'B', itemName: 'B' };
-    store.set('chat-A', { kind: 'awaiting-date', draft: draftA });
+    const draftB: PartialDraft = { ...minimalDraft, brand: 'Black Diamond', itemName: 'Vector' };
+    store.set('chat-A', { kind: 'awaiting-date', draft: minimalDraft });
     store.set('chat-B', { kind: 'awaiting-price', draft: draftB });
     const sA = store.peek('chat-A');
     const sB = store.peek('chat-B');
