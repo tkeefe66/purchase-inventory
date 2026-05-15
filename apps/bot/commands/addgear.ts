@@ -168,6 +168,18 @@ function previewRow(row: MasterRow): string {
   ].join('\n');
 }
 
+/**
+ * Park the row in PendingActionStore AND set the addgear state to
+ * awaiting-confirm. Pre-parking means /confirm works immediately as the
+ * preview promises — handleConfirm's existing pop+write path takes over
+ * without any second step on the user's side.
+ */
+function parkForConfirm(chatId: string, row: MasterRow, deps: AddgearDeps): string {
+  deps.addgearState.set(chatId, { kind: 'awaiting-confirm', row });
+  deps.pendingActions.set(chatId, { type: 'log-append', row });
+  return previewRow(row);
+}
+
 export async function startAddgear(
   chatId: string,
   photoFileId: string,
@@ -233,8 +245,7 @@ function advanceFlow(chatId: string, draft: PartialDraft, deps: AddgearDeps): st
   const hash = makeHash([draft.brand, draft.itemName, draft.color, draft.size, String(Date.now())]);
   const orderId = makeOrderId(deps.today(), hash);
   const row = rowFromDraft(draft, deps.today(), orderId);
-  deps.addgearState.set(chatId, { kind: 'awaiting-confirm', row });
-  return previewRow(row);
+  return parkForConfirm(chatId, row, deps);
 }
 
 export async function continueAddgear(
@@ -247,9 +258,12 @@ export async function continueAddgear(
 
   const reply = text.trim();
 
-  // Universal: /cancel exits any step.
+  // Universal: /cancel exits any step. handleCancel clears both stores,
+  // but if /cancel is typed as bare 'cancel' it doesn't go through the
+  // command dispatcher, so we clear both here too.
   if (/^\/?cancel$/i.test(reply)) {
     deps.addgearState.clear(chatId);
+    deps.pendingActions.clear(chatId);
     return `Cancelled. Nothing was written.`;
   }
 
@@ -286,17 +300,18 @@ export async function continueAddgear(
       ]);
       const orderId = makeOrderId(deps.today(), hash);
       const row = rowFromDraft(step.draft, deps.today(), orderId);
-      deps.addgearState.set(chatId, { kind: 'awaiting-confirm', row });
-      return previewRow(row);
+      return parkForConfirm(chatId, row, deps);
     }
     return `Reply 'add anyway' to log this as new, or /cancel.`;
   }
 
   if (step.kind === 'awaiting-confirm') {
-    if (/^yes$/i.test(reply) || /^\/?confirm$/i.test(reply)) {
-      deps.pendingActions.set(chatId, { type: 'log-append', row: step.row });
-      deps.addgearState.clear(chatId);
-      return `Reply /confirm to write the row, or /cancel to discard.`;
+    // /confirm is intercepted by the slash-command dispatcher before reaching
+    // this handler — the row is already pre-parked in PendingActionStore by
+    // parkForConfirm(), so handleConfirm pops it and writes immediately.
+    // Here we just handle 'yes' / bare 'confirm' aliases and field corrections.
+    if (/^yes$/i.test(reply) || /^confirm$/i.test(reply)) {
+      return `Reply /confirm (with the slash) to write, /cancel to discard, or 'field: value' to change.`;
     }
     const fieldMatch = reply.match(/^([a-zA-Z][a-zA-Z\s\-]*?)\s*:\s*(.+)$/);
     if (fieldMatch) {
@@ -346,8 +361,8 @@ export async function continueAddgear(
         default:
           return `Unknown field "${field}". Try: brand, item, color, size, price, date, category, sub-category, domain, type. Or reply /confirm or /cancel.`;
       }
-      deps.addgearState.set(chatId, { kind: 'awaiting-confirm', row: updated });
-      return previewRow(updated);
+      // Re-park so the pending action also reflects the patched row.
+      return parkForConfirm(chatId, updated, deps);
     }
     return `Reply /confirm to write, 'field: value' to change something, or /cancel.`;
   }

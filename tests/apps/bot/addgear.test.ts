@@ -128,16 +128,27 @@ describe('startAddgear — fuzzy dedup match', () => {
 });
 
 describe('continueAddgear — confirm, correct, cancel', () => {
-  test('"yes" parks the row in pendingActions and clears addgearState', async () => {
+  test('row is pre-parked in pendingActions when awaiting-confirm is reached', async () => {
+    const deps = makeDeps();
+    await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    expect(deps.addgearState.peek('chat-1')?.kind).toBe('awaiting-confirm');
+    const pending = deps.pendingActions.peek('chat-1');
+    expect(pending).not.toBeNull();
+    expect(pending?.row.source).toBe('Image');
+    expect(pending?.row.brand).toBe('Patagonia');
+  });
+
+  test('"yes" alias points the user at /confirm (does not write directly)', async () => {
     const deps = makeDeps();
     await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
     const reply = await continueAddgear('chat-1', 'yes', deps);
-    expect(reply).toMatch(/Reply \/confirm to write/i);
-    expect(deps.addgearState.peek('chat-1')).toBeNull();
+    expect(reply).toMatch(/\/confirm/);
+    // Row is still parked, state is still awaiting-confirm — user just needs to type /confirm
+    expect(deps.addgearState.peek('chat-1')?.kind).toBe('awaiting-confirm');
     expect(deps.pendingActions.peek('chat-1')).not.toBeNull();
   });
 
-  test('"color: red" patches the draft and re-shows', async () => {
+  test('"color: red" patches the row and re-parks the new version', async () => {
     const deps = makeDeps();
     await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
     const reply = await continueAddgear('chat-1', 'color: red', deps);
@@ -147,14 +158,20 @@ describe('continueAddgear — confirm, correct, cancel', () => {
     if (step?.kind === 'awaiting-confirm') {
       expect(step.row.color).toBe('red');
     }
+    // Pending action reflects the corrected row, not the original
+    const pending = deps.pendingActions.peek('chat-1');
+    expect(pending?.row.color).toBe('red');
   });
 
-  test('"/cancel" clears the state', async () => {
+  test('"/cancel" clears both state stores', async () => {
     const deps = makeDeps();
-    await startAddgear('chat-1', 'FILE-1', '/addgear', deps);
+    await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    // Pre-condition: both stores populated
+    expect(deps.pendingActions.peek('chat-1')).not.toBeNull();
     const reply = await continueAddgear('chat-1', '/cancel', deps);
     expect(reply).toMatch(/cancelled/i);
     expect(deps.addgearState.peek('chat-1')).toBeNull();
+    expect(deps.pendingActions.peek('chat-1')).toBeNull();
   });
 });
 

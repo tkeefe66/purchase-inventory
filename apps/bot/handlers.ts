@@ -113,6 +113,8 @@ async function handleConfirm(chatId: string, deps: HandlerDeps): Promise<string>
   if (!pending) return `Nothing to confirm.`;
   await deps.appendMasterRow(deps.sheets, deps.spreadsheetId, pending.row);
   deps.cache.applyLocalChange(pending.row);
+  // Successful write ends any /addgear flow that pre-parked this row.
+  deps.addgearState.clear(chatId);
   return `Logged: ${pending.row.brand} ${pending.row.itemName} — $${pending.row.price}.`;
 }
 
