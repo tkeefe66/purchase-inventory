@@ -1,0 +1,155 @@
+import 'dotenv/config';
+import Anthropic from '@anthropic-ai/sdk';
+import { formatInTimeZone } from 'date-fns-tz';
+import {
+  createSheetsClient,
+  readMasterRows,
+  updateRowStatus,
+  appendMasterRow,
+} from '../../lib/sheets.js';
+import { sendMessage, getUpdates, type TelegramConfig } from '../../lib/telegram.js';
+import { InventoryCache } from './inventoryCache.js';
+import { Stats } from './stats.js';
+import { ConversationStore } from '../../lib/conversations.js';
+import { PendingActionStore } from '../../lib/pendingActions.js';
+import { OutdoorAgent } from '../../domains/outdoor/agent.js';
+import { dispatchCommand, type HandlerDeps } from './handlers.js';
+import { extractLogDraft } from './commands/log.js';
+import { routeMessage } from './router.js';
+
+const CACHE_REFRESH_MS = 15 * 60 * 1000;
+const POLL_TIMEOUT_S = 25;
+const TZ = 'America/Denver';
+
+interface Env {
+  googleClientId: string;
+  googleClientSecret: string;
+  googleRefreshToken: string;
+  spreadsheetId: string;
+  anthropicApiKey: string;
+  telegramBotToken: string;
+  authorizedChatIds: Set<string>;
+}
+
+function readEnv(): Env {
+  const required = {
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+    GOOGLE_REFRESH_TOKEN: process.env.GOOGLE_REFRESH_TOKEN,
+    GOOGLE_SHEET_ID: process.env.GOOGLE_SHEET_ID,
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
+    TELEGRAM_AUTHORIZED_CHAT_IDS: process.env.TELEGRAM_AUTHORIZED_CHAT_IDS,
+  };
+  const missing = Object.entries(required).filter(([, v]) => !v).map(([k]) => k);
+  if (missing.length) {
+    console.error(`Missing required env vars: ${missing.join(', ')}`);
+    process.exit(1);
+  }
+  return {
+    googleClientId: required.GOOGLE_CLIENT_ID!,
+    googleClientSecret: required.GOOGLE_CLIENT_SECRET!,
+    googleRefreshToken: required.GOOGLE_REFRESH_TOKEN!,
+    spreadsheetId: required.GOOGLE_SHEET_ID!,
+    anthropicApiKey: required.ANTHROPIC_API_KEY!,
+    telegramBotToken: required.TELEGRAM_BOT_TOKEN!,
+    authorizedChatIds: new Set(
+      required.TELEGRAM_AUTHORIZED_CHAT_IDS!.split(',').map((s) => s.trim()).filter(Boolean),
+    ),
+  };
+}
+
+async function main(): Promise<void> {
+  const env = readEnv();
+  console.log(`[bot] starting; authorized chats: ${[...env.authorizedChatIds].join(', ')}`);
+
+  const sheets = createSheetsClient({
+    clientId: env.googleClientId,
+    clientSecret: env.googleClientSecret,
+    refreshToken: env.googleRefreshToken,
+  });
+  const anthropic = new Anthropic({ apiKey: env.anthropicApiKey });
+  const telegramCfg: TelegramConfig = { botToken: env.telegramBotToken };
+
+  const cache = new InventoryCache(() => readMasterRows(sheets, env.spreadsheetId));
+  await cache.start({ refreshIntervalMs: CACHE_REFRESH_MS });
+  console.log(`[bot] inventory loaded: ${cache.getSnapshot().length} rows`);
+
+  const stats = new Stats();
+  const conversations = new ConversationStore({ idleTtlMs: 30 * 60 * 1000 });
+  const pendingActions = new PendingActionStore({ ttlMs: 5 * 60 * 1000 });
+
+  const agent = new OutdoorAgent({
+    cache,
+    conversations,
+    stats,
+    anthropic,
+    sheets,
+    spreadsheetId: env.spreadsheetId,
+    updateRowStatus,
+  });
+
+  const handlerDeps: HandlerDeps = {
+    cache,
+    stats,
+    pendingActions,
+    sheets,
+    spreadsheetId: env.spreadsheetId,
+    anthropic,
+    updateRowStatus,
+    appendMasterRow,
+    extractLogDraft,
+    today: () => formatInTimeZone(new Date(), TZ, 'yyyy-MM-dd'),
+  };
+
+  const routerDeps = {
+    dispatchCommand: (chatId: string, text: string) => dispatchCommand(chatId, text, handlerDeps),
+    handleAgentMessage: (chatId: string, text: string) => agent.handleMessage(chatId, text),
+  };
+
+  let offset: number | undefined;
+  console.log(`[bot] polling started; refresh interval ${CACHE_REFRESH_MS}ms`);
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      const updates = await getUpdates(
+        telegramCfg,
+        offset !== undefined ? { offset, timeout: POLL_TIMEOUT_S } : { timeout: POLL_TIMEOUT_S },
+      );
+      for (const update of updates) {
+        offset = update.update_id + 1;
+        const msg = update.message ?? update.edited_message;
+        if (!msg?.text) continue;
+        const chatId = String(msg.chat.id);
+        if (!env.authorizedChatIds.has(chatId)) {
+          console.warn(`[bot] rejected message from unauthorized chat ${chatId}`);
+          continue;
+        }
+        const text = msg.text;
+        console.log(`[bot] ${chatId} -> "${text.slice(0, 80)}"`);
+        try {
+          const reply = await routeMessage(chatId, text, routerDeps);
+          await sendMessage(telegramCfg, { chat_id: chatId, text: reply });
+          console.log(`[bot] ${chatId} <- "${reply.slice(0, 80)}"`);
+        } catch (sendErr) {
+          console.error(
+            `[bot] failed to send reply to ${chatId}:`,
+            sendErr instanceof Error ? sendErr.message : sendErr,
+          );
+        }
+      }
+    } catch (loopErr) {
+      console.error(
+        `[bot] poll loop error:`,
+        loopErr instanceof Error ? loopErr.message : loopErr,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
+  }
+}
+
+main().catch((err: unknown) => {
+  console.error('[bot] fatal:', err instanceof Error ? err.stack ?? err.message : err);
+  process.exit(1);
+});
