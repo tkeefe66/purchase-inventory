@@ -3,7 +3,7 @@ import type { MasterRow } from '../../lib/types.js';
 import { itemId } from './types.js';
 
 const HEADER = `=== ACTIVE OUTDOOR INVENTORY ===
-Format: [id] | Year | [Brand] Item (Color, Size) | $price [Category/Sub-Category]
+Format: [id] | Year | [Brand] Item (Color, Size) | $price [Category/Sub-Category] | <productUrl or empty>
 Note: Only items with status=active are shown. Non-active items (retired/returned/lost/broken/sold/donated) are out of view in this conversation.`;
 
 export interface CompactView {
@@ -35,7 +35,7 @@ function formatRow(row: MasterRow): string {
   const colorSize = formatColorSize(row.color, row.size);
   const cat = row.subCategory ? `${row.category}/${row.subCategory}` : row.category;
   const price = formatPrice(row.price);
-  return `[${id}] | ${row.year} | ${brandPart}${row.itemName}${colorSize} | $${price} [${cat}]`;
+  return `[${id}] | ${row.year} | ${brandPart}${row.itemName}${colorSize} | $${price} [${cat}] | ${row.productUrl}`;
 }
 
 function formatColorSize(color: string, size: string): string {

@@ -133,7 +133,20 @@ async function main(): Promise<void> {
         console.log(`[bot] ${chatId} -> "${text.slice(0, 80)}"`);
         try {
           const reply = await routeMessage(chatId, text, routerDeps);
-          await sendMessage(telegramCfg, { chat_id: chatId, text: reply });
+          try {
+            await sendMessage(telegramCfg, {
+              chat_id: chatId,
+              text: reply,
+              parse_mode: 'Markdown',
+              link_preview_options: { is_disabled: true },
+            });
+          } catch (mdErr) {
+            console.warn(
+              `[bot] markdown send failed for ${chatId}, retrying as plain text:`,
+              mdErr instanceof Error ? mdErr.message : mdErr,
+            );
+            await sendMessage(telegramCfg, { chat_id: chatId, text: reply });
+          }
           console.log(`[bot] ${chatId} <- "${reply.slice(0, 80)}"`);
         } catch (sendErr) {
           console.error(

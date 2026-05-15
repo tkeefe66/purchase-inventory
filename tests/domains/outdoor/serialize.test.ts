@@ -25,17 +25,17 @@ describe('serializeCompact', () => {
     expect(out.text).not.toContain('Old Backpack');
   });
 
-  test('renders a row with brand, color, and size', () => {
+  test('renders a row with brand, color, and size + product URL', () => {
     const out = serializeCompact([FIXTURE_THERMAREST]);
     expect(out.text).toContain(
-      '| 2026 | Therm-a-Rest Z Lite Sol Sleeping Pad (Limon, Reg) | $49.95 [Camping Gear/Sleep System]',
+      `| 2026 | Therm-a-Rest Z Lite Sol Sleeping Pad (Limon, Reg) | $49.95 [Camping Gear/Sleep System] | ${FIXTURE_THERMAREST.productUrl}`,
     );
   });
 
   test('renders a row without a brand (no leading space)', () => {
     const out = serializeCompact([FIXTURE_NO_BRAND]);
     expect(out.text).toContain(
-      '| 2026 | 12 Pack Tent Stake with Hammer | $19.99 [Camping Gear/Camp Accessories]',
+      `| 2026 | 12 Pack Tent Stake with Hammer | $19.99 [Camping Gear/Camp Accessories] | ${FIXTURE_NO_BRAND.productUrl}`,
     );
   });
 
