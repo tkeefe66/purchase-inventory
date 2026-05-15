@@ -46,6 +46,8 @@ The following 28+ questions were resolved during this session. Format: question 
 
 ## 2026-05-01 — Amazon parser sources shipment-tracking only
 
+> ⚠️ **Superseded 2026-05-15** — see "Amazon parser also ingests `auto-confirm` order emails (via Haiku)" below. Order emails are now parsed; the original concern about no per-item prices turned out to be incorrect for modern Amazon order emails, which do carry per-line-item prices.
+
 **Context:** Phase 1 TDD on the Amazon parser revealed that order-confirmation emails (`auto-confirm@amazon.com`, "Ordered: …") only carry the **order total**, not per-item prices. The order total includes shipping/tax/discounts, so it can't be split per item. Per-item pricing lives in shipment-tracking emails (`shipment-tracking@amazon.com`, "Shipped: …") instead, in a typographic `<sup>$</sup><span>1,498</span><sup>00</sup>` pattern that styles the dollar sign and cents as superscripts.
 
 **Decision:** **The Amazon parser parses shipment-tracking emails only.** Order-confirmation emails return `null` (the cron fetches them, sees null, applies the processed label, moves on without ingesting).
@@ -831,6 +833,132 @@ await telegram.sendMessage(chatId, reply);
 **Cost per `/addgear` call:** ~$0.02-0.04 (Sonnet vision + classifier + web_search at $0.01/search). Per-call latency: 6–13s (vision and lookup run in parallel after extraction; lookup includes the web_search round-trip). Acceptable for a deliberate-action flow.
 
 **Models referenced:** `VISION_MODEL = MODELS.sonnet` (added 2026-05-14 to `lib/models.ts`). All `/addgear` Claude calls use it. Update when a newer Sonnet ships.
+
+---
+
+## 2026-05-15 — `/addgear` URL in caption is authoritative; photo is a cross-check
+
+**Context:** Tom photographed a pair of Grass Sticks bamboo ski poles with `/addgear https://www.rei.com/product/163187/...` as the caption. Vision couldn't read brand or item name off bamboo, so the bot replied "Couldn't read brand or item name from the photo" — even though the user had handed it the canonical product URL.
+
+**Decision:** When the `/addgear` caption contains a URL, the URL is the authoritative source for brand + itemName. The product-pick step is skipped entirely. Vision still runs but is used only for color/size + a brand sanity-check.
+
+**Why:**
+- A URL in the caption is the user explicitly saying "this is the product page" — no need to web-search for candidates.
+- For hard photos (bamboo, plain fabric, dark scenes) vision fails completely. The URL bridges the gap.
+- A cheap Haiku call on the page `<title>` + URL slug returns `{brand, itemName}` with high accuracy for REI/L.L.Bean/Patagonia/etc.; for Amazon URLs we skip the page fetch (bot-shield) but still let Haiku parse the URL slug.
+
+**How to apply:**
+- `lib/parsers/product-lookup.ts: fetchProductInfo(anthropic, url)` — fetches page title (when host isn't on the bot-shield list), passes URL + title to Haiku, returns `{brand, itemName}`.
+- `apps/bot/commands/addgear.ts: startAddgearWithUrl()` — when caption has a URL, runs vision + fetchProductInfo in parallel, merges with URL primary for brand/item, vision primary for color/size.
+- Cross-check: if both vision and URL return a brand and they share no tokens, the preview is prefixed with `Heads up: photo looks like "X" but URL says "Y" — using URL.` so the user can override via `brand: …`.
+- Falls through cleanly to existing date/price/dedup prompts; product-pick step bypassed.
+
+**Trade-off accepted:** if the URL is wrong, no lookup alternatives are surfaced; user corrects via `url: <other>` on the preview. Worth it — the common case (URL is right) is now zero-friction.
+
+---
+
+## 2026-05-15 — Labeled-field "About to log" preview shared by `/addgear` and `/log`
+
+**Context:** The original preview was a dense single-line format: `Brand Item (color, size) / $price, source, date, [category/sub]`. Tom found it hard to scan and asked for `Label: Value` per line.
+
+**Decision:** A single shared helper `apps/bot/preview.ts: formatLogPreview(row)` produces a per-field-on-its-own-line preview used by both `/addgear` and `/log`. Labels exactly match the keys accepted by the `field: value` edit syntax — so the preview doubles as a cheat-sheet.
+
+**Field order:** Item, Brand, Color, Size, Price, Date, Source, Category, Sub-Category, Domain, Type, URL.
+
+**Why:** the most-edited fields (Item, Brand) sit at the top; less-likely-to-be-corrected fields (Domain, Type, URL) at the bottom. Labels mirror correction keys so the user doesn't need a separate help message.
+
+---
+
+## 2026-05-15 — `fetchProductName`: skip Amazon, sanity-check titles
+
+**Context:** A user-pasted Amazon URL was producing rows with `itemName = "Amazon.com"`. Amazon detects our `Mozilla/5.0 (compatible; outdoor-inventory/1.0)` UA and serves a stripped bot-shield page whose `<title>` is the literal string `Amazon.com`. The original suffix-stripping regex only caught patterns like ` | REI Co-op`, not hostname-as-title.
+
+**Decision:**
+1. `fetchProductName` returns `null` immediately for `amazon.com` / `amzn.to` / `amzn.com` / `smile.amazon.com` — vision's `itemName` is always better than what the bot-shield page yields.
+2. For all other hosts, the extracted title is run through `isJunkTitle()`: rejects titles that equal the source hostname, equal the brand alone, are shorter than 3 chars, or match common bot-shield/error phrases (`Robot Check`, `Sign In`, `Just a moment`, `404`, `Page Not Found`, etc.).
+
+**Why:** vision-extracted item names are accurate for in-photo gear. Refining them against a 200-OK bot-shield page replaces good data with garbage. Better to keep vision's name.
+
+---
+
+## 2026-05-15 — Amazon parser also ingests `auto-confirm` order emails (via Haiku)
+
+> Supersedes [2026-05-01: "Amazon parser sources shipment-tracking only"](#2026-05-01--amazon-parser-sources-shipment-tracking-only).
+
+**Context:** "I have bought things so it's broken." Tom's most recent purchase (Eucalan No Rinse) had been sitting in his Gmail for hours with an `auto-confirm@amazon.com` "Ordered: …" subject, but no row appeared in the sheet because the parser was hard-coded to skip non-shipment Amazon emails. The original assumption ("order emails only show the order total") turned out to be wrong for modern Amazon order emails — they do carry per-line-item prices.
+
+**Decision:** The Amazon parser now handles BOTH email types:
+- `parseAmazonShipmentEmail(html)` — sync, cheerio-based, as before (handles the typographic `<sup>$</sup>` price pattern).
+- `parseAmazonOrderEmail(anthropic, html)` — async, Haiku-based, extracts `{orderId, items: [{itemName, quantity, price, productUrl}]}` from "Ordered: …" auto-confirm HTML.
+
+Pipeline tries shipment first (cheap, deterministic), falls through to order parser for "Ordered: …" emails.
+
+**Why:**
+- Closes the 1–3 day visibility gap between purchase and sheet update — the row appears within ~12 hours of buying instead of within ~12 hours of shipping.
+- Haiku cost is negligible (~$0.001 per email).
+- Dedup catches the future shipment email arrival via `(orderId, ASIN)` strong key — no double-write.
+
+**Trade-off accepted:** if Haiku misreads an item name in the auto-confirm AND the dedup misses the shipment match, a duplicate row appears. Mitigated by the new ASIN strong key (see next entry).
+
+**How to apply:**
+- `lib/parsers/amazon.ts`: exports `parseAmazonShipmentEmail`, `parseAmazonOrderEmail`. (The old `parseAmazonEmail` name was renamed — internal API only, no users.)
+- `apps/cron/pipeline.ts`: `parseEmail()` tries shipment then order.
+- Fixtures: `tests/fixtures/amazon-auto-confirm-eucalan.html` (single-item) and `amazon-auto-confirm-peak-design.html` (multi-item).
+
+---
+
+## 2026-05-15 — ASIN/product-ID strong dedup key
+
+**Context:** With auto-confirm and shipment-tracking both producing rows for the same order, item-name drift becomes a real risk. Haiku extracts a clean short name from the auto-confirm ("Capture Camera Clip V3"); the shipment parser pulls from `<img alt>` and can produce a much longer name with the brand duplicated ("Peak Design Peak Design Capture Camera Clip V3, Black with Plate, Holds DSLR…"). After normalization the names still diverge → no dedup match → duplicate row.
+
+**Decision:** Add a third dedup key — the **strong key** `(orderId, productId)` where productId comes from `productUrl`:
+- Amazon: ASIN matched from `amazon.com/(?:dp|gp/product|gp/aw/d|product)/([A-Z0-9]{10})` → `amzn:<ASIN>`.
+- REI: numeric ID matched from `rei.com/(?:section/)?product/(\d+)` → `rei:<id>`.
+
+Strong key is checked **first**. Falls back to the existing full key (orderId + brand + normalizedItemName + color + size) and content key (for blank-orderId historical rows) when no productId is extractable.
+
+**Why:**
+- ASIN/product-ID is a stable canonical identifier that survives parser differences. Item names drift; URLs don't.
+- Namespaced prefix (`amzn:` vs `rei:`) prevents accidental cross-retailer collision.
+- No schema change to the sheet — productId is derived on the fly from `productUrl`.
+
+**How to apply:**
+- `lib/productId.ts: extractProductId(url)` — pure function, returns `amzn:…` / `rei:…` / null.
+- `lib/dedup.ts: makeStrongKey(input)` returns `orderId||productId` when both are present.
+- `DedupIndex.strongKeys: Set<string>` — checked first in `dedupItems()`.
+- `lib/sheets.ts: readDedupKeys()` and `apps/cron/pipeline.ts` pass `productUrl` through.
+
+---
+
+## 2026-05-15 — Detect Amazon returns and flip Status to `returned`
+
+**Context:** Tom returned a Sigma 18-50mm lens (refund issued 2026-05-06). His sheet still showed the row as `active` because the cron never looked at `return@amazon.com` emails. The `returned` Status value existed but had no automatic source.
+
+**Decision:** Add `return@amazon.com` to `KNOWN_SENDERS` (role `amazon-return`). New parser `lib/parsers/amazon-return.ts: parseAmazonReturnEmail(anthropic, html)` extracts `{orderId, items: [{itemName, productUrl}]}` via Haiku from refund / dropoff-confirmed / return-received emails. Pipeline dispatches return emails to a separate path that finds the matching row by `(orderId, productId)` (with name-token fallback) and calls `updateRowStatus(rowIndex, 'returned')`.
+
+**Why:**
+- Sheet status is the source of truth for "what do I actually own right now". A returned item silently staying `active` corrupts that.
+- Same Haiku pattern as the order parser — small, predictable surface area.
+- Idempotent: re-applying a return to an already-`returned` row is a no-op.
+
+**Trade-off accepted:** if Amazon sends a "Return started" email but the user keeps the item, the row gets flipped to `returned` prematurely. Acceptable — user can revert via `/status` correction or sheet edit. The vast majority of return emails are post-decision (refund issued, dropoff confirmed) so the false-positive rate is low.
+
+**How to apply:**
+- `lib/sources.ts`: `KNOWN_SENDERS` includes `return@amazon.com`; `EXPECTED_SUBJECT_PATTERNS['amazon-return']` covers "Refund issued", "Dropoff confirmed", "Return received|requested|started|initiated", "Your refund".
+- `apps/cron/pipeline.ts`: loop branches on `pickRole(from)`; return actions accumulate, then applied after row appends; uses `findRowForReturn()` helper (strong key + name-token fallback).
+- `PipelineResult` gains `returnsApplied` + `returnsUnmatched` counters; digest surfaces them.
+
+---
+
+## 2026-05-15 — Daily Telegram digest is always audible
+
+**Context:** When the cron ran and found nothing, `disable_notification=true` made the digest a silent message. Tom couldn't tell from his phone whether the cron had run at all — a 15-day gap with no purchases looked identical to a 15-day outage. ("Is this app actively scanning my email?")
+
+**Decision:** Always send the daily digest audibly. The heartbeat matters more than the noise tax (2 pings/day at 6am + 6pm Mountain).
+
+**Why:** silent-when-nothing-changed optimized for unread-count politeness at the cost of observability. Tom would rather know the cron ran than not be pinged. If it becomes too chatty, the next iteration is "audible on activity OR errors, silent only when nothing-changed-AND-it's-mid-week."
+
+**How to apply:** `apps/cron/pipeline.ts` — `disable_notification: false` unconditionally.
 
 ---
 

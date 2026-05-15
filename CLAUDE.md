@@ -86,13 +86,13 @@ ledger/                     # current folder name: outdoor-inventory
 | Cron | 6am + 6pm Mountain Time |
 | Storage | Google Sheets (sheet ID in `PLAN.md`); no separate DB in v1 |
 | Sheet schema | 18 columns; key ones: Source, Order ID, Status, Domain, Type, Product URL, Reasoning, Notes. **Code accesses columns by HEADER NAME (not position)** via `buildHeaderMap` in `lib/sheets.ts` — admin can reorder columns in Sheets UI without breaking ingestion. |
-| Dedup key | `(Order ID, Item Name, Color, Size)` |
-| Item lifecycle | `Status` column M: `active` (default), `retired` (still own, not in active rotation), `returned`, `lost`, `broken`, `sold`, `donated`, `excluded` (don't include in inventory analysis) |
+| Dedup key | Layered: **strong key `(Order ID, productId)`** where productId is the ASIN (Amazon) or numeric ID (REI) extracted from Product URL — catches cross-source item-name drift; falls back to full key `(Order ID, Brand, Item Name, Color, Size)` and a content key for blank-Order-ID historical rows. See `lib/dedup.ts` + `lib/productId.ts`. |
+| Item lifecycle | `Status` column M: `active` (default), `retired` (still own, not in active rotation), `returned`, `lost`, `broken`, `sold`, `donated`, `excluded` (don't include in inventory analysis). Returns auto-detected from `return@amazon.com` emails — see Amazon parser row. |
 | Year derivation | From `Date Purchased` in Mountain time |
 | Price | Line-item price, post-discount, no shipping/tax |
-| Email senders | REI: `rei@notices.rei.com`. Amazon: `auto-confirm@amazon.com` (order — "Ordered: …") AND `shipment-tracking@amazon.com` (shipment — "Shipped: …"). PLAN.md originally said `ship-confirm@amazon.com` — verified May 2026 against Tom's Gmail; correct sender is `shipment-tracking@amazon.com`. |
+| Email senders | REI: `rei@notices.rei.com`. Amazon: **THREE senders** — `auto-confirm@amazon.com` (order — "Ordered: …", ingested via Haiku), `shipment-tracking@amazon.com` (shipment — "Shipped: …", ingested via cheerio fast-path), `return@amazon.com` (returns/refunds — flips Status to `returned`). |
 | REI parser | Pure cheerio; no LLM |
-| Amazon parser | Tier 1 regex/cheerio → Tier 2 Claude Haiku 4.5 fallback → Tier 3 Needs Review |
+| Amazon parser | Two-path: `parseAmazonShipmentEmail` (sync, cheerio, IMG-alt + typographic `<sup>$</sup>` prices) and `parseAmazonOrderEmail` (async, Haiku 4.5, extracts per-line-item from auto-confirm HTML). Pipeline tries shipment first, falls through to order. Plus `parseAmazonReturnEmail` (Haiku) for `return@amazon.com`. |
 | Brand extraction | Allowlist seeded from existing sheet's Brand column; LLM as backup |
 | Color/Size for Amazon | Often blank; only filled when parser is confident |
 | Categorization | Two-stage: domain router → in-domain category. Existing sheet vocabulary preferred; new categories created when needed. |
@@ -102,7 +102,7 @@ ledger/                     # current folder name: outdoor-inventory
 | Dry-run | `--dry-run` flag prints proposed actions without writing |
 | Reprocess | `--reprocess --since=<date>` bypasses label filter |
 | OAuth consent screen | Must be **published** (not Testing) — refresh tokens expire after 7 days otherwise |
-| Notifications | Telegram for failure alerts and daily digest; optional v1.5 conversational interface |
+| Notifications | Telegram for failure alerts and daily digest. **Digest is always audible** so Tom gets a heartbeat confirming the cron ran (decided 2026-05-15 after a 15-day gap that looked identical to silent-success and broken-cron). Optional v1.5 conversational interface. |
 | Agent model | All Claude model IDs + agent pricing live in `lib/models.ts` (single source of truth). Currently: Opus 4.7 primary, Sonnet 4.6 / Haiku 4.5 fallback for the outdoor agent; Haiku 4.5 for the Amazon parser. **Always update to the latest Claude model when a new release lands — edit `lib/models.ts` only.** |
 | Prompt caching | Always on (per global CLAUDE.md). System prompts + tool definitions cached. |
 | Web UI v1 | Read-only dashboard; editing deferred |

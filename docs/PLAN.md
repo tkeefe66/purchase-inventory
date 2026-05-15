@@ -145,7 +145,7 @@ ledger/                              # current name: outdoor-inventory; rename o
 
 > **Note on column letters:** The letters above (A–Q) reflect the **current** physical order in Tom's sheet. **All code reads/writes by header NAME via `buildHeaderMap` in `lib/sheets.ts`, NOT by position** — the admin can reorder columns in the Sheets UI freely without breaking ingestion. See DECISIONS.md (2026-05-01: "Sheets layer is column-order-agnostic").
 
-**Dedup key:** `(Order ID, Item Name, Color, Size)` — same item bought again in a different order is allowed; same item in same order twice with same color/size is not. `Product URL`, `Type`, and `Reasoning` are *not* part of the dedup key.
+**Dedup key (revised 2026-05-15):** layered. Primary **strong key** `(Order ID, productId)` where productId is the ASIN (Amazon) or numeric ID (REI) extracted from `productUrl` via `lib/productId.ts` — survives item-name drift across auto-confirm/shipment/manual sources. Fallback **full key** `(Order ID, Brand, normalizedItemName, Color, Size)` for items with no productUrl. Plus a **content key** for cross-matching blank-Order-ID historical rows. Same item bought again under a different Order ID is allowed.
 
 ### `Needs Review` columns
 
@@ -311,11 +311,13 @@ Each `ParsedItem` includes a `productUrl` field that is **always non-empty** for
 
 **Files:** `lib/parsers/amazon.ts`, `lib/claude.ts`
 
-**Source emails (revised May 2026):** parse **shipment-tracking emails only** (`shipment-tracking@amazon.com`, "Shipped: …"). Order-confirmation emails (`auto-confirm@amazon.com`, "Ordered: …") return `null` — they only carry the order *total*, not per-item prices, so they're not a useful ingestion source. The 1–3 day lag between ordering and shipping is acceptable; rows appear in the sheet when items SHIP. See DECISIONS.md (2026-05-01: "Amazon parser sources shipment-tracking only").
+**Source emails (revised 2026-05-15):** parse **both** auto-confirm AND shipment-tracking emails, plus return emails. See DECISIONS.md (2026-05-15: "Amazon parser also ingests `auto-confirm` order emails (via Haiku)").
 
-Tier 1: regex/cheerio against shipment-tracking emails. Extract Order ID, item name from `<img alt>`, Quantity from "Quantity: N" text, per-item price from the `<sup>$</sup><span>X,XXX</span><sup>YY</sup>` typographic pattern (price is rendered as superscripted dollar sign + integer + superscripted cents — the page's "Total" line includes shipping/tax and is NOT what we want).
-Tier 2: Claude Haiku 4.5 fallback with strict JSON schema if regex returns nothing or low confidence.
-Tier 3: low-confidence Claude → return null + reason for Needs Review.
+- `shipment-tracking@amazon.com` ("Shipped: …") — cheerio fast-path (`parseAmazonShipmentEmail`): Order ID, item name from `<img alt>`, Quantity from "Quantity: N" text, per-item price from the `<sup>$</sup><span>X,XXX</span><sup>YY</sup>` typographic pattern.
+- `auto-confirm@amazon.com` ("Ordered: …") — Haiku-based (`parseAmazonOrderEmail`): structured `{orderId, items: [{itemName, quantity, price, productUrl}]}`. Makes purchases appear immediately instead of after a 1–3 day shipping delay.
+- `return@amazon.com` (refund/dropoff/return emails) — Haiku-based (`parseAmazonReturnEmail`): pipeline flips matching row Status to `returned`.
+
+Pipeline dispatches: try shipment first (cheap, deterministic), fall through to order parser for "Ordered: …" emails. Return emails are detected via `pickRole` and routed to a separate path that updates rather than appends. Dedup uses `(orderId, ASIN)` strong key (see `lib/dedup.ts` + `lib/productId.ts`) so cross-source name drift doesn't produce duplicate rows.
 
 Each `ParsedItem` includes a `productUrl` field that is **always non-empty** for valid items. Amazon shipment emails *sometimes* include `amazon.com/gp/product/<ASIN>` style links per line item — extract when present. When absent, call `buildFallbackProductUrl({ source: 'Amazon', orderId, itemName })` from `lib/url-fallback.ts`, which produces an order-detail URL when an Order ID is known (preferred) or an Amazon search URL otherwise. Do not synthesize a real product URL from the ASIN if not seen in the email body — that's distinct from the search/order-detail fallback. Haiku fallback also returns `productUrl` in its JSON schema as an optional field; if Haiku returns an empty productUrl, the wrapper applies the same fallback.
 
@@ -341,9 +343,9 @@ Each `ParsedItem` includes a `productUrl` field that is **always non-empty** for
 
 ### Task 1.5: Dedup
 
-**Files:** `lib/dedup.ts`
+**Files:** `lib/dedup.ts`, `lib/productId.ts`
 
-Same as previously specified — key = `(Order ID, Item Name, Color, Size)`. Reads existing sheet rows once per run.
+Layered keys — see "Dedup key" row above. Strong key `(orderId, productId)` is checked first; falls back to full key and content key. Reads existing sheet rows once per run.
 
 ### Task 1.6: Sheets append
 
