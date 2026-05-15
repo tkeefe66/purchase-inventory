@@ -1,7 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { PARSER_MODEL } from '../../../lib/models.js';
 import { callWithRetry } from '../../../lib/anthropic-retry.js';
-import type { ItemType, Source } from '../../../lib/types.js';
+import { SOURCE_VALUES, ITEM_TYPE_VALUES, type ItemType, type Source } from '../../../lib/types.js';
 
 export interface LogDraft {
   itemName: string;
@@ -15,9 +15,6 @@ export interface LogDraft {
   size: string;
   type: ItemType;
 }
-
-const KNOWN_SOURCES: readonly Source[] = ['REI', 'Amazon', 'Other'];
-const KNOWN_TYPES: readonly ItemType[] = ['Gear', 'Consumable', 'Service'];
 
 const SYSTEM_PROMPT = `You extract structured purchase fields from Tom's free-form /log text. He uses this for in-store / cash / marketplace purchases that didn't come through Gmail.
 
@@ -65,8 +62,8 @@ export async function extractLogDraft(
   }
   const requiredKeys = ['itemName', 'brand', 'price', 'source', 'date', 'category', 'subCategory', 'color', 'size', 'type'];
   if (!requiredKeys.every((k) => k in raw)) return null;
-  const source = KNOWN_SOURCES.includes(raw.source as Source) ? (raw.source as Source) : 'Other';
-  const type = KNOWN_TYPES.includes(raw.type as ItemType) ? (raw.type as ItemType) : 'Gear';
+  const source = SOURCE_VALUES.includes(raw.source as Source) ? (raw.source as Source) : 'Other';
+  const type = ITEM_TYPE_VALUES.includes(raw.type as ItemType) ? (raw.type as ItemType) : 'Gear';
   const date = typeof raw.date === 'string' && raw.date.length > 0 ? raw.date : todayIso;
   return {
     itemName: String(raw.itemName ?? ''),

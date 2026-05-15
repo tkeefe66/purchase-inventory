@@ -745,6 +745,33 @@ There is no Anthropic API for "give me the current latest model," so the model-v
 
 ---
 
+## 2026-05-14 — Slash commands (Phase 2.5)
+
+**Decision:** 10 slash commands implemented as pure handler functions in `apps/bot/handlers.ts`, dispatched by `dispatchCommand(chatId, text, deps)`. All deps (cache, sheets, anthropic, pendingActions, stats, updateRowStatus, appendMasterRow, extractLogDraft, today) are injected so handlers are unit-testable with mocks.
+
+**Contract for the bot listener (Task 2.1/2.2):** `dispatchCommand` returns `Promise<string | null>`. `null` means "not a slash command — pass to agent." String means "send this to the user." The listener pattern:
+
+```ts
+const reply = (await dispatchCommand(chatId, text, deps)) ?? (await agent.handleMessage(chatId, text));
+await telegram.sendMessage(chatId, reply);
+```
+
+**`/log` confirmation flow:** Two-step. `/log <text>` runs Claude extraction (Haiku for cost) and stores a pending append in `PendingActionStore` (5-min TTL); replies with a preview. `/confirm` pops the pending action and writes; `/cancel` clears it. Re-issuing `/log` overwrites the prior pending (intentional — no stale state).
+
+**Status-change family (`/lost`, `/sold`, `/donated`, `/retired`, `/broken`):** Share one handler. Argument is either an item name (fuzzy match via `findByFuzzyName`) or a 6-char itemId. Multi-match → reply lists IDs and asks the user to specify. No-match → reply asks for clarification. Single match → write via `updateRowStatus` and call `cache.applyLocalChange`.
+
+**`/stats` and `/refresh`:** Thin wrappers over existing `formatStats` and `cache.forceRefresh`.
+
+**Why inject `today: () => string`:** Lets tests pin "today" deterministically. Production passes `() => formatInTimeZone(new Date(), 'America/Denver', 'yyyy-MM-dd')` to stay consistent with Mountain Time semantics established in Phase 0.
+
+**Source schema extension:** Extended `Source` from `'REI' | 'Amazon'` to include `'Other'` (using the same `SOURCE_VALUES` const+derived-type pattern as `Status` and `Domain`). Required because `/log` exists specifically for non-retail purchases (cash, marketplace, gifts). `lib/url-fallback.ts` keeps its own narrower `Source = 'REI' | 'Amazon'` because URL fallback only makes sense for known retailers — different semantic. Worth deduping later if more code needs the broader Source.
+
+**`/log` is hardcoded to Outdoor domain.** The `extractLogDraft` system prompt explicitly assumes Outdoor, and `handleLog` sets `domain: 'Outdoor'`. When a second domain ships (Phase 7+), this needs revisiting — likely a `/log-kitchen` family or a domain-detection step.
+
+**Row index for status change (`/lost` etc.):** Same `position + 2` assumption as the agent's `update_status` tool (documented in the 2026-05-14 outdoor-agent invariants entry). If `readMasterRows` ever skips or reorders rows, both call sites break together.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale
