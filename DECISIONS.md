@@ -772,6 +772,24 @@ await telegram.sendMessage(chatId, reply);
 
 ---
 
+## 2026-05-14 — Telegram bot listener wiring (Phase 2.1 + 2.2)
+
+**Decision:** `apps/bot/index.ts` is the long-running bot process. Polls Telegram every 25s, routes each message through `routeMessage(chatId, text, deps)` in `apps/bot/router.ts`. The router tries `dispatchCommand` first (Phase 2.5 slash commands), falls back to `agent.handleMessage` (Phase 2.4 OutdoorAgent), and catches all throws → generic user-facing error string.
+
+**Cache loaded once at startup** via `cache.start({ refreshIntervalMs: 15 * 60 * 1000 })`. If the initial Sheets read fails, the bot fails fast and exits — Railway will restart it. Better than starting with an empty inventory.
+
+**Authorization:** `TELEGRAM_AUTHORIZED_CHAT_IDS` env var, comma-separated. Single user (Tom) in v1; the comma-separated format is forward-compatible for future shared usage. Bot stores them as `Set<string>` and compares against `String(msg.chat.id)` — Telegram returns numeric IDs but stringifying both sides avoids the most common footgun.
+
+**Offset advanced BEFORE processing.** If a message causes a crash and the outer try/catch kicks in, that message is acknowledged (offset = its update_id + 1) and not re-delivered. Deliberate — re-processing a crashing message would just crash again.
+
+**Long-poll timeout = 25s.** Node 20+ native `fetch` has no client-side timeout, so the Telegram connection holds for the full poll window. If this ever changes (e.g., switching HTTP libs), wire an `AbortSignal` for `POLL_TIMEOUT_S + buffer`.
+
+**Edited messages re-route.** If Tom edits a Telegram message, the bot processes the edited version like a new message. For natural-language queries this is fine (agent re-answers); for slash commands like `/log` it could double-execute. Acceptable for v1 solo use; trivial to disable later by ignoring `update.edited_message`.
+
+**No graceful shutdown.** SIGTERM kills the process; `cache.stop()` is never called. On Railway, the process is just restarted. When the bot grows stateful (e.g., a sheet-side pending-actions store), wire `process.on('SIGTERM', ...)` properly.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale
