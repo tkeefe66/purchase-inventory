@@ -26,6 +26,9 @@ export const AGENT_FALLBACK_MODELS: readonly ModelId[] = [MODELS.sonnet, MODELS.
 /** Model the Amazon parser's tier-2 fallback uses (cost-optimized JSON extraction). */
 export const PARSER_MODEL: ModelId = MODELS.haiku;
 
+/** Model used by lib/parsers/photo.ts for vision extraction from gear photos. */
+export const VISION_MODEL: ModelId = MODELS.sonnet;
+
 /**
  * Prompt-cache pricing for the agent's primary model (USD per million tokens).
  * Anthropic's standard ratios: cache-write-5min = 1.25x base input, cache-read = 0.1x base input.

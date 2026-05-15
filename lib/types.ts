@@ -33,7 +33,7 @@ export type Domain = (typeof DOMAIN_VALUES)[number];
 export const ITEM_TYPE_VALUES = ['Gear', 'Consumable', 'Service'] as const;
 export type ItemType = (typeof ITEM_TYPE_VALUES)[number];
 
-export const SOURCE_VALUES = ['REI', 'Amazon', 'Other'] as const;
+export const SOURCE_VALUES = ['REI', 'Amazon', 'Other', 'Image'] as const;
 export type Source = (typeof SOURCE_VALUES)[number];
 
 /**

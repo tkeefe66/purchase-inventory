@@ -8,6 +8,7 @@ import {
   KNOWN_SENDERS,
   PURCHASE_KEYWORDS,
 } from '../lib/sources.js';
+import { SOURCE_VALUES } from '../lib/types.js';
 
 describe('senderIsAllowlisted', () => {
   test('matches REI order sender', () => {
@@ -97,5 +98,11 @@ describe('KNOWN_SENDERS / PURCHASE_KEYWORDS', () => {
   });
   test('exports a non-empty keyword list', () => {
     expect(PURCHASE_KEYWORDS.length).toBeGreaterThan(0);
+  });
+});
+
+describe('SOURCE_VALUES', () => {
+  test('includes Image for photo-captured gear', () => {
+    expect(SOURCE_VALUES).toContain('Image');
   });
 });
