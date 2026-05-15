@@ -4,6 +4,8 @@ import { callWithRetry } from '../anthropic-retry.js';
 
 export type Confidence = 'high' | 'low' | 'missing';
 
+export type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
+
 export interface PhotoExtraction {
   brand: string;
   itemName: string;
@@ -15,6 +17,19 @@ export interface PhotoExtraction {
     color: Confidence;
     size: Confidence;
   };
+}
+
+/**
+ * Derives the Anthropic vision media type from a Telegram file path like
+ * "photos/file_42.jpg". Falls back to JPEG (Telegram's default for camera-roll
+ * photos) when the extension is unknown.
+ */
+export function mediaTypeFromPath(filePath: string): ImageMediaType {
+  const ext = filePath.toLowerCase().split('.').pop() ?? '';
+  if (ext === 'png') return 'image/png';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'gif') return 'image/gif';
+  return 'image/jpeg';
 }
 
 const SYSTEM_PROMPT = `You extract structured product info from a photograph of a piece of outdoor gear. The user has taken the photo to log an already-owned item into a personal inventory. There is no receipt — you are reading hang tags, labels, embroidered logos, and the gear itself.
@@ -45,6 +60,7 @@ export async function extractFromPhoto(
   anthropic: Anthropic,
   imageBytes: Buffer,
   caption: string,
+  mediaType: ImageMediaType = 'image/jpeg',
 ): Promise<PhotoExtraction | null> {
   const base64 = imageBytes.toString('base64');
   const resp = await callWithRetry(() =>
@@ -56,7 +72,7 @@ export async function extractFromPhoto(
         {
           role: 'user',
           content: [
-            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64 } },
+            { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
             { type: 'text', text: caption || '(no caption)' },
           ],
         },
@@ -71,7 +87,11 @@ export async function extractFromPhoto(
   } catch {
     return null;
   }
-  const conf = (raw.confidence ?? {}) as Record<string, unknown>;
+  // Reject responses missing the structural confidence block — without it we
+  // can't tell "missing-and-confirmed" from "the model forgot to score this
+  // field", and the caller's branching depends on real confidence values.
+  if (typeof raw.confidence !== 'object' || raw.confidence === null) return null;
+  const conf = raw.confidence as Record<string, unknown>;
   const validConf = (v: unknown): Confidence =>
     v === 'high' || v === 'low' || v === 'missing' ? v : 'missing';
   return {
