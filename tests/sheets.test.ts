@@ -1,5 +1,5 @@
 import { describe, test, expect, vi } from 'vitest';
-import { buildHeaderMap, colLetter, updateRowStatus } from '../lib/sheets.js';
+import { buildHeaderMap, colLetter, updateRowStatus, appendMasterRow } from '../lib/sheets.js';
 import type { SheetsClient } from '../lib/sheets.js';
 
 describe('buildHeaderMap', () => {
@@ -92,5 +92,33 @@ describe('updateRowStatus', () => {
     await expect(
       updateRowStatus(fakeSheets, 'SHEET_ID', { rowIndex: 2, newStatus: 'lost' }),
     ).rejects.toThrow(/Status column/i);
+  });
+});
+
+describe('appendMasterRow', () => {
+  test('appends a row laid out by header position and returns the row index', async () => {
+    const appendedValues: unknown[] = [];
+    const fakeSheets = {
+      spreadsheets: {
+        values: {
+          get: vi.fn().mockResolvedValue({
+            data: { values: [['Year', 'Item Name', 'Status', 'Brand']] },
+          }),
+          append: vi.fn().mockImplementation((args: { requestBody: { values: unknown[][] } }) => {
+            appendedValues.push(args.requestBody.values[0]);
+            return Promise.resolve({ data: { updates: { updatedRange: `'All Purchases'!A5:D5` } } });
+          }),
+        },
+      },
+    } as unknown as SheetsClient;
+    const row = {
+      year: '2026', date: '2026-05-14', category: '', subCategory: '',
+      brand: 'BD', itemName: 'Couloir', color: '', size: '', qty: 1, price: 80,
+      source: 'REI' as const, orderId: '', status: 'active' as const, domain: 'Outdoor' as const,
+      productUrl: '', type: 'Gear' as const, reasoning: '', notes: '',
+    };
+    const { rowIndex } = await appendMasterRow(fakeSheets, 'SHEET_ID', row);
+    expect(rowIndex).toBe(5);
+    expect(appendedValues[0]).toEqual(['2026', 'Couloir', 'active', 'BD']);
   });
 });

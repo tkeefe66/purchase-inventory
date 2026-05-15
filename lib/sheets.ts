@@ -243,6 +243,28 @@ export async function appendRows(
   return rows.length;
 }
 
+export async function appendMasterRow(
+  sheets: SheetsClient,
+  spreadsheetId: string,
+  row: MasterRow,
+): Promise<{ rowIndex: number }> {
+  const headerRow = await readHeaderRow(sheets, spreadsheetId, 'All Purchases');
+  const map = buildHeaderMap(headerRow);
+  const out = buildRowValues(headerRow.length, map, row);
+  const lastCol = colLetter(headerRow.length - 1);
+  const resp = await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: `'All Purchases'!A:${lastCol}`,
+    valueInputOption: 'USER_ENTERED',
+    insertDataOption: 'INSERT_ROWS',
+    requestBody: { values: [out] },
+  });
+  const updatedRange = resp.data.updates?.updatedRange ?? '';
+  const m = /![A-Z]+(\d+)/.exec(updatedRange);
+  const rowIndex = m ? parseInt(m[1]!, 10) : -1;
+  return { rowIndex };
+}
+
 function buildRowValues(
   length: number,
   map: ReadonlyMap<string, number>,
