@@ -11,6 +11,7 @@ import { parseCommand } from './commands/parse.js';
 import type { LogDraft } from './commands/log.js';
 import { startAddgear, continueAddgear, type AddgearDeps } from './commands/addgear.js';
 import { AddgearStateStore } from '../../lib/addgearState.js';
+import { formatLogPreview } from './preview.js';
 
 const STATUS_CHANGE_COMMANDS: Record<string, Status> = {
   lost: 'lost', sold: 'sold', donated: 'donated', retired: 'retired', broken: 'broken',
@@ -102,9 +103,8 @@ async function handleLog(chatId: string, args: string, deps: HandlerDeps): Promi
   };
   deps.pendingActions.set(chatId, { type: 'log-append', row });
   return [
-    `About to log:`,
-    `  ${row.brand} ${row.itemName} (${row.color || '—'}, ${row.size || '—'})`,
-    `  $${row.price}, ${row.source}, ${row.date}, [${row.category}/${row.subCategory}]`,
+    formatLogPreview(row),
+    ``,
     `Reply /confirm to write or /cancel to discard.`,
   ].join('\n');
 }

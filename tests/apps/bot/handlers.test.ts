@@ -127,7 +127,8 @@ describe('dispatchCommand: /log + /confirm + /cancel', () => {
     const { deps, appendCalls } = makeDeps([FIXTURE_THERMAREST], { extractLogDraft: extract as unknown as HandlerDeps['extractLogDraft'] });
     const out = await dispatchCommand('chat-1', '/log Black Diamond Couloir harness, $80, REI', deps);
     expect(out).toMatch(/about to log|preview|confirm/i);
-    expect(out).toMatch(/Black Diamond Couloir/);
+    expect(out).toMatch(/^Item: Couloir$/m);
+    expect(out).toMatch(/^Brand: Black Diamond$/m);
     expect(out).toMatch(/\$80/);
     expect(appendCalls).toHaveLength(0);
     expect(deps.pendingActions.peek('chat-1')).not.toBeNull();

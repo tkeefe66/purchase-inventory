@@ -72,6 +72,24 @@ describe('startAddgear — vision extracts everything', () => {
     const step = deps.addgearState.peek('chat-1');
     expect(step?.kind).toBe('awaiting-confirm');
   });
+
+  test('preview renders one labeled field per line (Item / Brand / Price / …)', async () => {
+    const deps = makeDeps();
+    const reply = await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    // Each field gets its own line; labels match the 'field: value' edit keys
+    // so the preview doubles as a cheat-sheet.
+    expect(reply).toMatch(/^Item: Houdini Jacket$/m);
+    expect(reply).toMatch(/^Brand: Patagonia$/m);
+    expect(reply).toMatch(/^Color: Blue$/m);
+    expect(reply).toMatch(/^Size: M$/m);
+    expect(reply).toMatch(/^Price: \$120$/m);
+    expect(reply).toMatch(/^Date: 2018-01-01$/m);
+    expect(reply).toMatch(/^Source: Image$/m);
+    expect(reply).toMatch(/^Category: Hiking Gear$/m);
+    expect(reply).toMatch(/^Sub-Category: Wind Shell$/m);
+    expect(reply).toMatch(/^Domain: Outdoor$/m);
+    expect(reply).toMatch(/^Type: Gear$/m);
+  });
 });
 
 describe('startAddgear — missing date triggers prompt', () => {

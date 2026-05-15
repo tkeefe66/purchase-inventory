@@ -7,6 +7,7 @@ import type { ProductCandidate } from '../../../lib/parsers/product-lookup.js';
 import type { Classification } from '../../../lib/classifier.js';
 import type { MasterRow } from '../../../lib/types.js';
 import { DOMAIN_VALUES, ITEM_TYPE_VALUES, type Domain, type ItemType } from '../../../lib/types.js';
+import { formatLogPreview } from '../preview.js';
 
 export interface AddgearDeps {
   addgearState: AddgearStateStore;
@@ -245,10 +246,8 @@ function rowFromDraft(draft: PartialDraft, today: string, orderId: string): Mast
 
 function previewRow(row: MasterRow): string {
   return [
-    `About to log:`,
-    `  ${row.brand} ${row.itemName} (${row.color || '—'}, ${row.size || '—'})`,
-    `  $${row.price}, ${row.source}, ${row.date || '—'}, [${row.category}/${row.subCategory}]`,
-    `  URL: ${row.productUrl || '—'}`,
+    formatLogPreview(row),
+    ``,
     `Reply /confirm to write, 'field: value' to change something, or /cancel.`,
   ].join('\n');
 }
