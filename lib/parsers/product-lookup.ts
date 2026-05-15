@@ -127,6 +127,80 @@ export async function lookupProduct(
 }
 
 /**
+ * Fetch a product page and extract its canonical name from <title> or og:title.
+ * Strips the brand prefix and common trailing site-name patterns
+ * ("... | REI Co-op", "... - L.L.Bean").
+ *
+ * Returns null on network error, non-2xx, parse failure, or empty extraction.
+ * Pure heuristic — no LLM call. Sufficient for the major outdoor retailer
+ * and brand sites, which all render product name into <title>/og:title
+ * server-side.
+ */
+export async function fetchProductName(url: string, brand: string): Promise<string | null> {
+  if (!/^https?:\/\//i.test(url)) return null;
+  let html: string;
+  try {
+    const resp = await fetch(url, {
+      headers: {
+        // Some retailer sites 403 on missing UA — present as a normal browser.
+        'User-Agent': 'Mozilla/5.0 (compatible; outdoor-inventory/1.0)',
+        'Accept': 'text/html,application/xhtml+xml',
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!resp.ok) {
+      console.warn(`[product-lookup] fetchProductName HTTP ${resp.status} for ${url}`);
+      return null;
+    }
+    html = await resp.text();
+  } catch (err) {
+    console.warn(`[product-lookup] fetchProductName failed for ${url}: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+
+  // Match content="..." or content='...' — DON'T use [^"'] because product
+  // names frequently contain apostrophes (Men's, women's, 8" boots, etc.).
+  const ogMatch = html.match(/<meta[^>]+property=["']og:title["'][^>]+content="([^"]*)"/i)
+    ?? html.match(/<meta[^>]+property=["']og:title["'][^>]+content='([^']*)'/i)
+    ?? html.match(/<meta[^>]+content="([^"]*)"[^>]+property=["']og:title["']/i)
+    ?? html.match(/<meta[^>]+content='([^']*)'[^>]+property=["']og:title["']/i);
+  const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+  let name = decodeBasicEntities((ogMatch?.[1] ?? titleMatch?.[1] ?? '').trim());
+  if (!name) return null;
+
+  // Strip trailing site-name pattern: " | REI Co-op", " - L.L.Bean", " — Patagonia"
+  name = name.replace(/\s*[|\-–—]\s*[A-Z][\w&.'\s-]*$/u, '').trim();
+
+  // Strip the brand prefix if present (case-insensitive, allowing punctuation drift).
+  const brandTokens = brand.replace(/[.,]/g, '').toLowerCase().split(/\s+/).filter(Boolean);
+  if (brandTokens.length > 0) {
+    const nameTokens = name.split(/\s+/);
+    let prefixLen = 0;
+    while (prefixLen < brandTokens.length && prefixLen < nameTokens.length) {
+      const candidate = nameTokens[prefixLen]!.replace(/[.,]/g, '').toLowerCase();
+      if (candidate !== brandTokens[prefixLen]) break;
+      prefixLen++;
+    }
+    if (prefixLen > 0 && prefixLen <= brandTokens.length) {
+      name = nameTokens.slice(prefixLen).join(' ').trim();
+    }
+  }
+
+  return name.length > 0 ? name : null;
+}
+
+function decodeBasicEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, ' ');
+}
+
+/**
  * Find the first balanced JSON object in a string, tolerating wrapping markdown
  * fences and any leading/trailing prose. Returns null if no object is found.
  */

@@ -34,6 +34,9 @@ function makeDeps(overrides: Partial<AddgearDeps> = {}): AddgearDeps {
     // Tests that focus on downstream states (date / price / confirm) should use
     // startAddgearSkippingPick() to walk past the pick step.
     lookupProduct: vi.fn(async () => []),
+    // Default: name refinement returns null (no change). Tests that exercise
+    // refinement override with a function that returns the desired name.
+    fetchProductName: vi.fn(async () => null),
     ...overrides,
   };
 }
@@ -557,16 +560,37 @@ describe('startAddgear — product lookup populates URL candidates', () => {
     }
   });
 
-  test('pasting a URL stores it and keeps the vision item name', async () => {
-    const deps = makeDeps({ lookupProduct: vi.fn(async () => twoCandidates) });
+  test('pasting a URL stores it and refines the item name from the page', async () => {
+    const deps = makeDeps({
+      lookupProduct: vi.fn(async () => twoCandidates),
+      fetchProductName: vi.fn(async (url: string) => {
+        // Simulates a real page fetch that returns the canonical name.
+        if (url.includes('example.com')) return "Bean Boots Men's 8\" Insulated";
+        return null;
+      }),
+    });
     await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
     const reply = await continueAddgear('chat-1', 'https://example.com/my-thing', deps);
     expect(reply).toMatch(/About to log/i);
+    expect(reply).toContain("Bean Boots Men's 8\" Insulated");
     const step = deps.addgearState.peek('chat-1');
     if (step?.kind === 'awaiting-confirm') {
       expect(step.row.productUrl).toBe('https://example.com/my-thing');
-      // itemName falls back to vision's value (didn't pick a candidate)
-      expect(step.row.itemName).toBe('Houdini Jacket');
+      expect(step.row.itemName).toBe("Bean Boots Men's 8\" Insulated");
+    }
+  });
+
+  test('pasting a URL with failed name fetch keeps the vision item name', async () => {
+    const deps = makeDeps({
+      lookupProduct: vi.fn(async () => twoCandidates),
+      fetchProductName: vi.fn(async () => null),
+    });
+    await startAddgear('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    await continueAddgear('chat-1', 'https://example.com/my-thing', deps);
+    const step = deps.addgearState.peek('chat-1');
+    if (step?.kind === 'awaiting-confirm') {
+      expect(step.row.productUrl).toBe('https://example.com/my-thing');
+      expect(step.row.itemName).toBe('Houdini Jacket');  // vision's value, unchanged
     }
   });
 

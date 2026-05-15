@@ -16,6 +16,7 @@ export interface AddgearDeps {
   extractFromPhoto: (bytes: Buffer, caption: string) => Promise<PhotoExtraction | null>;
   classify: (input: { brand: string; itemName: string }) => Promise<Classification>;
   lookupProduct: (brand: string, itemName: string) => Promise<ProductCandidate[]>;
+  fetchProductName: (url: string, brand: string) => Promise<string | null>;
   listExistingRows: () => readonly FuzzyCandidateRow[];
 }
 
@@ -399,6 +400,11 @@ export async function continueAddgear(
     }
     if (/^https?:\/\/\S+$/i.test(reply)) {
       step.draft.productUrl = reply;
+      // Refine the item name from the page's title (best-effort, silent fail).
+      const refined = await deps.fetchProductName(reply, step.draft.brand);
+      if (refined && refined.length > 0) {
+        step.draft.itemName = refined;
+      }
       return advanceFlow(chatId, step.draft, deps);
     }
     if (/^skip$/i.test(reply)) {
