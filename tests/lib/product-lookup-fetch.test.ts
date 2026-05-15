@@ -1,5 +1,6 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fetchProductName } from '../../lib/parsers/product-lookup.js';
+import { fetchProductName, lookupProduct } from '../../lib/parsers/product-lookup.js';
+import type Anthropic from '@anthropic-ai/sdk';
 
 function htmlResponse(html: string, status = 200): Response {
   return new Response(html, { status, headers: { 'content-type': 'text/html' } });
@@ -67,5 +68,41 @@ describe('fetchProductName', () => {
     `));
     const result = await fetchProductName('https://llbean.com/x', 'LL Bean');
     expect(result).toBe('Bean Boots');
+  });
+});
+
+describe('lookupProduct — domain-fallback on blocked-by-Anthropic 400', () => {
+  test('drops the blocked domain and retries successfully', async () => {
+    const create = vi.fn();
+    // First call: 400 because one of our currently-allowed domains is blocked.
+    // (Picking rei.com — definitely in PRODUCT_LOOKUP_DOMAINS — so the filter
+    // actually drops something and the retry has a different domain list.)
+    create.mockRejectedValueOnce(
+      new Error(`400 {"type":"error","error":{"type":"invalid_request_error","message":"The following domains are not accessible to our user agent: ['rei.com']."}}`),
+    );
+    create.mockResolvedValueOnce({
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          candidates: [{
+            itemName: 'Bean Boots',
+            productUrl: 'https://www.llbean.com/p/123',
+            source: 'llbean.com',
+          }],
+        }),
+      }],
+    });
+    const fakeAnthropic = { messages: { create } } as unknown as Anthropic;
+    const out = await lookupProduct(fakeAnthropic, 'L.L.Bean', 'Bean Boots 8"');
+    expect(out).toHaveLength(1);
+    expect(out[0]!.itemName).toBe('Bean Boots');
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  test('returns [] when the error is not a blocked-domain message', async () => {
+    const create = vi.fn().mockRejectedValue(new Error('500 internal server error'));
+    const fakeAnthropic = { messages: { create } } as unknown as Anthropic;
+    const out = await lookupProduct(fakeAnthropic, 'X', 'Y');
+    expect(out).toEqual([]);
   });
 });

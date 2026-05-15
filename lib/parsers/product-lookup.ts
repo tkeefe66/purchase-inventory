@@ -8,23 +8,28 @@ export interface ProductCandidate {
   source: string;
 }
 
+// Curated list — Anthropic's crawler is blocked by many large-enterprise sites
+// (Sony confirmed via 400 response 2026-05-14); avoid camera/electronics
+// brands and stick with outdoor-focused retailers and mid-size gear brands.
+// The auto-retry below will drop any domain Anthropic flags as inaccessible
+// on a future request, so this list can evolve without breaking the bot.
 const PRODUCT_LOOKUP_DOMAINS = [
-  // Retailers
+  // Major retailers — proven working via the outdoor agent's tool list
   'rei.com', 'backcountry.com', 'evo.com', 'moosejaw.com', 'competitivecyclist.com',
   'nrs.com', 'jensonusa.com', 'amazon.com', 'llbean.com', 'cabelas.com', 'basspro.com',
-  // Brand official sites
-  'patagonia.com', 'arcteryx.com', 'blackdiamondequipment.com', 'osprey.com', 'rab.equipment',
+  'mec.ca',
+  // Outdoor brand sites (mid-size, likely accessible)
+  'patagonia.com', 'arcteryx.com', 'blackdiamondequipment.com', 'osprey.com',
   'mammut.com', 'salomon.com', 'lasportiva.com', 'scarpa.com', 'merrell.com', 'altrarunning.com',
-  'hokaoneone.com', 'brooksrunning.com', 'nikon.com', 'canon.com', 'sony.com', 'gopro.com',
-  'mountainhardwear.com', 'kuhl.com', 'cotopaxi.com', 'fjallraven.com', 'thenorthface.com',
-  'columbia.com', 'marmot.com', 'outdoorresearch.com', 'darntough.com', 'smartwool.com',
-  'icebreaker.com', 'patagoniaprovisions.com', 'mec.ca', 'feathered-friends.com', 'rabusa.com',
-  'enlightenedequipment.com', 'zpacks.com', 'gossamergear.com', 'msrgear.com', 'msr.com',
-  'jetboil.com', 'biolitestove.com', 'snowpeak-usa.com', 'sea-to-summit.com', 'thermarest.com',
-  'nemoequipment.com', 'bigagnes.com', 'eddiebauer.com', 'kelty.com', 'sierra.com',
-  'shimano-cycling.com', 'sram.com', 'specialized.com', 'trekbikes.com', 'cannondale.com',
-  'giant-bicycles.com', 'santacruzbicycles.com', 'yetiCycles.com', 'ibiscycles.com',
-  'rocky-mountain.com', 'kona.com', 'salsacycles.com', 'surly.bikes',
+  'hokaoneone.com', 'brooksrunning.com', 'mountainhardwear.com', 'kuhl.com', 'cotopaxi.com',
+  'fjallraven.com', 'outdoorresearch.com', 'darntough.com', 'smartwool.com',
+  'icebreaker.com', 'feathered-friends.com', 'enlightenedequipment.com', 'zpacks.com',
+  'gossamergear.com', 'jetboil.com', 'sea-to-summit.com', 'thermarest.com',
+  'nemoequipment.com', 'bigagnes.com', 'kelty.com',
+  // Cycling brand sites
+  'specialized.com', 'trekbikes.com', 'cannondale.com', 'giant-bicycles.com',
+  'santacruzbicycles.com', 'ibiscycles.com', 'rocky-mountain.com', 'kona.com',
+  'salsacycles.com', 'surly.bikes',
 ];
 
 const SYSTEM_PROMPT = `You help match outdoor gear photos to their canonical product pages.
@@ -60,23 +65,8 @@ export async function lookupProduct(
   const query = `${brand} ${visionItemName}`.trim();
   if (!brand.trim() || !visionItemName.trim()) return [];
 
-  const resp = await callWithRetry(() =>
-    anthropic.messages.create({
-      model: VISION_MODEL,
-      max_tokens: 1024,
-      system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
-      messages: [{
-        role: 'user',
-        content: `Find product page candidates for: ${query}`,
-      }],
-      tools: [{
-        type: 'web_search_20260209',
-        name: 'web_search',
-        max_uses: 2,
-        allowed_domains: PRODUCT_LOOKUP_DOMAINS,
-      }] as unknown as Anthropic.Messages.Tool[],
-    }),
-  );
+  const resp = await callWebSearchWithDomainFallback(anthropic, query, PRODUCT_LOOKUP_DOMAINS);
+  if (!resp) return [];
 
   const textBlocks = resp.content.filter((b): b is Anthropic.TextBlock => b.type === 'text');
   const lastText = textBlocks[textBlocks.length - 1];
@@ -198,6 +188,64 @@ function decodeBasicEntities(s: string): string {
     .replace(/&#39;/g, "'")
     .replace(/&apos;/g, "'")
     .replace(/&nbsp;/g, ' ');
+}
+
+/**
+ * Calls the web_search tool, transparently retrying without any domains
+ * Anthropic flags as inaccessible (per the support page link in the 400
+ * error). Returns null on a non-recoverable error.
+ */
+async function callWebSearchWithDomainFallback(
+  anthropic: Anthropic,
+  query: string,
+  initialDomains: readonly string[],
+): Promise<Anthropic.Messages.Message | null> {
+  let domains = [...initialDomains];
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await callWithRetry(() =>
+        anthropic.messages.create({
+          model: VISION_MODEL,
+          max_tokens: 1024,
+          system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+          messages: [{ role: 'user', content: `Find product page candidates for: ${query}` }],
+          tools: [{
+            type: 'web_search_20260209',
+            name: 'web_search',
+            max_uses: 2,
+            allowed_domains: domains,
+          }] as unknown as Anthropic.Messages.Tool[],
+        }),
+      );
+    } catch (err) {
+      const blocked = extractBlockedDomains(err);
+      if (blocked.length === 0) {
+        console.warn(`[product-lookup] non-recoverable error for "${query}": ${err instanceof Error ? err.message : err}`);
+        return null;
+      }
+      const filtered = domains.filter((d) => !blocked.includes(d));
+      if (filtered.length === domains.length) {
+        // Anthropic reported blocked domains we don't actually have — bail.
+        console.warn(`[product-lookup] blocked-domain list ${blocked.join(', ')} didn't intersect ours, giving up`);
+        return null;
+      }
+      console.warn(`[product-lookup] dropping blocked domains and retrying: ${blocked.join(', ')}`);
+      domains = filtered;
+    }
+  }
+  console.warn(`[product-lookup] gave up after 3 fallback attempts for "${query}"`);
+  return null;
+}
+
+/** Parses Anthropic's "The following domains are not accessible" 400-message. */
+function extractBlockedDomains(err: unknown): string[] {
+  const msg = err instanceof Error ? err.message : String(err);
+  const m = /domains are not accessible[^\[]*\[([^\]]+)\]/i.exec(msg);
+  if (!m) return [];
+  return m[1]!
+    .split(',')
+    .map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
+    .filter((s) => s.length > 0);
 }
 
 /**
