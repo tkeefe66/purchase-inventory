@@ -682,6 +682,47 @@ Tom asked the right question — categorization in the sheet is leaf-specific (g
 
 ---
 
+## 2026-05-14 — Outdoor agent v1 design notes (Phase 2.4)
+
+Three implementation choices that aren't bugs but warrant explicit recording so future-Claude understands the invariants behind them.
+
+### Sheet row index = snapshot position + 2
+
+**Where:** `domains/outdoor/tools.ts:update_status` handler.
+
+**What:** To find the spreadsheet row for an item, the tool computes `sheetRowIndex = (cache.getSnapshot().findIndex(r => itemId(r) === id)) + 2`. The +2 is +1 for the header row, +1 for 1-based indexing.
+
+**Invariants this depends on:**
+1. `lib/sheets.readMasterRows` reads starting from row 2 (header at row 1).
+2. `readMasterRows` returns rows in natural sheet order (no sorting).
+3. `readMasterRows` skips fully-blank rows. As long as there are NO blank rows mid-data, snapshot order = sheet order.
+
+**Failure mode:** If a blank row ever appears between data rows in `All Purchases`, `update_status` will silently write to the wrong row. The sheet is append-only in v1 so blank rows shouldn't happen, but it's a latent risk.
+
+**Fix if it ever bites:** Either (a) make `readMasterRows` return absolute row indices alongside data, or (b) re-look up the row by natural key (itemId) at write time by fetching the sheet's current state. (b) is more robust but costs an extra Sheets API call per write.
+
+### `firstTokenMs` is full-response latency, not time-to-first-token
+
+**Where:** `domains/outdoor/agent.ts:OutdoorAgent.handleMessage`, `apps/bot/stats.ts:Stats.coldFirstTokenP50Ms`.
+
+**What:** The agent records `firstTokenMs` from `Stats.recordQuery({ firstTokenMs })`. The value is `Date.now() - callStart` around the first non-streaming `anthropic.messages.create` call.
+
+**Why the name doesn't match:** Anthropic's SDK supports streaming (`stream: true`) which would give true time-to-first-token, but we chose non-streaming for v1 simplicity. The metric is therefore *full round-trip latency for the first call in the loop*, which is what we actually care about for cost/UX threshold decisions in `evaluateThresholds`.
+
+**If we add streaming later:** Either rename `firstTokenMs` everywhere to `firstCallMs`, or change the measurement to capture only the time-to-first-text-block.
+
+### User message is not persisted to ConversationStore on loop-cap throw
+
+**Where:** `domains/outdoor/agent.ts:OutdoorAgent.handleMessage`.
+
+**What:** If the tool-call loop hits `MAX_TOOL_LOOPS = 8` and throws, the user's message is in the local `messages` array but is NEVER appended to `conversations.append(chatId, ...)`. The conversation store reflects the state as if the user's last message never happened.
+
+**Why:** A loop-cap throw means the model is stuck. Persisting that turn would just confuse the next interaction. Cleaner to let the user retry from a clean state.
+
+**Implications for Task 2.5 (slash commands / bot error handler):** The bot's error handler should surface a "something went wrong, please try again" message but should NOT try to reconstruct conversation state on retry. The retry will be a fresh `handleMessage` call with the user's resent text; the model sees no record of the broken turn.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale
