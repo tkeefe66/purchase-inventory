@@ -190,7 +190,7 @@ describe('dispatchCommand: /stats + /refresh', () => {
 });
 
 describe('dispatchCommand: /help', () => {
-  test('lists the major commands including /addgear and /log', async () => {
+  test('lists the major commands and links to the sheet', async () => {
     const { deps } = makeDeps([]);
     const out = await dispatchCommand('chat-1', '/help', deps);
     expect(out).not.toBeNull();
@@ -200,5 +200,6 @@ describe('dispatchCommand: /help', () => {
     expect(out).toContain('/cancel');
     expect(out).toContain('/stats');
     expect(out).toContain('/refresh');
+    expect(out).toContain(`https://docs.google.com/spreadsheets/d/${deps.spreadsheetId}/edit`);
   });
 });

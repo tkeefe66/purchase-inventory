@@ -44,7 +44,7 @@ export async function dispatchCommand(chatId: string, text: string, deps: Handle
   if (name === 'cancel') return handleCancel(chatId, deps);
   if (name === 'stats') return handleStats(deps);
   if (name === 'refresh') return handleRefresh(deps);
-  if (name === 'help') return handleHelp();
+  if (name === 'help') return handleHelp(deps);
   return null;
 }
 
@@ -138,7 +138,8 @@ function handleStats(deps: HandlerDeps): string {
   });
 }
 
-function handleHelp(): string {
+function handleHelp(deps: HandlerDeps): string {
+  const sheetUrl = `https://docs.google.com/spreadsheets/d/${deps.spreadsheetId}/edit`;
   return [
     `*Outdoor inventory bot — commands*`,
     ``,
@@ -158,6 +159,8 @@ function handleHelp(): string {
     `/stats — agent + cache statistics`,
     `/refresh — force-reload inventory from the sheet`,
     `/help — this message`,
+    ``,
+    `*Sheet:* [open in Google Sheets](${sheetUrl})`,
     ``,
     `Or just chat — outdoor questions go to the agent.`,
   ].join('\n');
