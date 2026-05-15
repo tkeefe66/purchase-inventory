@@ -70,11 +70,24 @@ export const TOOL_SCHEMAS = [
   },
 ] as const;
 
+const WEB_SEARCH_ALLOWED_DOMAINS = [
+  // Retailers (pricing, stock, returns)
+  'rei.com', 'backcountry.com', 'patagonia.com', 'evo.com', 'moosejaw.com',
+  'competitivecyclist.com', 'nrs.com', 'jensonusa.com', 'amazon.com',
+  // Expert reviews (product judgment)
+  'outdoorgearlab.com', 'switchbacktravel.com', 'treelinereview.com',
+  'gearjunkie.com', 'climbing.com', 'pinkbike.com', 'bikepacking.com',
+  // Official / conditions (weather, regulations, trails)
+  'weather.gov', 'noaa.gov', 'nps.gov', 'fs.usda.gov', 'blm.gov',
+  'recreation.gov', 'avalanche.org', 'alltrails.com', 'mountainproject.com',
+] as const;
+
 export const SERVER_TOOLS = [
   {
     type: 'web_search_20260209',
     name: 'web_search',
     max_uses: 3,
+    allowed_domains: WEB_SEARCH_ALLOWED_DOMAINS as unknown as string[],
   },
 ] as const;
 
