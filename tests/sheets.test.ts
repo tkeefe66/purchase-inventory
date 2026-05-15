@@ -1,5 +1,6 @@
-import { describe, test, expect } from 'vitest';
-import { buildHeaderMap, colLetter } from '../lib/sheets.js';
+import { describe, test, expect, vi } from 'vitest';
+import { buildHeaderMap, colLetter, updateRowStatus } from '../lib/sheets.js';
+import type { SheetsClient } from '../lib/sheets.js';
 
 describe('buildHeaderMap', () => {
   test('returns name → index map for a normal header row', () => {
@@ -46,5 +47,50 @@ describe('colLetter', () => {
     [701, 'ZZ'],
   ])('index %i → %s', (idx, letter) => {
     expect(colLetter(idx)).toBe(letter);
+  });
+});
+
+function makeFakeSheets(opts: {
+  headerRow: string[];
+  onUpdate?: (range: string, values: string[][]) => void;
+}): SheetsClient {
+  return {
+    spreadsheets: {
+      values: {
+        get: vi.fn().mockResolvedValue({ data: { values: [opts.headerRow] } }),
+        update: vi.fn().mockImplementation((args: { range: string; requestBody: { values: string[][] } }) => {
+          opts.onUpdate?.(args.range, args.requestBody.values);
+          return Promise.resolve({ data: {} });
+        }),
+      },
+    },
+  } as unknown as SheetsClient;
+}
+
+describe('updateRowStatus', () => {
+  test('writes the new status to the Status column of the specified row', async () => {
+    const writes: { range: string; values: string[][] }[] = [];
+    const fakeSheets = makeFakeSheets({
+      headerRow: ['Year', 'Brand', 'Item Name', 'Status'],
+      onUpdate: (range, values) => writes.push({ range, values }),
+    });
+    await updateRowStatus(fakeSheets, 'SHEET_ID', { rowIndex: 2, newStatus: 'lost' });
+    expect(writes).toHaveLength(1);
+    expect(writes[0]!.range).toBe(`'All Purchases'!D2`);
+    expect(writes[0]!.values).toEqual([['lost']]);
+  });
+
+  test('rejects an invalid status string', async () => {
+    const fakeSheets = makeFakeSheets({ headerRow: ['Year', 'Status'] });
+    await expect(
+      updateRowStatus(fakeSheets, 'SHEET_ID', { rowIndex: 2, newStatus: 'gone-fishing' as any }),
+    ).rejects.toThrow(/invalid status/i);
+  });
+
+  test('throws when Status column is missing from the header row', async () => {
+    const fakeSheets = makeFakeSheets({ headerRow: ['Year', 'Brand', 'Item Name'] });
+    await expect(
+      updateRowStatus(fakeSheets, 'SHEET_ID', { rowIndex: 2, newStatus: 'lost' }),
+    ).rejects.toThrow(/Status column/i);
   });
 });

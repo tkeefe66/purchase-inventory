@@ -1,6 +1,6 @@
 import { google, sheets_v4 } from 'googleapis';
 import { buildExistingKeySet, type DedupIndex } from './dedup.js';
-import type { MasterRow, Vocab } from './types.js';
+import type { MasterRow, Status, Vocab } from './types.js';
 
 /**
  * Builds a name → column-index lookup from a sheet's header row. Use this for
@@ -320,6 +320,42 @@ function parseQty(s: string | number): number {
 function parsePrice(s: string | number): number {
   const n = typeof s === 'number' ? s : parseFloat(String(s).replace(/[^0-9.-]/g, ''));
   return Number.isFinite(n) ? n : 0;
+}
+
+const VALID_STATUSES: readonly Status[] = [
+  'active', 'retired', 'returned', 'lost', 'broken', 'sold', 'donated', 'excluded',
+];
+
+export interface UpdateStatusInput {
+  rowIndex: number;
+  newStatus: Status;
+}
+
+export async function updateRowStatus(
+  sheets: SheetsClient,
+  spreadsheetId: string,
+  input: UpdateStatusInput,
+): Promise<void> {
+  if (!VALID_STATUSES.includes(input.newStatus)) {
+    throw new Error(`Invalid status: ${input.newStatus}. Expected one of ${VALID_STATUSES.join(', ')}.`);
+  }
+  const headerResp = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `'All Purchases'!1:1`,
+  });
+  const headerRow = (headerResp.data.values?.[0] ?? []) as (string | null | undefined)[];
+  const map = buildHeaderMap(headerRow);
+  const statusCol = map.get('Status');
+  if (statusCol === undefined) {
+    throw new Error(`Status column not found in 'All Purchases' header row`);
+  }
+  const range = `'All Purchases'!${colLetter(statusCol)}${input.rowIndex}`;
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range,
+    valueInputOption: 'RAW',
+    requestBody: { values: [[input.newStatus]] },
+  });
 }
 
 export { HEADERS as MASTER_HEADERS };
