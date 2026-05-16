@@ -1,10 +1,16 @@
-import { describe, test, expect, vi } from 'vitest';
+import { describe, test, expect, vi, beforeEach } from 'vitest';
 import {
   createWeatherClient,
+  geocode,
+  _resetNominatimStateForTests,
   ForecastError,
   type PirateHourData,
   type PirateWeatherResponse,
 } from '../../../../domains/outdoor/integrations/weather.js';
+
+beforeEach(() => {
+  _resetNominatimStateForTests();
+});
 
 describe('weather module', () => {
   test('exports load', () => {
@@ -108,6 +114,17 @@ describe('geocoding (Nominatim)', () => {
       kind: 'no_match',
       service: 'nominatim',
     });
+  });
+
+  test('standalone geocode() reuses module cache on duplicate queries', async () => {
+    const fetchImpl = mockFetch(new Map<string | RegExp, { status: number; json: unknown }>([
+      ['nominatim.openstreetmap.org', { status: 200, json: NOMINATIM_MOAB }],
+    ]));
+    await geocode('Moab, UT', fetchImpl);
+    await geocode('Moab, UT', fetchImpl);
+    const calls = (fetchImpl as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const nominatimCalls = calls.filter(([url]) => String(url).includes('nominatim'));
+    expect(nominatimCalls).toHaveLength(1);
   });
 
   test('enforces ≥1s gap between distinct Nominatim calls', async () => {
