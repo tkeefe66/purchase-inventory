@@ -62,4 +62,49 @@ describe('geocoding (Nominatim)', () => {
     const nominatimCalls = calls.filter(([url]) => String(url).includes('nominatim'));
     expect(nominatimCalls).toHaveLength(1);
   });
+
+  test('throws no_match when Nominatim returns an empty array', async () => {
+    const fetchImpl = mockFetch(new Map<string | RegExp, { status: number; json: unknown }>([
+      ['nominatim.openstreetmap.org', { status: 200, json: [] }],
+    ]));
+    const client = createWeatherClient({ apiKey: 'test', fetchImpl });
+    await expect(client.getForecast({ location: 'gibberish-xyz', days: 1 })).rejects.toMatchObject({
+      kind: 'no_match',
+      service: 'nominatim',
+    });
+  });
+
+  test('throws api_error when Nominatim returns 5xx', async () => {
+    const fetchImpl = mockFetch(new Map<string | RegExp, { status: number; json: unknown }>([
+      ['nominatim.openstreetmap.org', { status: 503, json: { error: 'service unavailable' } }],
+    ]));
+    const client = createWeatherClient({ apiKey: 'test', fetchImpl });
+    await expect(client.getForecast({ location: 'Moab', days: 1 })).rejects.toMatchObject({
+      kind: 'api_error',
+      service: 'nominatim',
+      status: 503,
+    });
+  });
+
+  test('throws rate_limited when Nominatim returns 429', async () => {
+    const fetchImpl = mockFetch(new Map<string | RegExp, { status: number; json: unknown }>([
+      ['nominatim.openstreetmap.org', { status: 429, json: { error: 'too many requests' } }],
+    ]));
+    const client = createWeatherClient({ apiKey: 'test', fetchImpl });
+    await expect(client.getForecast({ location: 'Moab', days: 1 })).rejects.toMatchObject({
+      kind: 'rate_limited',
+      service: 'nominatim',
+    });
+  });
+
+  test('throws no_match when coordinates are out of range', async () => {
+    const fetchImpl = mockFetch(new Map<string | RegExp, { status: number; json: unknown }>([
+      ['nominatim.openstreetmap.org', { status: 200, json: [{ lat: '999', lon: '0', display_name: 'bad' }] }],
+    ]));
+    const client = createWeatherClient({ apiKey: 'test', fetchImpl });
+    await expect(client.getForecast({ location: 'bad', days: 1 })).rejects.toMatchObject({
+      kind: 'no_match',
+      service: 'nominatim',
+    });
+  });
 });

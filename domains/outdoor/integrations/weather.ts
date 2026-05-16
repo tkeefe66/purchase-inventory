@@ -101,14 +101,20 @@ export function createWeatherClient(opts: WeatherClientOptions): WeatherClient {
       headers: { 'User-Agent': 'outdoor-inventory-bot/1.0 (tkeefe66@gmail.com)' },
     });
     if (!res.ok) {
-      throw new ForecastError('api_error', 'nominatim', res.status, `nominatim ${res.status}`);
+      const kind: ForecastErrorKind = res.status === 429 ? 'rate_limited' : 'api_error';
+      throw new ForecastError(kind, 'nominatim', res.status, `nominatim ${res.status}`);
     }
     const body = (await res.json()) as NominatimResult[];
     if (!Array.isArray(body) || body.length === 0) {
       throw new ForecastError('no_match', 'nominatim', undefined, `no match for "${query}"`);
     }
     const first = body[0]!;
-    const resolved = { lat: parseFloat(first.lat), lon: parseFloat(first.lon), name: first.display_name };
+    const lat = parseFloat(first.lat);
+    const lon = parseFloat(first.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      throw new ForecastError('no_match', 'nominatim', undefined, `invalid coordinates for "${query}"`);
+    }
+    const resolved = { lat, lon, name: first.display_name };
     geocodeCache.set(key, resolved);
     return resolved;
   }
