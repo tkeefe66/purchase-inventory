@@ -7,7 +7,7 @@ import {
 } from './schedule.js';
 import { createRecGovClient } from '../../../lib/reccgov/client.js';
 import { createSheetsClient } from '../../../lib/sheets.js';
-import { readMutedFacilityIds } from '../../../lib/sheets.js';
+import { readMutedFacilityIds, mirrorCampingIndex } from '../../../lib/sheets.js';
 import { readCampingIndex, writeCampingIndex, readCampingTrips, writeCampingTrips } from '../../../lib/campingState.js';
 import { runIndexRefresh } from './index-refresh.js';
 import { runMetadataRefresh } from './metadata-refresh.js';
@@ -54,6 +54,7 @@ async function main(): Promise<void> {
     const idx = await readCampingIndex(INDEX_PATH);
     const res = await runMetadataRefresh({ existingIndex: idx, client: recgov });
     await writeCampingIndex(INDEX_PATH, res.index);
+    await mirrorCampingIndex(sheets, spreadsheetId, res.index.facilities);
     console.log(`[camping-cron] metadata-refresh: ${res.refreshed} updated, ${res.deactivated} deactivated, ${res.failures} failures`);
   }
 

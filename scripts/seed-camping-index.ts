@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { createRecGovClient } from '../lib/reccgov/client.js';
-import { createSheetsClient } from '../lib/sheets.js';
+import { createSheetsClient, mirrorCampingIndex } from '../lib/sheets.js';
 import { readCampingIndex, writeCampingIndex } from '../lib/campingState.js';
 import { runIndexRefresh } from '../apps/cron/camping/index-refresh.js';
 import { runMetadataRefresh } from '../apps/cron/camping/metadata-refresh.js';
@@ -26,6 +26,9 @@ async function main(): Promise<void> {
   const r2 = await runMetadataRefresh({ existingIndex: idx, client: recgov });
   await writeCampingIndex(indexPath, r2.index);
   console.log(`  ${r2.refreshed} refreshed, ${r2.deactivated} deactivated, ${r2.failures} failures`);
+
+  console.log('Phase 3: mirror to sheet (with computed Next Calendar Opens / Next Reminder Fires)...');
+  await mirrorCampingIndex(sheets, spreadsheetId, r2.index.facilities);
 
   console.log('Seed complete.');
 }

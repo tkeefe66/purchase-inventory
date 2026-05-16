@@ -6,7 +6,9 @@ const HEADER = [
   'Facility ID', 'Name', 'Agency', 'Parent Unit', 'Region', 'Lat', 'Lng',
   'Lead Days', 'Special Release', 'Season Start', 'Season End', 'Fee',
   'Reservation Type', 'Use Type', 'Restrictions', 'Has Restrooms',
-  'Amenities', 'Tent-Eligible Sites', 'Active', 'Muted', 'Notes',
+  'Amenities', 'Tent-Eligible Sites', 'Active',
+  'Next Calendar Opens', 'Next Reminder Fires',
+  'Muted', 'Notes',
 ];
 
 function mockSheets(opts: { existingTabs: string[]; existingRows?: (string | number | boolean)[][] }) {
@@ -65,15 +67,29 @@ describe('mirrorCampingIndex', () => {
   test('updates existing rows by Facility ID without touching Muted or Notes', async () => {
     const { sheets, updated } = mockSheets({
       existingTabs: ['All Purchases', 'Camping Index'],
-      existingRows: [['F1', 'Old Name', 'USFS', '', '', 0, 0, 0, '', '', '', 0, '', '', '', false, '', '', false, true, 'my notes']],
+      // 23 cols: source 1-19 + computed 20-21 + Muted 22 + Notes 23
+      existingRows: [['F1', 'Old Name', 'USFS', '', '', 0, 0, 0, '', '', '', 0, '', '', '', false, '', '', false, '', '', true, 'my notes']],
     });
     await mirrorCampingIndex(sheets as never, 'sid', [sampleFacility]);
     expect(updated.length).toBeGreaterThan(0);
-    // Find the row update; Muted column index = 19, Notes = 20
     const updatedRow = updated.find((u) => u.range.includes('A2'))!.values[0]!;
     expect(updatedRow[1]).toBe('Test CG');         // Name updated
-    expect(updatedRow[19]).toBe(true);              // Muted preserved
-    expect(updatedRow[20]).toBe('my notes');        // Notes preserved
+    expect(updatedRow[21]).toBe(true);              // Muted preserved (now col index 21)
+    expect(updatedRow[22]).toBe('my notes');        // Notes preserved (now col index 22)
+  });
+
+  test('writes computed Next Calendar Opens + Next Reminder Fires for rolling-release sites', async () => {
+    const { sheets, appended } = mockSheets({ existingTabs: ['All Purchases', 'Camping Index'] });
+    await mirrorCampingIndex(sheets as never, 'sid', [sampleFacility]);
+    expect(appended).toHaveLength(1);
+    // sampleFacility: seasonStart='05-15', leadTimeDays=180. Open = next future
+    // year's 05-15 minus 180 days. Reminder = open - 90 days.
+    // Both columns should be non-empty MM-DD-prefixed date strings.
+    const nextOpens = appended[0]![19] as string;       // col index 19 = Next Calendar Opens
+    const nextReminder = appended[0]![20] as string;    // col index 20 = Next Reminder Fires
+    expect(nextOpens).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(nextReminder).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(nextReminder < nextOpens).toBe(true);
   });
 });
 
@@ -82,9 +98,9 @@ describe('readMutedFacilityIds', () => {
     const { sheets } = mockSheets({
       existingTabs: ['All Purchases', 'Camping Index'],
       existingRows: [
-        ['F1', 'A', 'USFS', '', '', 0, 0, 0, '', '', '', 0, '', '', '', false, '', '', true, true, ''],
-        ['F2', 'B', 'USFS', '', '', 0, 0, 0, '', '', '', 0, '', '', '', false, '', '', true, false, ''],
-        ['F3', 'C', 'USFS', '', '', 0, 0, 0, '', '', '', 0, '', '', '', false, '', '', true, 'TRUE', ''],
+        ['F1', 'A', 'USFS', '', '', 0, 0, 0, '', '', '', 0, '', '', '', false, '', '', true, '', '', true, ''],
+        ['F2', 'B', 'USFS', '', '', 0, 0, 0, '', '', '', 0, '', '', '', false, '', '', true, '', '', false, ''],
+        ['F3', 'C', 'USFS', '', '', 0, 0, 0, '', '', '', 0, '', '', '', false, '', '', true, '', '', 'TRUE', ''],
       ],
     });
     const out = await readMutedFacilityIds(sheets as never, 'sid');

@@ -1,8 +1,5 @@
-// apps/cron/camping/nudge-tick.ts
-import type { CampingIndex, CampingTrips, Facility } from '../../../lib/reccgov/types.js';
-import { formatInTimeZone } from 'date-fns-tz';
-
-const TZ = 'America/Denver';
+import type { CampingIndex, CampingTrips } from '../../../lib/reccgov/types.js';
+import { addDays, nextSeasonOpenDate, todayMtDateString } from '../../../lib/reccgov/seasons.js';
 
 export interface RunNudgeTickOpts {
   now: Date;
@@ -16,37 +13,6 @@ export interface NudgeTickResult {
   seasonOpenerFired: number;
   sevenDayFired: number;
   trips: CampingTrips;
-}
-
-function todayMtDateString(now: Date): string {
-  return formatInTimeZone(now, TZ, 'yyyy-MM-dd');
-}
-
-function addDays(iso: string, days: number): string {
-  const d = new Date(`${iso}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
-/**
- * For a facility with rolling release, compute the next "season open" date — the
- * first day each year that any season-date becomes bookable. Equals (nextSeasonStart - leadTimeDays).
- * For special-release facilities, returns the specialReleaseDate directly.
- */
-function nextSeasonOpenDate(f: Facility, todayMt: string): string | null {
-  if (f.specialReleaseDate) {
-    return f.specialReleaseDate >= todayMt ? f.specialReleaseDate : null;
-  }
-  if (!f.seasonStart) return null;
-  const [yyyy] = todayMt.split('-');
-  let year = Number(yyyy);
-  for (let i = 0; i < 3; i++) {
-    const seasonStart = `${year}-${f.seasonStart}`;
-    const openDate = addDays(seasonStart, -f.leadTimeDays);
-    if (openDate >= todayMt) return openDate;
-    year++;
-  }
-  return null;
 }
 
 export async function runNudgeTick(opts: RunNudgeTickOpts): Promise<NudgeTickResult> {

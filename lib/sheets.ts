@@ -3,6 +3,7 @@ import { formatInTimeZone } from 'date-fns-tz';
 import { buildExistingKeySet, type DedupIndex } from './dedup.js';
 import { STATUS_VALUES, type MasterRow, type Status, type Vocab } from './types.js';
 import type { Facility } from './reccgov/types.js';
+import { nextSeasonOpenDate, nextReminderDate, todayMtDateString } from './reccgov/seasons.js';
 
 /**
  * Builds a name → column-index lookup from a sheet's header row. Use this for
@@ -557,7 +558,9 @@ const CAMPING_INDEX_HEADER = [
   'Facility ID', 'Name', 'Agency', 'Parent Unit', 'Region', 'Lat', 'Lng',
   'Lead Days', 'Special Release', 'Season Start', 'Season End', 'Fee',
   'Reservation Type', 'Use Type', 'Restrictions', 'Has Restrooms',
-  'Amenities', 'Tent-Eligible Sites', 'Active', 'Muted', 'Notes',
+  'Amenities', 'Tent-Eligible Sites', 'Active',
+  'Next Calendar Opens', 'Next Reminder Fires',
+  'Muted', 'Notes',
 ] as const;
 
 async function ensureCampingIndexTab(sheets: SheetsClient, spreadsheetId: string): Promise<void> {
@@ -576,7 +579,9 @@ async function ensureCampingIndexTab(sheets: SheetsClient, spreadsheetId: string
   });
 }
 
-function facilityRow(f: Facility): (string | number | boolean)[] {
+function facilityRow(f: Facility, todayMt: string): (string | number | boolean)[] {
+  const open = nextSeasonOpenDate(f, todayMt);
+  const reminder = nextReminderDate(f, todayMt);
   return [
     f.facilityId, f.name, f.agency, f.parentUnit, f.region ?? '',
     f.lat, f.lng, f.leadTimeDays, f.specialReleaseDate ?? '',
@@ -584,6 +589,7 @@ function facilityRow(f: Facility): (string | number | boolean)[] {
     f.reservationType, f.useType,
     f.restrictions.join('; '), f.hasRestrooms,
     f.amenities.join('; '), f.tentEligibleSites.length, f.active,
+    open ?? '', reminder ?? '',
   ];
 }
 
@@ -593,9 +599,10 @@ export async function mirrorCampingIndex(
   facilities: readonly Facility[],
 ): Promise<void> {
   await ensureCampingIndexTab(sheets, spreadsheetId);
+  const todayMt = todayMtDateString(new Date());
   const resp = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: `'${CAMPING_INDEX_TAB}'!A:U`,
+    range: `'${CAMPING_INDEX_TAB}'!A:W`,
   });
   const rows = (resp.data.values ?? []) as (string | number | boolean)[][];
   const header = rows[0] ?? Array.from(CAMPING_INDEX_HEADER);
@@ -616,7 +623,7 @@ export async function mirrorCampingIndex(
 
   const toAppend: unknown[][] = [];
   for (const f of facilities) {
-    const row = facilityRow(f);
+    const row = facilityRow(f, todayMt);
     const existing = existingById.get(f.facilityId);
     if (existing) {
       const muted: string | number | boolean = (typeof existing.muted === 'boolean' || typeof existing.muted === 'string' || typeof existing.muted === 'number') ? existing.muted : false;
@@ -638,7 +645,7 @@ export async function mirrorCampingIndex(
   if (toAppend.length > 0) {
     await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range: `'${CAMPING_INDEX_TAB}'!A:U`,
+      range: `'${CAMPING_INDEX_TAB}'!A:W`,
       valueInputOption: 'RAW',
       insertDataOption: 'INSERT_ROWS',
       requestBody: { values: toAppend },
@@ -654,7 +661,7 @@ export async function readMutedFacilityIds(
   try {
     const resp = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `'${CAMPING_INDEX_TAB}'!A:T`,
+      range: `'${CAMPING_INDEX_TAB}'!A:W`,
     });
     raw = (resp.data.values ?? []) as (string | number | boolean)[][];
   } catch { return []; }
@@ -680,7 +687,7 @@ export async function setMutedInCampingIndex(
 ): Promise<void> {
   const resp = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: `'${CAMPING_INDEX_TAB}'!A:U`,
+    range: `'${CAMPING_INDEX_TAB}'!A:W`,
   });
   const rows = (resp.data.values ?? []) as (string | number | boolean)[][];
   if (rows.length < 2) return;

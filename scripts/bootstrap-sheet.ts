@@ -75,7 +75,9 @@ const CAMPING_INDEX_HEADERS = [
   'Facility ID', 'Name', 'Agency', 'Parent Unit', 'Region', 'Lat', 'Lng',
   'Lead Days', 'Special Release', 'Season Start', 'Season End', 'Fee',
   'Reservation Type', 'Use Type', 'Restrictions', 'Has Restrooms',
-  'Amenities', 'Tent-Eligible Sites', 'Active', 'Muted', 'Notes',
+  'Amenities', 'Tent-Eligible Sites', 'Active',
+  'Next Calendar Opens', 'Next Reminder Fires',
+  'Muted', 'Notes',
 ];
 
 async function main(): Promise<void> {
@@ -288,7 +290,7 @@ async function main(): Promise<void> {
   if (campingIndexExists) {
     console.log('Plan: "Camping Index" tab (already exists — skip)');
   } else {
-    console.log('Plan: create "Camping Index" tab with 21 headers');
+    console.log(`Plan: create "Camping Index" tab with ${CAMPING_INDEX_HEADERS.length} headers`);
     campingIndexWillBeCreated = true;
     requests.push({
       addSheet: {
