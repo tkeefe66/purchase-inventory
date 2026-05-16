@@ -106,6 +106,10 @@ ledger/                     # current folder name: outdoor-inventory
 | Agent model | All Claude model IDs + agent pricing live in `lib/models.ts` (single source of truth). Currently: Opus 4.7 primary, Sonnet 4.6 / Haiku 4.5 fallback for the outdoor agent; Haiku 4.5 for the Amazon parser. **Always update to the latest Claude model when a new release lands — edit `lib/models.ts` only.** |
 | Prompt caching | Always on (per global CLAUDE.md). System prompts + tool definitions cached. |
 | Weather provider | **Pirate Weather** (Dark Sky-compatible JSON, generous free tier) for forecasts; **Nominatim** for geocoding (≥1s/req per usage policy, in-process cached, User-Agent set). Typed errors surface as `{ ok: false, error: 'rate_limited' \| 'api_error' \| 'no_match' \| 'bad_coords' }`. Single seam: `domains/outdoor/integrations/weather.ts`. |
+| Camping (Phase 5, in progress) | Foundation layer landed (T1-T6 of 20): `lib/reccgov/*` (types, regions, REST client, deep-link), `lib/iOverlander/cache.ts`, `lib/campingState.ts` (file-locked JSON), Camping Index sheet-tab helpers in `lib/sheets.ts`. Cron/bot/search layers pending. See `docs/SESSION_RESUME.md` to pick up. |
+| Camping data sources | Recreation.gov RIDB (`RECGOV_API_KEY` env var) primary + iOverlander weekly CSV snapshot. Tent-eligible filter applied; picnic areas included as `useType='day-use'`. |
+| Camping auto-booking | Flavor A only — Telegram deep-link alert at exact release moment. No headless browser, no stored credentials. |
+| Camping storage | Railway volume at `/data` mounted on both bot + camping-cron services: `camping-index.json`, `camping-trips.json`, `iOverlander.json`. Plus "Camping Index" sheet tab mirror with user-writable Muted + Notes columns (authoritative for mute state). |
 | Web UI v1 | Read-only dashboard; editing deferred |
 | Multi-domain in v1 | NO — outdoor only. Other domain stubs are README.md only. |
 

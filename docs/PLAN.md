@@ -30,7 +30,7 @@ The architecture is multi-domain from day 1. The *delivery* is single-domain at 
 | **2.5** | Add `web_search` tool to outdoor agent | ~1 day | Agent answers a "current conditions / current product / current price" question using fresh web info |
 | **3** | Outdoor + Weather integration ✅ shipped 2026-05-15 | ~3 days | Agent answers "what should I bring tomorrow for [trip]?" using current forecast |
 | **4** | Outdoor + AllTrails (or fallback OSM) integration — covers hiking, mountain biking, trail running | ~1 week | Agent answers "what gear for [trail name]?" or "good MTB trails near X?" using trail data + inventory |
-| **5** | Outdoor + Free-camping integration | ~1 week | Agent answers "where can I camp free near [location]?" using a real source |
+| **5** | Outdoor + Free-camping integration **🚧 in progress (foundation T1-T6 of 20 done)** | ~1 week | Free-camping search (`find_free_campsites` agent tool) + reservation-release tracking (season-opener + 7-day + deep-link release alerts). See spec `docs/superpowers/specs/2026-05-15-phase-5-camping-design.md`, plan `docs/superpowers/plans/2026-05-15-phase-5-camping.md`, resume `docs/SESSION_RESUME.md`. |
 | **5.5** | Gear age / maintenance nudges | ~1 day | Monthly cron surfaces items hitting age or maintenance thresholds via Telegram |
 | **6** | Web UI (read-only dashboard, all domains) | ~1 week | Filterable by domain/category/brand/year/status; spend chart |
 | **6.5** | Calendar-aware trip prep (Google Calendar) — *was Phase 3.5; pushed to end of build by Tom 2026-05-15* | ~3 days | Cron checks calendar; sends Telegram packing-list nudge before upcoming outdoor events using inventory + weather |
@@ -609,31 +609,29 @@ Add `lookup_trail(name, activity?)` and `search_trails_nearby(location, radius_k
 
 ---
 
-## Phase 5: Outdoor + Free camping
+## Phase 5: Outdoor + Free camping — 🚧 in progress (2026-05-15)
 
-**Outcome:** Agent answers "where can I camp free near [location]?" using a real source.
+**Authoritative artifacts:**
+- Spec: `docs/superpowers/specs/2026-05-15-phase-5-camping-design.md`
+- Plan: `docs/superpowers/plans/2026-05-15-phase-5-camping.md`
+- Resume notes: `docs/SESSION_RESUME.md`
 
-### Task 5.1: Source selection
+**Outcome (revised in 2026-05-15 brainstorming):** Two outcomes shipped as one phase.
+- (5a) Agent answers "where can I camp free near [location]?" via a `find_free_campsites` tool combining Recreation.gov + iOverlander with tent-eligible + picnic-area filters.
+- (5b) Railway-side index of all CO tent-eligible Rec.gov facilities with proactive Telegram nudges: season-opener (90 days before booking-calendar opens), trip-date (7 days before user-registered visit's booking-window opens), and release-moment (deep-link alert at the exact second a planned-trip's booking opens).
 
-**Recommended primary:** Recreation.gov API (free, official, US federal land — covers a lot of free dispersed camping on USFS / BLM land).
-**Secondary candidates:** iOverlander (community-sourced; data export available), The Dyrt (some free listings).
-**To investigate:** USFS Motor Vehicle Use Maps for dispersed-camping areas.
+**Progress (T1-T20 in the plan):**
+- ✅ T1: Rec.gov types + curated regions
+- ✅ T2: Rec.gov REST client (rate-limit + retry)
+- ✅ T3: Deep-link URL builder
+- ✅ T4: `campingState` JSON state w/ file locking
+- ✅ T5: iOverlander CSV cache
+- ✅ T6: Camping Index sheet tab helpers (mirror + Muted reader)
+- ⏭️ T7-T20: schedule gates, 4 cron ticks, cron entrypoint, Telegram commands, /help, seed script, freecamping facade, find_free_campsites tool, smoke script, docs, push/deploy/seed
 
-### Task 5.2: Free-camping client
+**Data sources:** Recreation.gov (RIDB API, free key) primary + iOverlander weekly CSV snapshot. **Not building:** USFS Motor Vehicle Use Maps (deferred), The Dyrt (mostly paid sites, weaker fit).
 
-**Files:** `domains/outdoor/integrations/freecamping.ts`
-
-**Functions:**
-- `findFreeCampsites(coords, radius): Campsite[]`
-- `getCampsiteDetails(id): CampsiteDetail`
-
-### Task 5.3: New agent tool
-
-Add `find_free_campsites(location, radius_km)` to outdoor agent.
-
-### Task 5.4: Acceptance test
-
-"Where can I camp free near [real location]?" → returns real, accurate campsite info with source attribution.
+**Acceptance:** see plan T20 — `/regions` works, `/plan-trip` registers + computes release date, `/trips` reflects nudge status, asking the agent "where can I camp free near Estes Park within 30 km" returns real results.
 
 ---
 

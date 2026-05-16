@@ -1035,6 +1035,32 @@ Strong key is checked **first**. Falls back to the existing full key (orderId + 
 
 ---
 
+## 2026-05-15 — Phase 5 in progress (foundation layer landed; cron+bot+search still to build)
+
+**Status:** Spec + plan + Tasks 1-6 (foundation) complete. Tasks 7-20 pending.
+**Spec:** `docs/superpowers/specs/2026-05-15-phase-5-camping-design.md`
+**Plan:** `docs/superpowers/plans/2026-05-15-phase-5-camping.md`
+**Resume:** `docs/SESSION_RESUME.md`
+
+**What's locked from brainstorming:**
+- **Tent-eligible filter:** index filters out RV-only sites, cabins, yurts. Picnic areas included with `useType='day-use'`.
+- **Auto-booking:** Flavor A only (Telegram alert + deep link at exact release moment). No headless-browser checkout in v1.
+- **Sheet authoritative for muted state.** "Camping Index" tab has writable Muted + Notes columns; cron preserves them across refreshes.
+- **Separate Railway cron service** (`railway.camping.json` to be created in T12, per-minute schedule). Each tick self-gates by cadence.
+- **Regions are both auto (parent unit) AND curated** (Front Range, Western Slope, San Juans, Sangres, Northern Mountains).
+- **`/plan-trip <facility> <date>`** registers visits → bot fires 7-day nudge + release-moment alert. Season-opener nudges fire automatically for every non-muted facility 90 days before its calendar opens.
+- **Storage:** Railway-volume JSON (`/data/camping-index.json`, `/data/camping-trips.json`, `/data/iOverlander.json`) — fast local cache; sheet is the visible mirror only for the Camping Index.
+
+**Foundation files (T1-T6) landed:**
+- `lib/reccgov/types.ts`, `regions.ts`, `client.ts`, `deep-link.ts`
+- `lib/iOverlander/cache.ts`
+- `lib/campingState.ts` (uses `proper-lockfile` for safe concurrent writes)
+- Camping Index helpers appended to `lib/sheets.ts`
+
+**Out of scope (deferred v1.5+):** Camping Trips sheet tab, auto-booking flavors B/C, non-CO seeds, walk-up alerts, USFS MVUM integration.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale
