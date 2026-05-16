@@ -51,6 +51,8 @@ export interface WeatherClientOptions {
   fetchImpl?: typeof fetch;
   /** Override for tests; defaults to `Date.now`. */
   now?: () => number;
+  /** Override for tests; defaults to `setTimeout`-based sleep. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
@@ -90,12 +92,21 @@ interface PirateHourData {
 
 export function createWeatherClient(opts: WeatherClientOptions): WeatherClient {
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+  const now = opts.now ?? (() => Date.now());
+  const sleep = opts.sleep ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms)));
+  const NOMINATIM_MIN_GAP_MS = 1000;
+  let lastNominatimAtMs = 0;
   const geocodeCache = new Map<string, { lat: number; lon: number; name: string }>();
 
   async function geocode(query: string): Promise<{ lat: number; lon: number; name: string }> {
     const key = query.trim().toLowerCase();
     const cached = geocodeCache.get(key);
     if (cached) return cached;
+    const sinceLast = now() - lastNominatimAtMs;
+    if (lastNominatimAtMs > 0 && sinceLast < NOMINATIM_MIN_GAP_MS) {
+      await sleep(NOMINATIM_MIN_GAP_MS - sinceLast);
+    }
+    lastNominatimAtMs = now();
     const url = `${NOMINATIM_URL}?q=${encodeURIComponent(query)}&format=json&limit=1`;
     const res = await fetchImpl(url, {
       headers: { 'User-Agent': 'outdoor-inventory-bot/1.0 (tkeefe66@gmail.com)' },

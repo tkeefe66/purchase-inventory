@@ -107,4 +107,31 @@ describe('geocoding (Nominatim)', () => {
       service: 'nominatim',
     });
   });
+
+  test('enforces ≥1s gap between distinct Nominatim calls', async () => {
+    let virtualTime = 1_000_000;
+    const sleepCalls: number[] = [];
+    const fetchImpl = mockFetch(new Map<string | RegExp, { status: number; json: unknown }>([
+      [/nominatim.*Moab/, { status: 200, json: [{ lat: '38.57', lon: '-109.55', display_name: 'Moab, UT' }] }],
+      [/nominatim.*Aspen/, { status: 200, json: [{ lat: '39.19', lon: '-106.82', display_name: 'Aspen, CO' }] }],
+      ['pirateweather.net', { status: 200, json: { latitude: 0, longitude: 0, timezone: 'America/Denver', daily: { data: [] }, hourly: { data: [] } } }],
+    ]));
+    const client = createWeatherClient({
+      apiKey: 'test',
+      fetchImpl,
+      now: () => virtualTime,
+      sleep: async (ms: number) => {
+        sleepCalls.push(ms);
+        virtualTime += ms;
+      },
+    } as unknown as Parameters<typeof createWeatherClient>[0]);
+
+    await client.getForecast({ location: 'Moab', days: 1 });
+    // Advance only 200ms before the second call
+    virtualTime += 200;
+    await client.getForecast({ location: 'Aspen', days: 1 });
+
+    // Expect a sleep of ~800ms inserted before the second Nominatim call
+    expect(sleepCalls.some((ms) => ms >= 700 && ms <= 900)).toBe(true);
+  });
 });
