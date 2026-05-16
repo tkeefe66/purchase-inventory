@@ -1,6 +1,6 @@
 import type { CampingIndex, Facility } from '../../../lib/reccgov/types.js';
 import type { RecGovClient } from '../../../lib/reccgov/client.js';
-import { seasonForFacility } from '../../../lib/reccgov/seasons.js';
+import { seasonForFacility, DEFAULT_LEAD_TIME_DAYS } from '../../../lib/reccgov/seasons.js';
 
 const TENT_TYPES = new Set([
   'TENT ONLY NONELECTRIC', 'TENT ONLY ELECTRIC',
@@ -42,7 +42,11 @@ export async function runMetadataRefresh(opts: RunMetadataRefreshOpts): Promise<
       const seasonFallback = seasonForFacility(f.facilityId);
       const updated: Facility = {
         ...f,
-        leadTimeDays: meta.leadTimeDays ?? f.leadTimeDays ?? 180,
+        // Use `||` not `??` here: index-refresh seeds new facilities with
+        // leadTimeDays=0, which is a "not yet known" sentinel, not a real
+        // zero-day window. `??` would treat 0 as a valid value and short-
+        // circuit before reaching DEFAULT_LEAD_TIME_DAYS.
+        leadTimeDays: meta.leadTimeDays || f.leadTimeDays || DEFAULT_LEAD_TIME_DAYS,
         specialReleaseDate: meta.specialReleaseDate ?? f.specialReleaseDate,
         seasonStart: meta.seasonStart ?? f.seasonStart ?? seasonFallback.seasonStart,
         seasonEnd: meta.seasonEnd ?? f.seasonEnd ?? seasonFallback.seasonEnd,

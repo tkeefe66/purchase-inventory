@@ -44,6 +44,26 @@ describe('runMetadataRefresh', () => {
     expect(result.deactivated).toBe(1);
   });
 
+  test('falls back to DEFAULT_LEAD_TIME_DAYS (180) when index-refresh seeded leadTimeDays=0', async () => {
+    // Regression: ?? operator short-circuits on 0, leaving leadTimeDays=0
+    // which breaks every nudge calculation. Must use || here.
+    const existing: CampingIndex = {
+      facilities: [
+        { facilityId: 'F1', name: 'X', state: 'CO', parentUnit: 'Y', region: null, lat: 0, lng: 0,
+          agency: 'USFS', useType: 'overnight', leadTimeDays: 0, specialReleaseDate: null,
+          seasonStart: null, seasonEnd: null, feeUSD: 0, reservationType: 'reservation',
+          tentEligibleSites: [], totalSites: 0, restrictions: [], amenities: [], hasRestrooms: false,
+          reservationUrl: '', lastMetadataRefresh: '', active: true },
+      ],
+    };
+    const client = {
+      getFacility: vi.fn(async () => ({ /* no leadTimeDays from RIDB */ })),
+      getFacilityCampsites: vi.fn(async () => [{ campsiteId: 'S1', campsiteType: 'TENT ONLY NONELECTRIC' }]),
+    };
+    const result = await runMetadataRefresh({ existingIndex: existing, client: client as never });
+    expect(result.index.facilities[0]!.leadTimeDays).toBe(180);
+  });
+
   test('falls back to DEFAULT_SEASON when RIDB returns no seasonStart/seasonEnd', async () => {
     // RIDB v1 reality: getFacility does NOT return season fields. Without
     // the seasonForFacility fallback, seasonStart stays null and T10's

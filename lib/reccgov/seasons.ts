@@ -32,6 +32,16 @@ export const DEFAULT_SEASON: SeasonWindow = {
   seasonEnd: '10-15',
 };
 
+/**
+ * Default rolling-release booking window for USFS campgrounds.
+ *
+ * Rec.gov's RIDB v1 does NOT expose this as a structured field. Most USFS
+ * rolling-release sites use 6 months (180 days), which is the standard
+ * advance-booking window. Special-release sites (like Maroon Bells) use a
+ * specialReleaseDate instead.
+ */
+export const DEFAULT_LEAD_TIME_DAYS = 180;
+
 export const FACILITY_SEASON_OVERRIDES: Record<string, SeasonWindow> = {
   // Add high-priority sites here as you learn their actual open/close dates.
   // Example:
