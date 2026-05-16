@@ -7,7 +7,10 @@ import {
   updateRowStatus,
   appendMasterRow,
   buildVocab,
+  readMutedFacilityIds,
+  setMutedInCampingIndex,
 } from '../../lib/sheets.js';
+import { readCampingIndex, readCampingTrips, writeCampingTrips } from '../../lib/campingState.js';
 import { sendMessage, getUpdates, getFile, downloadFile, type TelegramConfig } from '../../lib/telegram.js';
 import { InventoryCache } from './inventoryCache.js';
 import { Stats } from './stats.js';
@@ -142,6 +145,13 @@ async function main(): Promise<void> {
       fetchProductInfo: (url) => fetchProductInfo(anthropic, url),
       listExistingRows: () =>
         cache.getSnapshot().map((r) => ({ brand: r.brand, itemName: r.itemName })),
+    },
+    camping: {
+      readIndex: () => readCampingIndex(process.env.CAMPING_INDEX_PATH ?? '/data/camping-index.json'),
+      readTrips: () => readCampingTrips(process.env.CAMPING_TRIPS_PATH ?? '/data/camping-trips.json'),
+      writeTrips: (t) => writeCampingTrips(process.env.CAMPING_TRIPS_PATH ?? '/data/camping-trips.json', t),
+      readMutedIds: () => readMutedFacilityIds(sheets, env.spreadsheetId),
+      setMuted: (ids, muted) => setMutedInCampingIndex(sheets, env.spreadsheetId, ids, muted),
     },
     // /scan triggers the same pipeline the cron runs. Telegram token is
     // intentionally omitted so the pipeline doesn't send its own digest —

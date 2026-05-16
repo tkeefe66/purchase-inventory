@@ -1,17 +1,8 @@
 export type CommandName =
-  | 'log'
-  | 'addgear'
-  | 'lost'
-  | 'sold'
-  | 'donated'
-  | 'retired'
-  | 'broken'
-  | 'confirm'
-  | 'cancel'
-  | 'stats'
-  | 'refresh'
-  | 'scan'
-  | 'help';
+  | 'log' | 'addgear' | 'lost' | 'sold' | 'donated' | 'retired' | 'broken'
+  | 'confirm' | 'cancel' | 'stats' | 'refresh' | 'scan' | 'help'
+  | 'watch' | 'unwatch' | 'watchlist' | 'regions'
+  | 'plan-trip' | 'trips' | 'cancel-trip' | 'campsites';
 
 export interface ParsedCommand {
   name: CommandName;
@@ -19,7 +10,10 @@ export interface ParsedCommand {
 }
 
 const KNOWN: readonly CommandName[] = [
-  'log', 'addgear', 'lost', 'sold', 'donated', 'retired', 'broken', 'confirm', 'cancel', 'stats', 'refresh', 'scan', 'help',
+  'log', 'addgear', 'lost', 'sold', 'donated', 'retired', 'broken',
+  'confirm', 'cancel', 'stats', 'refresh', 'scan', 'help',
+  'watch', 'unwatch', 'watchlist', 'regions',
+  'plan-trip', 'trips', 'cancel-trip', 'campsites',
 ];
 
 export function parseCommand(text: string): ParsedCommand | null {

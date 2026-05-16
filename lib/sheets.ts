@@ -671,3 +671,33 @@ export async function readMutedFacilityIds(
   }
   return out;
 }
+
+export async function setMutedInCampingIndex(
+  sheets: SheetsClient,
+  spreadsheetId: string,
+  facilityIds: string[],
+  muted: boolean,
+): Promise<void> {
+  const resp = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `'${CAMPING_INDEX_TAB}'!A:U`,
+  });
+  const rows = (resp.data.values ?? []) as (string | number | boolean)[][];
+  if (rows.length < 2) return;
+  const header = rows[0]!;
+  const idIdx = header.indexOf('Facility ID');
+  const mutedColIdx = header.indexOf('Muted');
+  if (idIdx < 0 || mutedColIdx < 0) return;
+  const targetSet = new Set(facilityIds);
+  const colLetter = (i: number): string => String.fromCharCode(65 + i);
+  for (let i = 1; i < rows.length; i++) {
+    const id = String(rows[i]![idIdx] ?? '');
+    if (!targetSet.has(id)) continue;
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `'${CAMPING_INDEX_TAB}'!${colLetter(mutedColIdx)}${i + 1}`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [[muted]] },
+    });
+  }
+}

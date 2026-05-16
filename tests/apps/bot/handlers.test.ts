@@ -47,6 +47,13 @@ function makeDeps(rows: MasterRow[], overrides: Partial<HandlerDeps> = {}): {
       listExistingRows: () => [],
     },
     runScan: vi.fn() as unknown as HandlerDeps['runScan'],
+    camping: {
+      readIndex: vi.fn(async () => ({ facilities: [] })),
+      readTrips: vi.fn(async () => ({ trips: [] })),
+      writeTrips: vi.fn(async () => undefined),
+      readMutedIds: vi.fn(async () => []),
+      setMuted: vi.fn(async () => undefined),
+    },
     ...overrides,
   };
   return { deps, cache, updateCalls, appendCalls };

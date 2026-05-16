@@ -13,6 +13,7 @@ import { startAddgear, continueAddgear, type AddgearDeps } from './commands/addg
 import { AddgearStateStore } from '../../lib/addgearState.js';
 import { formatLogPreview } from './preview.js';
 import type { PipelineResult } from '../cron/pipeline.js';
+import { handleCampingCommand, type CampingDeps } from './commands/camping.js';
 
 const STATUS_CHANGE_COMMANDS: Record<string, Status> = {
   lost: 'lost', sold: 'sold', donated: 'donated', retired: 'retired', broken: 'broken',
@@ -37,6 +38,7 @@ export interface HandlerDeps {
    *  scheduled cron; suppresses the pipeline's own Telegram digest so the
    *  bot returns one formatted reply instead of two messages. */
   runScan: () => Promise<PipelineResult>;
+  camping: CampingDeps;
 }
 
 export async function dispatchCommand(chatId: string, text: string, deps: HandlerDeps): Promise<string | null> {
@@ -52,6 +54,12 @@ export async function dispatchCommand(chatId: string, text: string, deps: Handle
   if (name === 'refresh') return handleRefresh(deps);
   if (name === 'scan') return handleScan(deps);
   if (name === 'help') return handleHelp(deps);
+  if (
+    name === 'watch' || name === 'unwatch' || name === 'watchlist' || name === 'regions'
+    || name === 'plan-trip' || name === 'trips' || name === 'cancel-trip' || name === 'campsites'
+  ) {
+    return handleCampingCommand({ name, args }, deps.camping);
+  }
   return null;
 }
 
