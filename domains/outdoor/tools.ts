@@ -68,6 +68,27 @@ export const TOOL_SCHEMAS = [
       required: ['item_id', 'new_status'],
     },
   },
+  {
+    name: 'get_forecast',
+    description:
+      "Get the weather forecast for a location. Use when Tom asks about weather, packing for a trip, conditions at a destination, or anything that depends on temperature, precipitation, or wind. Returns a daily summary for the requested number of days plus an hourly breakdown for tomorrow at the destination. Use the destination's local time, not Tom's. Don't call this for general climate questions ('what's Iceland like in July?') — only for specific forecasts within the next 7 days.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        location: {
+          type: 'string',
+          description: 'Free-form place name. Be as specific as helpful — "Moab, UT" beats "Moab". Country/state suffix avoids ambiguity for common names.',
+        },
+        days: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 7,
+          description: 'Number of forecast days to return. Use 1 for "tomorrow", 3-5 for a multi-day trip, 7 for the full week.',
+        },
+      },
+      required: ['location', 'days'],
+    },
+  },
 ] as const;
 
 const WEB_SEARCH_ALLOWED_DOMAINS = [

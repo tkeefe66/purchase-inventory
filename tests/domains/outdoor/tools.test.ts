@@ -32,7 +32,7 @@ describe('TOOL_SCHEMAS', () => {
     const names = TOOL_SCHEMAS.map((s) => s.name);
     expect(names).toContain('get_product_url');
     expect(names).toContain('update_status');
-    expect(TOOL_SCHEMAS).toHaveLength(2);
+    expect(TOOL_SCHEMAS).toHaveLength(3);
   });
 
   test('update_status schema constrains new_status to the valid enum', () => {
@@ -41,6 +41,21 @@ describe('TOOL_SCHEMAS', () => {
     expect(statusProp?.enum).toEqual(
       expect.arrayContaining(['active', 'retired', 'returned', 'lost', 'broken', 'sold', 'donated', 'excluded']),
     );
+  });
+
+  test('exports get_forecast', () => {
+    const names = TOOL_SCHEMAS.map((s) => s.name);
+    expect(names).toContain('get_forecast');
+  });
+
+  test('get_forecast schema requires location and days', () => {
+    const t = TOOL_SCHEMAS.find((s) => s.name === 'get_forecast')!;
+    expect(t.input_schema.required).toEqual(expect.arrayContaining(['location', 'days']));
+    const props = t.input_schema.properties as Record<string, { type: string; minimum?: number; maximum?: number }>;
+    expect(props.location?.type).toBe('string');
+    expect(props.days?.type).toBe('integer');
+    expect(props.days?.minimum).toBe(1);
+    expect(props.days?.maximum).toBe(7);
   });
 });
 
