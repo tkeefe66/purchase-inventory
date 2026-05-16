@@ -75,4 +75,34 @@ describe('runNudgeTick', () => {
     });
     expect(res.sevenDayFired).toBe(0);
   });
+
+  test('skips 7-day nudge for cancelled trips', async () => {
+    const today = new Date('2026-02-16T14:00:00Z');
+    const trips: CampingTrips = { trips: [{
+      id: 't1', facilityId: 'F1', visitDate: '2026-08-22',
+      plannedAt: '', nudges: [{ kind: '7-day', firedAt: null }],
+      cancelledAt: '2026-02-10T00:00:00Z',
+    }] };
+    let messageCount = 0;
+    const res = await runNudgeTick({
+      now: today, index: { facilities: [f({ facilityId: 'F1' })] }, trips,
+      mutedFacilityIds: [],
+      sendTelegram: async () => { messageCount++; },
+    });
+    expect(res.sevenDayFired).toBe(0);
+    expect(messageCount).toBe(0);
+  });
+
+  test('skips 7-day nudge when facility not in index', async () => {
+    const today = new Date('2026-02-16T14:00:00Z');
+    const trips: CampingTrips = { trips: [{
+      id: 't1', facilityId: 'GONE', visitDate: '2026-08-22',
+      plannedAt: '', nudges: [{ kind: '7-day', firedAt: null }], cancelledAt: null,
+    }] };
+    const res = await runNudgeTick({
+      now: today, index: { facilities: [] }, trips, mutedFacilityIds: [],
+      sendTelegram: async () => {},
+    });
+    expect(res.sevenDayFired).toBe(0);
+  });
 });

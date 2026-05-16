@@ -40,7 +40,7 @@ function nextSeasonOpenDate(f: Facility, todayMt: string): string | null {
   if (!f.seasonStart) return null;
   const [yyyy] = todayMt.split('-');
   let year = Number(yyyy);
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < 3; i++) {
     const seasonStart = `${year}-${f.seasonStart}`;
     const openDate = addDays(seasonStart, -f.leadTimeDays);
     if (openDate >= todayMt) return openDate;
