@@ -53,6 +53,78 @@ export interface WeatherClientOptions {
   now?: () => number;
 }
 
-export function createWeatherClient(_opts: WeatherClientOptions): WeatherClient {
-  throw new Error('not implemented');
+const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
+const PIRATE_WEATHER_URL = 'https://api.pirateweather.net/forecast';
+
+interface NominatimResult {
+  lat: string;
+  lon: string;
+  display_name: string;
+}
+
+interface PirateWeatherResponse {
+  latitude: number;
+  longitude: number;
+  timezone: string;
+  daily?: { data: PirateDayData[] };
+  hourly?: { data: PirateHourData[] };
+}
+
+interface PirateDayData {
+  time: number;
+  summary: string;
+  temperatureHigh: number;
+  temperatureLow: number;
+  precipProbability: number;
+  precipAccumulation: number;
+  windSpeed: number;
+}
+
+interface PirateHourData {
+  time: number;
+  summary: string;
+  temperature: number;
+  precipProbability: number;
+  windSpeed: number;
+}
+
+export function createWeatherClient(opts: WeatherClientOptions): WeatherClient {
+  const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+
+  async function geocode(query: string): Promise<{ lat: number; lon: number; name: string }> {
+    const url = `${NOMINATIM_URL}?q=${encodeURIComponent(query)}&format=json&limit=1`;
+    const res = await fetchImpl(url, {
+      headers: { 'User-Agent': 'outdoor-inventory-bot/1.0 (tkeefe66@gmail.com)' },
+    });
+    if (!res.ok) {
+      throw new ForecastError('api_error', 'nominatim', res.status, `nominatim ${res.status}`);
+    }
+    const body = (await res.json()) as NominatimResult[];
+    if (!Array.isArray(body) || body.length === 0) {
+      throw new ForecastError('no_match', 'nominatim', undefined, `no match for "${query}"`);
+    }
+    const first = body[0]!;
+    return { lat: parseFloat(first.lat), lon: parseFloat(first.lon), name: first.display_name };
+  }
+
+  async function fetchForecast(lat: number, lon: number): Promise<PirateWeatherResponse> {
+    const url = `${PIRATE_WEATHER_URL}/${opts.apiKey}/${lat},${lon}?units=us&exclude=minutely,alerts`;
+    const res = await fetchImpl(url);
+    if (!res.ok) {
+      throw new ForecastError('api_error', 'pirateweather', res.status, `pirateweather ${res.status}`);
+    }
+    return (await res.json()) as PirateWeatherResponse;
+  }
+
+  return {
+    async getForecast(input) {
+      const { lat, lon, name } = await geocode(input.location);
+      const fc = await fetchForecast(lat, lon);
+      return {
+        resolved: { name, lat, lon, timezone: fc.timezone },
+        daily: [],
+        hourlyTomorrow: [],
+      };
+    },
+  };
 }
