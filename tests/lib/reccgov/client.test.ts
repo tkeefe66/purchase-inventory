@@ -6,11 +6,11 @@ const SEARCH_RESPONSE = {
     {
       FacilityID: '231959',
       FacilityName: 'Maroon Bells Amphitheater',
-      ParentRECAREAName: 'White River National Forest',
       FacilityLatitude: 39.097,
       FacilityLongitude: -106.948,
       FacilityTypeDescription: 'Campground',
-      AddressStateCode: 'CO',
+      RECAREA: [{ RecAreaID: '1234', RecAreaName: 'White River National Forest' }],
+      FACILITYADDRESS: [{ AddressStateCode: 'CO', AddressCountryCode: 'USA' }],
     },
   ],
 };
@@ -20,7 +20,7 @@ describe('RecGovClient.searchFacilities', () => {
   afterEach(() => { vi.restoreAllMocks(); });
 
   test('returns parsed facilities from a happy-path response', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify(SEARCH_RESPONSE), { status: 200 }),
     );
     const client = createRecGovClient({ apiKey: 'TEST' });
@@ -29,6 +29,24 @@ describe('RecGovClient.searchFacilities', () => {
     expect(out[0]!.facilityId).toBe('231959');
     expect(out[0]!.name).toBe('Maroon Bells Amphitheater');
     expect(out[0]!.parentUnit).toBe('White River National Forest');
+    expect(out[0]!.state).toBe('CO');
+    const calledUrl = (spy.mock.calls[0]![0] as string);
+    expect(calledUrl).toMatch(/full=true/);
+  });
+
+  test('returns empty parentUnit + state when RECAREA / FACILITYADDRESS are absent', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({
+        RECDATA: [{
+          FacilityID: '1', FacilityName: 'Bare', FacilityLatitude: 0, FacilityLongitude: 0,
+          FacilityTypeDescription: 'Facility',
+        }],
+      }), { status: 200 }),
+    );
+    const client = createRecGovClient({ apiKey: 'TEST' });
+    const out = await client.searchFacilities({ state: 'CO' });
+    expect(out[0]!.parentUnit).toBe('');
+    expect(out[0]!.state).toBe('');
   });
 
   test('retries on 429 with backoff', async () => {
@@ -53,5 +71,29 @@ describe('RecGovClient.searchFacilities', () => {
     );
     const client = createRecGovClient({ apiKey: 'TEST' });
     await expect(client.searchFacilities({ state: 'CO' })).rejects.toMatchObject({ code: 'schema_error' });
+  });
+});
+
+describe('RecGovClient.getFacility', () => {
+  beforeEach(() => { vi.restoreAllMocks(); });
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  test('parses an un-wrapped single-resource response (RIDB returns the facility directly)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({
+        FacilityID: '252205',
+        FacilityName: 'Lynx Pass Campground',
+        FacilityLatitude: 40.0, FacilityLongitude: -106.7,
+        FacilityTypeDescription: 'Campground',
+        RECAREA: [{ RecAreaID: '99', RecAreaName: 'Routt National Forest' }],
+        FACILITYADDRESS: [{ AddressStateCode: 'CO' }],
+      }), { status: 200 }),
+    );
+    const client = createRecGovClient({ apiKey: 'TEST' });
+    const out = await client.getFacility('252205');
+    expect(out.facilityId).toBe('252205');
+    expect(out.name).toBe('Lynx Pass Campground');
+    expect(out.parentUnit).toBe('Routt National Forest');
+    expect(out.state).toBe('CO');
   });
 });

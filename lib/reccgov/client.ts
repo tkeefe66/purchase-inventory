@@ -62,13 +62,15 @@ export function createRecGovClient(opts: RecGovClientOpts): RecGovClient {
   }
 
   function mapSearchRow(r: Record<string, unknown>): Partial<Facility> {
+    const recareas = Array.isArray(r.RECAREA) ? r.RECAREA as Array<Record<string, unknown>> : [];
+    const addresses = Array.isArray(r.FACILITYADDRESS) ? r.FACILITYADDRESS as Array<Record<string, unknown>> : [];
     return {
       facilityId: String(r.FacilityID ?? ''),
       name: String(r.FacilityName ?? ''),
-      parentUnit: String(r.ParentRECAREAName ?? ''),
+      parentUnit: String(recareas[0]?.RecAreaName ?? ''),
       lat: Number(r.FacilityLatitude ?? 0),
       lng: Number(r.FacilityLongitude ?? 0),
-      state: String(r.AddressStateCode ?? ''),
+      state: String(addresses[0]?.AddressStateCode ?? ''),
       useType: r.FacilityTypeDescription === 'Picnic Area' ? 'day-use' : 'overnight',
     };
   }
@@ -79,16 +81,17 @@ export function createRecGovClient(opts: RecGovClientOpts): RecGovClient {
         state: searchOpts.state ?? 'CO',
         limit: searchOpts.limit ?? 50,
         offset: searchOpts.offset ?? 0,
+        full: 'true',
       });
       if (!Array.isArray(data.RECDATA)) throw makeError('schema_error', 'RECDATA missing from /facilities response');
       return (data.RECDATA as Array<Record<string, unknown>>).map(mapSearchRow);
     },
     async getFacility(facilityId) {
-      const data = await call<{ RECDATA?: unknown }>(`/facilities/${facilityId}`, {});
-      if (typeof data.RECDATA !== 'object' || data.RECDATA === null) {
-        throw makeError('schema_error', `RECDATA missing from /facilities/${facilityId}`);
+      const data = await call<Record<string, unknown>>(`/facilities/${facilityId}`, { full: 'true' });
+      if (typeof data !== 'object' || data === null) {
+        throw makeError('schema_error', `unexpected non-object response from /facilities/${facilityId}`);
       }
-      return mapSearchRow(data.RECDATA as Record<string, unknown>);
+      return mapSearchRow(data);
     },
     async getFacilityCampsites(facilityId) {
       const data = await call<{ RECDATA?: unknown }>(`/facilities/${facilityId}/campsites`, {});
