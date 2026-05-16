@@ -35,6 +35,12 @@ export async function runIndexRefresh(opts: RunIndexRefreshOpts): Promise<IndexR
     offset += limit;
   }
 
+  if (all.length === 0 && opts.existingIndex.facilities.length > 0) {
+    throw new Error(
+      `Rec.gov returned 0 facilities but existing index has ${opts.existingIndex.facilities.length} — refusing to deactivate everything (critical data loss guard).`
+    );
+  }
+
   // Build a map from existing facilities, using it as the source of truth for merge.
   const byId = new Map(opts.existingIndex.facilities.map((f) => [f.facilityId, { ...f }]));
   const seen = new Set<string>();

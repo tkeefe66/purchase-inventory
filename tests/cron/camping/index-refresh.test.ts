@@ -94,4 +94,47 @@ describe('runIndexRefresh', () => {
 
     expect(mirror).toHaveBeenCalledOnce();
   });
+
+  test('throws if Rec.gov returns 0 facilities while existing index is non-empty (data loss guard)', async () => {
+    const existingIndex: CampingIndex = {
+      facilities: [
+        makeFacility({ facilityId: 'A', name: 'Camp A', active: true }),
+      ],
+    };
+    const client = { searchFacilities: vi.fn().mockResolvedValue([]) };
+    const mirror = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      runIndexRefresh({
+        existingIndex,
+        client: client as never,
+        mirror: mirror as never,
+        sheetSpreadsheetId: 'sid',
+        sheets: {} as never,
+      })
+    ).rejects.toThrow(/critical data loss guard/);
+    expect(mirror).not.toHaveBeenCalled();
+  });
+
+  test('proceeds normally when existing index is empty (initial seed)', async () => {
+    const existingIndex: CampingIndex = { facilities: [] };
+    const searchResults = [
+      { facilityId: 'A', name: 'Camp A', parentUnit: 'Roosevelt National Forest', lat: 40, lng: -105, state: 'CO', useType: 'overnight' as const },
+    ];
+    const client = { searchFacilities: vi.fn().mockResolvedValue(searchResults) };
+    const mirror = vi.fn().mockResolvedValue(undefined);
+
+    const result = await runIndexRefresh({
+      existingIndex,
+      client: client as never,
+      mirror: mirror as never,
+      sheetSpreadsheetId: 'sid',
+      sheets: {} as never,
+    });
+
+    expect(result.added).toBe(1);
+    expect(result.deactivated).toBe(0);
+    expect(result.totalActive).toBe(1);
+    expect(mirror).toHaveBeenCalledOnce();
+  });
 });
