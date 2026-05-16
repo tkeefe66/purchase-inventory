@@ -198,6 +198,73 @@ describe('dedupItems', () => {
     expect(dedupItems([otherItem], idx)).toHaveLength(1);
   });
 
+  test('token key catches truncated-name dup when ONE side has URL and OTHER does not', () => {
+    // Real-world case (2026-05-15): auto-confirm Haiku returned the truncated
+    // subject preview with no productUrl; shipment-tracking later wrote the
+    // full name with a URL. Strong key can't fire (one side has no productId).
+    // Token key catches it via shared (orderId, brand, first-3-tokens).
+    const withUrl = {
+      orderId: '113-2654318-2255402',
+      brand: 'HARIBO',
+      itemName: 'HARIBO Goldbears, Gummi Candy, 10 oz Resealable Bag, Assorted Flavors',
+      color: '',
+      size: '',
+      productUrl: 'https://www.amazon.com/dp/B00ECFDCYO',
+    };
+    const idx = buildExistingKeySet([withUrl]);
+
+    const truncatedNoUrl = {
+      orderId: '113-2654318-2255402',
+      brand: 'HARIBO',
+      itemName: 'HARIBO Goldbears, Gummi Candy, 10...',
+      color: '',
+      size: '',
+      productUrl: '',
+    };
+    expect(dedupItems([truncatedNoUrl], idx)).toHaveLength(0);
+  });
+
+  test('token key does NOT collapse different items with same brand+order but different first tokens', () => {
+    const idx = buildExistingKeySet([{
+      orderId: '113-2654318-2255402',
+      brand: 'HARIBO',
+      itemName: 'HARIBO Goldbears, Gummi Candy, 10 oz',
+      color: '', size: '',
+      productUrl: 'https://www.amazon.com/dp/B00ECFDCYO',
+    }]);
+    // Same order, same brand, DIFFERENT product (HARIBO Happy Cherries).
+    const differentHaribo = {
+      orderId: '113-2654318-2255402',
+      brand: 'HARIBO',
+      itemName: 'HARIBO Happy Cherries, Gummi Candy, 8 oz',
+      color: '', size: '',
+      productUrl: '',
+    };
+    expect(dedupItems([differentHaribo], idx)).toHaveLength(1);
+  });
+
+  test('token key requires ≥3 tokens — too-short names slip through (intentional)', () => {
+    // "Sigma 18-50mm" normalizes to "18-50mm" → tokens ["18", "50mm"] → only 2.
+    // Token-key is null → no false dedup against unrelated 2-token Sigma items.
+    const idx = buildExistingKeySet([{
+      orderId: 'A1',
+      brand: 'Sigma',
+      itemName: 'Sigma 18-50mm Lens',
+      color: '', size: '',
+      productUrl: 'https://amazon.com/dp/X1',
+    }]);
+    const otherNoUrl = {
+      orderId: 'A1',
+      brand: 'Sigma',
+      itemName: 'Sigma 50mm Prime',
+      color: '', size: '',
+      productUrl: '',
+    };
+    // Different items, should NOT dedup. Falls through token-key to full-key,
+    // which also doesn't match → kept.
+    expect(dedupItems([otherNoUrl], idx)).toHaveLength(1);
+  });
+
   test('strong key dedup within a single batch (defensive)', () => {
     // Same order/ASIN appearing twice in one batch (e.g. retry / duplicate
     // shipment notification) should collapse to one row.

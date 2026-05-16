@@ -96,6 +96,33 @@ export function makeStrongKey(input: DedupKeyInput): string | null {
 }
 
 /**
+ * Token key — `(orderId, brand, first-3-content-tokens-after-brand-strip)`.
+ * Catches the case where ONE side has a productUrl (so a strong key) and the
+ * OTHER side doesn't (auto-confirm Haiku missed the URL), with item names
+ * that drift in length but share a leading prefix. E.g. "HARIBO Goldbears,
+ * Gummi Candy, 10 oz Resealable Bag" vs "HARIBO Goldbears, Gummi Candy, 10..."
+ * both have first-3 tokens "goldbears gummi candy" → match.
+ * Returns null when there aren't enough tokens to form a stable signature.
+ */
+export function makeTokenKey(input: DedupKeyInput): string | null {
+  const orderId = input.orderId.trim();
+  if (!orderId) return null;
+  const tokens = firstNContentTokens(input.itemName, input.brand, 3);
+  if (tokens.length < 3) return null;
+  return `${orderId}||${input.brand.trim().toLowerCase()}||${tokens.join(' ')}`;
+}
+
+function firstNContentTokens(itemName: string, brand: string, n: number): string[] {
+  const normalized = normalizeItemName(itemName, brand);
+  // Strip non-alphanumeric so "Goldbears," and "Goldbears" tokenize identically.
+  return normalized
+    .replace(/[^a-z0-9 ]+/g, ' ')
+    .split(/\s+/)
+    .filter((t) => t.length >= 2)
+    .slice(0, n);
+}
+
+/**
  * Per-row dedup index. Each existing row contributes:
  *   - Its full key (always) → exact-match lookups.
  *   - Its content key (only if Order ID is blank) → cross-match lookups,
@@ -103,17 +130,21 @@ export function makeStrongKey(input: DedupKeyInput): string | null {
  *     brand+name regardless of color/size formatting differences.
  *   - Its strong key (when productUrl yields a productId AND orderId is
  *     present) → catches cross-source item-name drift within the same order.
+ *   - Its token key (when orderId is present and itemName has ≥3 tokens) →
+ *     last-resort cross-source match when one side lacks a productUrl.
  */
 export interface DedupIndex {
   fullKeys: Set<string>;
   blankOrderContentKeys: Set<string>;
   strongKeys: Set<string>;
+  tokenKeys: Set<string>;
 }
 
 export function buildExistingKeySet(rows: readonly DedupKeyInput[]): DedupIndex {
   const fullKeys = new Set<string>();
   const blankOrderContentKeys = new Set<string>();
   const strongKeys = new Set<string>();
+  const tokenKeys = new Set<string>();
   for (const r of rows) {
     fullKeys.add(makeDedupKey(r));
     if (!r.orderId.trim()) {
@@ -121,8 +152,10 @@ export function buildExistingKeySet(rows: readonly DedupKeyInput[]): DedupIndex 
     }
     const strong = makeStrongKey(r);
     if (strong) strongKeys.add(strong);
+    const tok = makeTokenKey(r);
+    if (tok) tokenKeys.add(tok);
   }
-  return { fullKeys, blankOrderContentKeys, strongKeys };
+  return { fullKeys, blankOrderContentKeys, strongKeys, tokenKeys };
 }
 
 // ---------------------------------------------------------------------------
@@ -190,6 +223,7 @@ export function dedupItems<T extends DedupKeyInput>(
 ): T[] {
   const seenInBatch = new Set<string>();
   const seenStrongInBatch = new Set<string>();
+  const seenTokenInBatch = new Set<string>();
   const out: T[] = [];
   for (const item of newItems) {
     // Strong key first: (orderId, productId) survives item-name drift between
@@ -198,6 +232,14 @@ export function dedupItems<T extends DedupKeyInput>(
     if (strongKey) {
       if (existing.strongKeys.has(strongKey)) continue;
       if (seenStrongInBatch.has(strongKey)) continue;
+    }
+    // Token key: matches when ONE side has a productUrl and the OTHER doesn't,
+    // but both share orderId + brand + first 3 content tokens. Catches the
+    // auto-confirm-truncated-name case we saw 2026-05-15.
+    const tokenKey = makeTokenKey(item);
+    if (tokenKey) {
+      if (existing.tokenKeys.has(tokenKey)) continue;
+      if (seenTokenInBatch.has(tokenKey)) continue;
     }
     const exactKey = makeDedupKey(item);
     if (existing.fullKeys.has(exactKey)) continue;
@@ -211,6 +253,7 @@ export function dedupItems<T extends DedupKeyInput>(
     }
     seenInBatch.add(exactKey);
     if (strongKey) seenStrongInBatch.add(strongKey);
+    if (tokenKey) seenTokenInBatch.add(tokenKey);
     out.push(item);
   }
   return out;

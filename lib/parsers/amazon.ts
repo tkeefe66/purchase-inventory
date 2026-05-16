@@ -121,8 +121,9 @@ Rules:
 - One entry per LINE ITEM. Quantity-2 of the same product is ONE entry with quantity=2.
 - Exclude shipping, tax, gift wrap, gift cards, subscribe-and-save fees, and any "Recommended for you" / "Customers also bought" / "Sponsored" items.
 - price = per-item PAID price (not subtotal, not order total). If only an order total is shown, set price to 0 — do not divide.
-- itemName = the displayed product title.
-- productUrl = the amazon.com/dp/<ASIN> or amazon.com/gp/product/<ASIN> link if visible. Strip tracking query params.
+- itemName MUST be the FULL product title pulled from the order-summary section of the email body — NOT the email's subject-line preview, which is truncated by Amazon. The body always contains the complete title near the price/quantity. If you can only find a truncated version (ends with "…", "...", or cut off mid-word), SKIP that item entirely rather than emit a partial title.
+- productUrl = the amazon.com/dp/<ASIN> or amazon.com/gp/product/<ASIN> link. The email body always contains a per-item link near the title — find it. Strip tracking query params (everything after a /dp/<ASIN> or /gp/product/<ASIN> path is OK to drop).
+- If you can't find a productUrl for an item, SKIP that item entirely (better to miss it and let the shipment-tracking email catch it later than to write a row without an ASIN).
 - Return JSON only, no prose, no markdown fences.`;
 
 /**
@@ -194,7 +195,13 @@ export async function parseAmazonOrderEmail(
       quantity: Number.isFinite(it.quantity) && (it.quantity as number) > 0 ? Math.floor(it.quantity as number) : 1,
       price: Number.isFinite(it.price) && (it.price as number) >= 0 ? (it.price as number) : 0,
       productUrl: typeof it.productUrl === 'string' ? it.productUrl.trim() : '',
-    }));
+    }))
+    // Reject items where Haiku grabbed a truncated subject-preview title or
+    // couldn't find a productUrl. Without the ASIN, dedup falls back to fuzzy
+    // name matching against the eventual shipment-tracking row — which we've
+    // observed produces duplicate rows (2026-05-15). Skipping here lets the
+    // shipment-tracking parser ingest the item cleanly when it arrives.
+    .filter((it) => !looksTruncatedOrderItem(it.itemName) && it.productUrl.length > 0);
 
   if (items.length === 0) return null;
 
@@ -207,6 +214,20 @@ export async function parseAmazonOrderEmail(
   if (!orderId) return null;
 
   return [{ source: 'Amazon' as const, orderId, items }];
+}
+
+/**
+ * Detect Haiku output that grabbed Amazon's truncated subject-preview title.
+ * Conservative — only flags obvious cases (trailing ellipsis, empty). The
+ * real safety net is the required-productUrl filter in parseAmazonOrderEmail:
+ * if there's no ASIN, the row gets dropped no matter how the name looks.
+ * Trying to detect chopped-mid-word names heuristically produced too many
+ * false positives (legit "Fl Oz", "V3", "IV" endings) — not worth it.
+ */
+export function looksTruncatedOrderItem(name: string): boolean {
+  const trimmed = name.trim();
+  if (!trimmed) return true;
+  return /(?:\.{2,}|…)$/.test(trimmed);
 }
 
 /** Strip Amazon's preview-padding zero-width characters so Haiku doesn't waste tokens on them. */
