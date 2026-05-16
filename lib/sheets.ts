@@ -607,8 +607,13 @@ async function ensureCampingIndexTab(sheets: SheetsClient, spreadsheetId: string
 function facilityRow(f: Facility, todayMt: string): (string | number | boolean)[] {
   const open = nextSeasonOpenDate(f, todayMt);
   const reminder = nextReminderDate(f, todayMt);
+  // Site URL only resolves to a real Rec.gov page for active campgrounds —
+  // inactive facilities (trailheads, day-use, RV-only) 200 to the generic
+  // homepage with a "something went wrong" client-side error. Emit empty
+  // for those so the user doesn't click into dead links.
+  const siteUrl = f.active ? siteUrlFor(f.facilityId) : '';
   return [
-    f.facilityId, f.name, siteUrlFor(f.facilityId), mapUrlFor(f.lat, f.lng),
+    f.facilityId, f.name, siteUrl, mapUrlFor(f.lat, f.lng),
     f.agency, f.parentUnit, f.region ?? '',
     f.lat, f.lng, f.leadTimeDays, f.specialReleaseDate ?? '',
     f.seasonStart ?? '', f.seasonEnd ?? '', f.feeUSD,

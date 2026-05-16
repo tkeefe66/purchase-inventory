@@ -104,6 +104,14 @@ describe('mirrorCampingIndex', () => {
     expect(appended[0]![2]).toBe('https://www.recreation.gov/camping/campgrounds/F1');
     expect(appended[0]![3]).toBe('https://www.google.com/maps?q=39,-106');
   });
+
+  test('Site URL is blank for inactive facilities (Rec.gov error page); Map URL still emitted', async () => {
+    const inactiveFacility: Facility = { ...sampleFacility, facilityId: 'F2', active: false };
+    const { sheets, appended } = mockSheets({ existingTabs: ['All Purchases', 'Camping Index'] });
+    await mirrorCampingIndex(sheets as never, 'sid', [inactiveFacility]);
+    expect(appended[0]![2]).toBe('');                                    // Site URL blank
+    expect(appended[0]![3]).toBe('https://www.google.com/maps?q=39,-106'); // Map URL still works
+  });
 });
 
 describe('readMutedFacilityIds', () => {
