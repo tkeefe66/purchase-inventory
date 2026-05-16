@@ -25,6 +25,8 @@
     "import-history": "tsx scripts/import-history.ts",
     "cron": "tsx apps/cron/index.ts",
     "cron:dry": "tsx apps/cron/index.ts --dry-run",
+    "camping-cron": "tsx apps/cron/camping/index.ts",
+    "camping-cron:dry": "tsx apps/cron/camping/index.ts --dry-run",
     "audit": "tsx apps/cron/audit.ts",
     "label-historical": "tsx scripts/label-historical.ts",
     "dedup-existing": "tsx scripts/dedup-existing.ts",
