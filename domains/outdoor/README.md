@@ -11,7 +11,7 @@ Files (built progressively across phases — see `docs/PLAN.md`):
 - `inventory.ts` — query helpers over the sheet (Phase 2)
 - `agent.ts` — system prompt + tool registry, Sonnet 4.6 (Phase 2 — broadened in 2.5 with web_search)
 - `maintenance.ts` — age/maintenance rule engine (Phase 5.5)
-- `integrations/weather.ts` — OpenWeatherMap or NOAA (Phase 3)
+- `integrations/weather.ts` — Pirate Weather (forecasts) + Nominatim (geocoding) ✅ Phase 3 shipped 2026-05-15
 - `integrations/trails.ts` — AllTrails MCP or OSM Overpass fallback; covers hiking, MTB, trail running (Phase 4)
 - `integrations/freecamping.ts` — Recreation.gov primary (Phase 5)
 

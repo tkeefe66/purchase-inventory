@@ -105,6 +105,7 @@ ledger/                     # current folder name: outdoor-inventory
 | Notifications | Telegram: (a) immediate audible alert on any cron run with errors, (b) one audible "daily summary" message at 19:00 Mountain time aggregating that day's Cron Log rows, (c) silent every other hour. `/scan` from the bot returns its own reply, separate from the cron's digest path. |
 | Agent model | All Claude model IDs + agent pricing live in `lib/models.ts` (single source of truth). Currently: Opus 4.7 primary, Sonnet 4.6 / Haiku 4.5 fallback for the outdoor agent; Haiku 4.5 for the Amazon parser. **Always update to the latest Claude model when a new release lands — edit `lib/models.ts` only.** |
 | Prompt caching | Always on (per global CLAUDE.md). System prompts + tool definitions cached. |
+| Weather provider | **Pirate Weather** (Dark Sky-compatible JSON, generous free tier) for forecasts; **Nominatim** for geocoding (≥1s/req per usage policy, in-process cached, User-Agent set). Typed errors surface as `{ ok: false, error: 'rate_limited' \| 'api_error' \| 'no_match' \| 'bad_coords' }`. Single seam: `domains/outdoor/integrations/weather.ts`. |
 | Web UI v1 | Read-only dashboard; editing deferred |
 | Multi-domain in v1 | NO — outdoor only. Other domain stubs are README.md only. |
 
@@ -188,7 +189,7 @@ ledger/                     # current folder name: outdoor-inventory
 | Anthropic API (Claude) | API key | Phase 1 (Haiku for parsing), Phase 2+ (Sonnet for agents) |
 | Telegram | Bot token via @BotFather | Phase 1 (digests), Phase 2+ (conversational) |
 | **Anthropic web_search** (server tool) | Built-in to Anthropic API; no separate key | **Phase 2.5+** (outdoor agent grounds answers in current info) |
-| OpenWeatherMap or NOAA | API key (free tier) | Phase 3 |
+| **Pirate Weather** (forecasts) + **Nominatim** (OSM geocoder) | `PIRATE_WEATHER_API_KEY` only; Nominatim is keyless | **Phase 3 ✅ shipped 2026-05-15** |
 | AllTrails | MCP connected to Tom's Claude.ai account; **may not be reachable from Railway-hosted bot** — fallback to OSM Overpass API. Covers hiking, MTB, trail running. | Phase 4 |
 | Recreation.gov | Free API key | Phase 5 |
 | iOverlander, BLM, USFS | Investigation needed | Phase 5 |

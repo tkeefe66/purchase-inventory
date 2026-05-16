@@ -2,7 +2,7 @@
 
 Personal purchase-ingest + categorization platform that powers domain-specialist Claude agents. Outdoor first; other domains follow on the same architecture.
 
-> Status: **Phase 0 — bootstrap.** See `docs/PLAN.md` for the full roadmap and `DECISIONS.md` for the locked design decisions. Read `CLAUDE.md` first if you're an AI assistant working on this repo.
+> Status: **Phase 3 complete — Weather shipped 2026-05-15** (Pirate Weather + Nominatim). Heading into Phase 3.5 (calendar-aware trip prep). See `docs/PLAN.md` for the full roadmap and `DECISIONS.md` for the locked design decisions. Read `CLAUDE.md` first if you're an AI assistant working on this repo.
 
 ## Quickstart (work-in-progress)
 

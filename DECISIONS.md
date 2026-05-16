@@ -275,7 +275,7 @@ These don't block planning but block specific build tasks. Tracked here for visi
 - [ ] Telegram chat ID — get from `/start` to bot (blocks Task 1.8)
 - [ ] Anthropic API key (blocks Tasks 1.3, 2.4)
 - [ ] GCP project + OAuth credentials, with consent screen *published* (blocks Task 0.2)
-- [ ] OpenWeatherMap API key OR decision to use NOAA (blocks Task 3.1; decide end of Phase 2)
+- [x] ~~OpenWeatherMap API key OR decision to use NOAA~~ → **Pirate Weather + Nominatim** chosen and shipped 2026-05-15 (Phase 3)
 - [ ] AllTrails MCP availability check from Railway deploy (blocks Task 4.1; decide start of Phase 4)
 - [ ] Recreation.gov API key (blocks Task 5.1; decide start of Phase 5)
 
@@ -1009,6 +1009,29 @@ Strong key is checked **first**. Falls back to the existing full key (orderId + 
 - `railway.cron.json`: `cronSchedule: "0 * * * *"`.
 - `scripts/bootstrap-sheet.ts`: includes the Cron Log tab in fresh sheet bootstrap.
 - One-time backfill: `npm run cron -- --reprocess --since=2026-04-30`.
+
+---
+
+## 2026-05-15 — Phase 3 Weather shipped: Pirate Weather + Nominatim
+
+**Decision:** Outdoor agent's weather integration uses **Pirate Weather** for forecasts and **Nominatim** (OSM-backed) for geocoding. Implemented behind a single `WeatherClient` seam in `domains/outdoor/integrations/weather.ts` and exposed to the agent via the `get_forecast(location, days)` tool.
+
+**Why:**
+- **Pirate Weather over OpenWeatherMap.** Pirate Weather is a drop-in Dark Sky-compatible JSON API with a generous free tier (10k req/month) and no card-on-file. OpenWeatherMap's One Call 3.0 free tier requires a card. Cleaner onboarding for a single-user project.
+- **Pirate Weather over NOAA.** NOAA is US-only; Tom's use cases include non-US trips (the original "surf trip to Australia" framing). Pirate Weather is global.
+- **Nominatim for geocoding.** Free, no API key, no quota negotiation. Usage policy requires ≥1s between requests and a User-Agent — both honored. In-process cache makes the rate limit a non-issue for normal traffic.
+- **Typed errors.** Surface as `{ ok: false, error: 'rate_limited' | 'api_error' | 'no_match' | 'bad_coords' }` so the agent can decide whether to retry, ask for clarification, or proceed without a forecast — instead of opaque 5xx noise.
+- **Destination-local midnight anchoring.** "Tomorrow" is computed in the destination's local time zone, not the bot host's UTC. Matters for cross-time-zone planning.
+
+**How to apply:**
+- `PIRATE_WEATHER_API_KEY` is the only new env var. Add it to Railway for the bot service. Cron does not currently call weather.
+- `domains/outdoor/integrations/weather.ts` is the single entry point. Don't bypass it.
+- If a future provider swap is needed, keep the `WeatherClient` interface stable (`geocode` + `getForecast`) and the returned shapes (`Coords`, `DailyForecast`, `HourlyForecast`, `ForecastError`).
+- Smoke harness: `npx tsx scripts/smoke-weather.ts <city>` hits both real APIs end-to-end.
+
+**Acceptance test (2026-05-15):** Moab, UT 2-day query returned correct hot/dry desert forecast (highs 88–91°F, zero rain, 60°F overnight lows) and the agent selected sun-protection layers, hiking footwear, water capacity, and a warm sleeping bag from inventory.
+
+**Supersedes:** the 2026-04-30 candidate list of "OpenWeatherMap or NOAA" (Decision A4-era).
 
 ---
 
