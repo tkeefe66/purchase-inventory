@@ -6,8 +6,9 @@ import { ConversationStore } from '../../lib/conversations.js';
 import { Stats } from '../../apps/bot/stats.js';
 import { callWithRetry } from '../../lib/anthropic-retry.js';
 import { AGENT_PRIMARY_MODEL, AGENT_FALLBACK_MODELS } from '../../lib/models.js';
-import { createTools, TOOL_SCHEMAS, SERVER_TOOLS, type ToolHandlers } from './tools.js';
+import { createTools, TOOL_SCHEMAS, SERVER_TOOLS, type ToolHandlers, type FindFreeCampsitesInput } from './tools.js';
 import type { WeatherClient } from './integrations/weather.js';
+import { geocode } from './integrations/weather.js';
 
 export interface SystemPromptInput {
   compactViewText: string;
@@ -72,6 +73,8 @@ export interface OutdoorAgentOptions {
     spreadsheetId: string,
     input: { rowIndex: number; newStatus: Status },
   ) => Promise<void>;
+  campingIndexPath?: string;
+  iOverlanderCachePath?: string;
 }
 
 type AnthropicMessage = { role: 'user' | 'assistant'; content: unknown };
@@ -86,6 +89,9 @@ export class OutdoorAgent {
       spreadsheetId: opts.spreadsheetId,
       updateRowStatus: opts.updateRowStatus,
       weather: opts.weather,
+      geocode,
+      campingIndexPath: opts.campingIndexPath ?? process.env.CAMPING_INDEX_PATH ?? '/data/camping-index.json',
+      iOverlanderCachePath: opts.iOverlanderCachePath ?? process.env.IOVERLANDER_CACHE_PATH ?? '/data/iOverlander.json',
     });
   }
 
@@ -196,6 +202,9 @@ export class OutdoorAgent {
     }
     if (name === 'get_forecast') {
       return this.tools.get_forecast(input as { location: string; days: number });
+    }
+    if (name === 'find_free_campsites') {
+      return this.tools.find_free_campsites(input as FindFreeCampsitesInput);
     }
     return { ok: false, message: `Unknown tool: ${name}` };
   }

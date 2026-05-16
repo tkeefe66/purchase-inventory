@@ -20,6 +20,7 @@ function makeDeps(rows: MasterRow[]): { deps: ToolDeps; cache: InventoryCache; u
   const fakeWeather: WeatherClient = {
     getForecast: async () => { throw new Error('weather not configured in this test'); },
   };
+  const fakeGeocode: ToolDeps['geocode'] = async () => { throw new Error('geocode not configured in this test'); };
   return {
     cache,
     updateCalls,
@@ -29,6 +30,9 @@ function makeDeps(rows: MasterRow[]): { deps: ToolDeps; cache: InventoryCache; u
       spreadsheetId: 'TEST_SHEET_ID',
       updateRowStatus: fakeUpdate as unknown as ToolDeps['updateRowStatus'],
       weather: fakeWeather,
+      geocode: fakeGeocode,
+      campingIndexPath: '/tmp/test-camping-index.json',
+      iOverlanderCachePath: '/tmp/test-ioverlander.json',
     },
   };
 }
@@ -47,7 +51,7 @@ describe('TOOL_SCHEMAS', () => {
     const names = TOOL_SCHEMAS.map((s) => s.name);
     expect(names).toContain('get_product_url');
     expect(names).toContain('update_status');
-    expect(TOOL_SCHEMAS).toHaveLength(3);
+    expect(TOOL_SCHEMAS).toHaveLength(4);
   });
 
   test('update_status schema constrains new_status to the valid enum', () => {
@@ -71,6 +75,16 @@ describe('TOOL_SCHEMAS', () => {
     expect(props.days?.type).toBe('integer');
     expect(props.days?.minimum).toBe(1);
     expect(props.days?.maximum).toBe(7);
+  });
+
+  test('exports find_free_campsites', () => {
+    const names = TOOL_SCHEMAS.map((s) => s.name);
+    expect(names).toContain('find_free_campsites');
+  });
+
+  test('find_free_campsites schema requires location', () => {
+    const t = TOOL_SCHEMAS.find((s) => s.name === 'find_free_campsites')!;
+    expect(t.input_schema.required).toContain('location');
   });
 });
 
@@ -175,6 +189,41 @@ describe('get_forecast handler', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toBe('api_error');
+    }
+  });
+});
+
+describe('find_free_campsites handler', () => {
+  test('returns ok=false when geocode throws', async () => {
+    const { deps, cache } = makeDeps([FIXTURE_THERMAREST]);
+    await cache.refresh();
+    const failGeocode: ToolDeps['geocode'] = async () => { throw new Error('no match'); };
+    const tools = createTools({ ...deps, geocode: failGeocode });
+    const result = await tools.find_free_campsites({ location: 'NowhereXYZ' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe('could_not_geocode');
+  });
+
+  test('returns ok=false when location is blank', async () => {
+    const { deps, cache } = makeDeps([FIXTURE_THERMAREST]);
+    await cache.refresh();
+    const tools = createTools(deps);
+    const result = await tools.find_free_campsites({ location: '   ' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe('location is required');
+  });
+
+  test('happy path returns ok=true with results array', async () => {
+    const { deps, cache } = makeDeps([FIXTURE_THERMAREST]);
+    await cache.refresh();
+    const fakeGeocode: ToolDeps['geocode'] = async () => ({ lat: 38.57, lon: -109.55, name: 'Moab, UT' });
+    const tools = createTools({ ...deps, geocode: fakeGeocode });
+    // Files don't exist at /tmp paths — readCampingIndex returns { facilities: [] } and readIOverlanderSnapshot returns null
+    const result = await tools.find_free_campsites({ location: 'Moab, UT', radius_km: 80 });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.location).toBe('Moab, UT');
+      expect(Array.isArray(result.data.results)).toBe(true);
     }
   });
 });

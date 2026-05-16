@@ -130,6 +130,36 @@ function mapHourlyTomorrow(fc: PirateWeatherResponse, nowMs: number): HourlyFore
     }));
 }
 
+/**
+ * Standalone geocoder. Uses the same Nominatim endpoint as createWeatherClient
+ * but is suitable for one-off calls outside a WeatherClient instance.
+ * Throws ForecastError on failure (no_match | rate_limited | api_error).
+ */
+export async function geocode(
+  query: string,
+  fetchImpl: typeof fetch = globalThis.fetch,
+): Promise<{ lat: number; lon: number; name: string }> {
+  const url = `${NOMINATIM_URL}?q=${encodeURIComponent(query)}&format=json&limit=1`;
+  const res = await fetchImpl(url, {
+    headers: { 'User-Agent': 'outdoor-inventory-bot/1.0 (tkeefe66@gmail.com)' },
+  });
+  if (!res.ok) {
+    const kind: ForecastErrorKind = res.status === 429 ? 'rate_limited' : 'api_error';
+    throw new ForecastError(kind, 'nominatim', res.status, `nominatim ${res.status}`);
+  }
+  const body = (await res.json()) as NominatimResult[];
+  if (!Array.isArray(body) || body.length === 0) {
+    throw new ForecastError('no_match', 'nominatim', undefined, `no match for "${query}"`);
+  }
+  const first = body[0]!;
+  const lat = parseFloat(first.lat);
+  const lon = parseFloat(first.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    throw new ForecastError('no_match', 'nominatim', undefined, `invalid coordinates for "${query}"`);
+  }
+  return { lat, lon, name: first.display_name };
+}
+
 export function createWeatherClient(opts: WeatherClientOptions): WeatherClient {
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
   const now = opts.now ?? (() => Date.now());
