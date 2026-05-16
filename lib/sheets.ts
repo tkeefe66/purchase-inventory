@@ -607,13 +607,15 @@ async function ensureCampingIndexTab(sheets: SheetsClient, spreadsheetId: string
 function facilityRow(f: Facility, todayMt: string): (string | number | boolean)[] {
   const open = nextSeasonOpenDate(f, todayMt);
   const reminder = nextReminderDate(f, todayMt);
-  // Site URL only resolves to a real Rec.gov page for active campgrounds —
-  // inactive facilities (trailheads, day-use, RV-only) 200 to the generic
-  // homepage with a "something went wrong" client-side error. Emit empty
-  // for those so the user doesn't click into dead links.
-  const siteUrl = f.active ? siteUrlFor(f.facilityId) : '';
+  // Site URL emitted for every facility. The /camping/campgrounds/<id>
+  // path resolves correctly for actual Rec.gov campgrounds (including
+  // RV-only ones we deactivate). It will dead-link to a "something went
+  // wrong" page for non-campground facilities (trailheads, geological
+  // markers, etc.) — RIDB doesn't tell us which URL path applies to
+  // each facility type, so we emit the campgrounds path uniformly and
+  // accept some bad links over withholding good ones.
   return [
-    f.facilityId, f.name, siteUrl, mapUrlFor(f.lat, f.lng),
+    f.facilityId, f.name, siteUrlFor(f.facilityId), mapUrlFor(f.lat, f.lng),
     f.agency, f.parentUnit, f.region ?? '',
     f.lat, f.lng, f.leadTimeDays, f.specialReleaseDate ?? '',
     f.seasonStart ?? '', f.seasonEnd ?? '', f.feeUSD,
