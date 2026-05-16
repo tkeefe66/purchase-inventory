@@ -337,16 +337,16 @@ function countItems(orders: ParsedOrder[]): number {
   return orders.reduce((sum, o) => sum + o.items.length, 0);
 }
 
-function buildQuery(opts: PipelineOptions): string {
+export function buildQuery(opts: PipelineOptions): string {
   const senders = `from:(${KNOWN_SENDERS.map((s) => s.email).join(' OR ')})`;
   if (opts.reprocessSince) {
     // Reprocess mode: bypass label filter, scoped by --since.
-    return `${senders} after:${gmailDate(opts.reprocessSince)}`;
+    return `${senders} in:anywhere after:${gmailDate(opts.reprocessSince)}`;
   }
   const afterPart = opts.ingestAfterDate
     ? ` after:${gmailDate(opts.ingestAfterDate)}`
     : ' newer_than:30d';
-  return `${senders} -label:${PROCESSED_LABEL}${afterPart}`;
+  return `${senders} in:anywhere -label:${PROCESSED_LABEL}${afterPart}`;
 }
 
 function gmailDate(dateString: string): string {
