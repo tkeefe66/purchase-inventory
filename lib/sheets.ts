@@ -2,6 +2,7 @@ import { google, sheets_v4 } from 'googleapis';
 import { formatInTimeZone } from 'date-fns-tz';
 import { buildExistingKeySet, type DedupIndex } from './dedup.js';
 import { STATUS_VALUES, type MasterRow, type Status, type Vocab } from './types.js';
+import type { Facility } from './reccgov/types.js';
 
 /**
  * Builds a name → column-index lookup from a sheet's header row. Use this for
@@ -545,4 +546,128 @@ function safeJson(s: string): Record<string, number> {
   } catch {
     return {};
   }
+}
+
+// ---------------------------------------------------------------------------
+// Camping Index tab helpers
+// ---------------------------------------------------------------------------
+
+const CAMPING_INDEX_TAB = 'Camping Index';
+const CAMPING_INDEX_HEADER = [
+  'Facility ID', 'Name', 'Agency', 'Parent Unit', 'Region', 'Lat', 'Lng',
+  'Lead Days', 'Special Release', 'Season Start', 'Season End', 'Fee',
+  'Reservation Type', 'Use Type', 'Restrictions', 'Has Restrooms',
+  'Amenities', 'Tent-Eligible Sites', 'Active', 'Muted', 'Notes',
+] as const;
+
+async function ensureCampingIndexTab(sheets: SheetsClient, spreadsheetId: string): Promise<void> {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId });
+  const exists = (meta.data.sheets ?? []).some((s) => s.properties?.title === CAMPING_INDEX_TAB);
+  if (exists) return;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: { requests: [{ addSheet: { properties: { title: CAMPING_INDEX_TAB } } }] },
+  });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `'${CAMPING_INDEX_TAB}'!A1`,
+    valueInputOption: 'RAW',
+    requestBody: { values: [Array.from(CAMPING_INDEX_HEADER)] },
+  });
+}
+
+function facilityRow(f: Facility): (string | number | boolean)[] {
+  return [
+    f.facilityId, f.name, f.agency, f.parentUnit, f.region ?? '',
+    f.lat, f.lng, f.leadTimeDays, f.specialReleaseDate ?? '',
+    f.seasonStart ?? '', f.seasonEnd ?? '', f.feeUSD,
+    f.reservationType, f.useType,
+    f.restrictions.join('; '), f.hasRestrooms,
+    f.amenities.join('; '), f.tentEligibleSites.length, f.active,
+  ];
+}
+
+export async function mirrorCampingIndex(
+  sheets: SheetsClient,
+  spreadsheetId: string,
+  facilities: readonly Facility[],
+): Promise<void> {
+  await ensureCampingIndexTab(sheets, spreadsheetId);
+  const resp = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `'${CAMPING_INDEX_TAB}'!A:U`,
+  });
+  const rows = (resp.data.values ?? []) as (string | number | boolean)[][];
+  const header = rows[0] ?? Array.from(CAMPING_INDEX_HEADER);
+  const idIdx = header.indexOf('Facility ID');
+  const mutedIdx = header.indexOf('Muted');
+  const notesIdx = header.indexOf('Notes');
+
+  const existingById = new Map<string, { gridRow: number; muted: unknown; notes: unknown }>();
+  for (let i = 1; i < rows.length; i++) {
+    const id = String(rows[i]![idIdx] ?? '');
+    if (!id) continue;
+    existingById.set(id, {
+      gridRow: i + 1,
+      muted: rows[i]![mutedIdx],
+      notes: rows[i]![notesIdx],
+    });
+  }
+
+  const toAppend: unknown[][] = [];
+  for (const f of facilities) {
+    const row = facilityRow(f);
+    const existing = existingById.get(f.facilityId);
+    if (existing) {
+      const muted: string | number | boolean = (typeof existing.muted === 'boolean' || typeof existing.muted === 'string' || typeof existing.muted === 'number') ? existing.muted : false;
+      const notes: string | number | boolean = (typeof existing.notes === 'string' || typeof existing.notes === 'number' || typeof existing.notes === 'boolean') ? existing.notes : '';
+      row.push(muted);
+      row.push(notes);
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `'${CAMPING_INDEX_TAB}'!A${existing.gridRow}`,
+        valueInputOption: 'RAW',
+        requestBody: { values: [row] },
+      });
+    } else {
+      row.push(false);
+      row.push('');
+      toAppend.push(row);
+    }
+  }
+  if (toAppend.length > 0) {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `'${CAMPING_INDEX_TAB}'!A:U`,
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: { values: toAppend },
+    });
+  }
+}
+
+export async function readMutedFacilityIds(
+  sheets: SheetsClient,
+  spreadsheetId: string,
+): Promise<string[]> {
+  let raw: (string | number | boolean)[][];
+  try {
+    const resp = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `'${CAMPING_INDEX_TAB}'!A:T`,
+    });
+    raw = (resp.data.values ?? []) as (string | number | boolean)[][];
+  } catch { return []; }
+  if (raw.length < 2) return [];
+  const header = raw[0]!;
+  const idIdx = header.indexOf('Facility ID');
+  const mutedIdx = header.indexOf('Muted');
+  if (idIdx < 0 || mutedIdx < 0) return [];
+  const out: string[] = [];
+  for (let i = 1; i < raw.length; i++) {
+    const id = String(raw[i]![idIdx] ?? '');
+    const muted = raw[i]![mutedIdx];
+    if (id && (muted === true || muted === 'TRUE' || muted === 'true')) out.push(id);
+  }
+  return out;
 }
