@@ -126,63 +126,65 @@ async function main(): Promise<void> {
   console.log('\n=== Result ===');
   console.log(JSON.stringify(result, null, 2));
 
-  // Persist this run to the Cron Log tab.
-  const sheets = createSheetsClient({
-    clientId: env.clientId,
-    clientSecret: env.clientSecret,
-    refreshToken: env.refreshToken,
-  });
-  const durationS = (new Date(result.endedAt).getTime() - new Date(result.startedAt).getTime()) / 1000;
-  try {
-    await appendCronLogRow(sheets, env.spreadsheetId, {
-      runTimestamp: result.startedAt,
-      itemsAdded: result.itemsAdded,
-      itemsBySource: result.itemsBySource,
-      itemsByDomain: result.itemsByDomain,
-      returnsApplied: result.returnsApplied,
-      messagesScanned: result.messagesScanned,
-      errorsCount: result.errors.length,
-      durationSeconds: Number(durationS.toFixed(2)),
+  if (!flags.dryRun) {
+    // Persist this run to the Cron Log tab.
+    const sheets = createSheetsClient({
+      clientId: env.clientId,
+      clientSecret: env.clientSecret,
+      refreshToken: env.refreshToken,
     });
-    // Best-effort prune; failures here don't block the digest.
-    try { await pruneCronLog(sheets, env.spreadsheetId, 30); } catch (err) {
-      console.warn('[cron] pruneCronLog failed:', err instanceof Error ? err.message : err);
+    const durationS = (new Date(result.endedAt).getTime() - new Date(result.startedAt).getTime()) / 1000;
+    try {
+      await appendCronLogRow(sheets, env.spreadsheetId, {
+        runTimestamp: result.startedAt,
+        itemsAdded: result.itemsAdded,
+        itemsBySource: result.itemsBySource,
+        itemsByDomain: result.itemsByDomain,
+        returnsApplied: result.returnsApplied,
+        messagesScanned: result.messagesScanned,
+        errorsCount: result.errors.length,
+        durationSeconds: Number(durationS.toFixed(2)),
+      });
+      // Best-effort prune; failures here don't block the digest.
+      try { await pruneCronLog(sheets, env.spreadsheetId, 30); } catch (err) {
+        console.warn('[cron] pruneCronLog failed:', err instanceof Error ? err.message : err);
+      }
+    } catch (err) {
+      console.warn('[cron] appendCronLogRow failed:', err instanceof Error ? err.message : err);
     }
-  } catch (err) {
-    console.warn('[cron] appendCronLogRow failed:', err instanceof Error ? err.message : err);
-  }
 
-  // Conditional Telegram send.
-  const tgEnabled = env.telegramBotToken && env.telegramChatId;
-  if (tgEnabled && result.errors.length > 0) {
-    try {
-      await sendMessage(
-        { botToken: env.telegramBotToken! },
-        {
-          chat_id: env.telegramChatId!,
-          text: formatErrorAlert(result),
-          disable_notification: false,
-        },
-      );
-    } catch (err) {
-      console.warn('[cron] error-alert send failed:', err instanceof Error ? err.message : err);
-    }
-  } else if (tgEnabled && shouldSendDailyDigestAt(new Date())) {
-    const todayMt = formatInTimeZone(new Date(), 'America/Denver', 'yyyy-MM-dd');
-    let logRows: Awaited<ReturnType<typeof readCronLogToday>> = [];
-    try { logRows = await readCronLogToday(sheets, env.spreadsheetId, todayMt); }
-    catch (err) { console.warn('[cron] readCronLogToday failed:', err instanceof Error ? err.message : err); }
-    try {
-      await sendMessage(
-        { botToken: env.telegramBotToken! },
-        {
-          chat_id: env.telegramChatId!,
-          text: formatDailySummary(logRows, logRows.length),
-          disable_notification: false,
-        },
-      );
-    } catch (err) {
-      console.warn('[cron] daily-digest send failed:', err instanceof Error ? err.message : err);
+    // Conditional Telegram send.
+    const tgEnabled = env.telegramBotToken && env.telegramChatId;
+    if (tgEnabled && result.errors.length > 0) {
+      try {
+        await sendMessage(
+          { botToken: env.telegramBotToken! },
+          {
+            chat_id: env.telegramChatId!,
+            text: formatErrorAlert(result),
+            disable_notification: false,
+          },
+        );
+      } catch (err) {
+        console.warn('[cron] error-alert send failed:', err instanceof Error ? err.message : err);
+      }
+    } else if (tgEnabled && shouldSendDailyDigestAt(new Date())) {
+      const todayMt = formatInTimeZone(new Date(), 'America/Denver', 'yyyy-MM-dd');
+      let logRows: Awaited<ReturnType<typeof readCronLogToday>> = [];
+      try { logRows = await readCronLogToday(sheets, env.spreadsheetId, todayMt); }
+      catch (err) { console.warn('[cron] readCronLogToday failed:', err instanceof Error ? err.message : err); }
+      try {
+        await sendMessage(
+          { botToken: env.telegramBotToken! },
+          {
+            chat_id: env.telegramChatId!,
+            text: formatDailySummary(logRows, logRows.length),
+            disable_notification: false,
+          },
+        );
+      } catch (err) {
+        console.warn('[cron] daily-digest send failed:', err instanceof Error ? err.message : err);
+      }
     }
   }
 
