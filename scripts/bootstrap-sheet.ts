@@ -71,6 +71,13 @@ const CRON_LOG_HEADERS = [
   'Duration (s)',
 ];
 
+const CAMPING_INDEX_HEADERS = [
+  'Facility ID', 'Name', 'Agency', 'Parent Unit', 'Region', 'Lat', 'Lng',
+  'Lead Days', 'Special Release', 'Season Start', 'Season End', 'Fee',
+  'Reservation Type', 'Use Type', 'Restrictions', 'Has Restrooms',
+  'Amenities', 'Tent-Eligible Sites', 'Active', 'Muted', 'Notes',
+];
+
 async function main(): Promise<void> {
   const { clientId, clientSecret, refreshToken, spreadsheetId } = readEnv();
 
@@ -274,6 +281,24 @@ async function main(): Promise<void> {
       },
     });
   }
+
+  // Camping Index tab — create if missing.
+  const campingIndexExists = allTabs.some((s) => s.properties?.title === 'Camping Index');
+  let campingIndexWillBeCreated = false;
+  if (campingIndexExists) {
+    console.log('Plan: "Camping Index" tab (already exists — skip)');
+  } else {
+    console.log('Plan: create "Camping Index" tab with 21 headers');
+    campingIndexWillBeCreated = true;
+    requests.push({
+      addSheet: {
+        properties: {
+          title: 'Camping Index',
+          gridProperties: { rowCount: 2000, columnCount: CAMPING_INDEX_HEADERS.length },
+        },
+      },
+    });
+  }
   console.log();
 
   console.log('Applying batch update...');
@@ -301,6 +326,16 @@ async function main(): Promise<void> {
       requestBody: { values: [CRON_LOG_HEADERS] },
     });
     console.log('✓ "Cron Log" headers written');
+  }
+
+  if (campingIndexWillBeCreated) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `'Camping Index'!A1:${colLetter(CAMPING_INDEX_HEADERS.length - 1)}1`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [CAMPING_INDEX_HEADERS] },
+    });
+    console.log('✓ "Camping Index" headers written');
   }
 
   console.log();

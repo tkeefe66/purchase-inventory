@@ -32,6 +32,7 @@
     "dedup-existing": "tsx scripts/dedup-existing.ts",
     "smoke-cache": "tsx scripts/smoke-cache.ts",
     "smoke-agent": "tsx scripts/smoke-agent.ts",
+    "seed-camping": "tsx scripts/seed-camping-index.ts",
     "bot": "tsx apps/bot/index.ts"
   },
   "dependencies": {
