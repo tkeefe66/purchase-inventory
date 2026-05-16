@@ -1,4 +1,5 @@
 import { google, sheets_v4 } from 'googleapis';
+import { formatInTimeZone } from 'date-fns-tz';
 import { buildExistingKeySet, type DedupIndex } from './dedup.js';
 import { STATUS_VALUES, type MasterRow, type Status, type Vocab } from './types.js';
 
@@ -446,4 +447,58 @@ export async function appendCronLogRow(
       ]],
     },
   });
+}
+
+export async function readCronLogToday(
+  sheets: SheetsClient,
+  spreadsheetId: string,
+  todayMt: string,  // 'YYYY-MM-DD' in Mountain time
+): Promise<CronLogRow[]> {
+  let raw: (string | number)[][];
+  try {
+    const resp = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `'${CRON_LOG_TAB}'!A:H`,
+    });
+    raw = (resp.data.values ?? []) as (string | number)[][];
+  } catch {
+    return []; // Tab probably doesn't exist yet.
+  }
+  if (raw.length < 2) return [];
+
+  const out: CronLogRow[] = [];
+  for (let i = 1; i < raw.length; i++) {
+    const r = raw[i]!;
+    const tsRaw = String(r[0] ?? '');
+    if (!tsRaw) continue;
+    const ts = new Date(tsRaw);
+    if (Number.isNaN(ts.getTime())) continue;
+    const tsMtDate = formatInTimeZone(ts, 'America/Denver', 'yyyy-MM-dd');
+    if (tsMtDate !== todayMt) continue;
+    out.push({
+      runTimestamp: tsRaw,
+      itemsAdded: Number(r[1] ?? 0),
+      itemsBySource: safeJson(String(r[2] ?? '{}')),
+      itemsByDomain: safeJson(String(r[3] ?? '{}')),
+      returnsApplied: Number(r[4] ?? 0),
+      messagesScanned: Number(r[5] ?? 0),
+      errorsCount: Number(r[6] ?? 0),
+      durationSeconds: Number(r[7] ?? 0),
+    });
+  }
+  return out;
+}
+
+function safeJson(s: string): Record<string, number> {
+  try {
+    const parsed = JSON.parse(s) as unknown;
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      if (typeof v === 'number') out[k] = v;
+    }
+    return out;
+  } catch {
+    return {};
+  }
 }
