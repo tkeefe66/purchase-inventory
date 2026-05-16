@@ -555,13 +555,22 @@ function safeJson(s: string): Record<string, number> {
 
 const CAMPING_INDEX_TAB = 'Camping Index';
 const CAMPING_INDEX_HEADER = [
-  'Facility ID', 'Name', 'Agency', 'Parent Unit', 'Region', 'Lat', 'Lng',
+  'Facility ID', 'Name', 'Site URL', 'Map URL',
+  'Agency', 'Parent Unit', 'Region', 'Lat', 'Lng',
   'Lead Days', 'Special Release', 'Season Start', 'Season End', 'Fee',
   'Reservation Type', 'Use Type', 'Restrictions', 'Has Restrooms',
   'Amenities', 'Tent-Eligible Sites', 'Active',
   'Next Calendar Opens', 'Next Reminder Fires',
   'Muted', 'Notes',
 ] as const;
+
+function siteUrlFor(facilityId: string): string {
+  return `https://www.recreation.gov/camping/campgrounds/${facilityId}`;
+}
+
+function mapUrlFor(lat: number, lng: number): string {
+  return `https://www.google.com/maps?q=${lat},${lng}`;
+}
 
 async function ensureCampingIndexTab(sheets: SheetsClient, spreadsheetId: string): Promise<void> {
   const meta = await sheets.spreadsheets.get({ spreadsheetId });
@@ -599,7 +608,8 @@ function facilityRow(f: Facility, todayMt: string): (string | number | boolean)[
   const open = nextSeasonOpenDate(f, todayMt);
   const reminder = nextReminderDate(f, todayMt);
   return [
-    f.facilityId, f.name, f.agency, f.parentUnit, f.region ?? '',
+    f.facilityId, f.name, siteUrlFor(f.facilityId), mapUrlFor(f.lat, f.lng),
+    f.agency, f.parentUnit, f.region ?? '',
     f.lat, f.lng, f.leadTimeDays, f.specialReleaseDate ?? '',
     f.seasonStart ?? '', f.seasonEnd ?? '', f.feeUSD,
     f.reservationType, f.useType,
@@ -618,7 +628,7 @@ export async function mirrorCampingIndex(
   const todayMt = todayMtDateString(new Date());
   const resp = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: `'${CAMPING_INDEX_TAB}'!A:W`,
+    range: `'${CAMPING_INDEX_TAB}'!A:Y`,
   });
   const rows = (resp.data.values ?? []) as (string | number | boolean)[][];
   const header = rows[0] ?? Array.from(CAMPING_INDEX_HEADER);
@@ -668,7 +678,7 @@ export async function mirrorCampingIndex(
   if (toAppend.length > 0) {
     await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range: `'${CAMPING_INDEX_TAB}'!A:W`,
+      range: `'${CAMPING_INDEX_TAB}'!A:Y`,
       valueInputOption: 'RAW',
       insertDataOption: 'INSERT_ROWS',
       requestBody: { values: toAppend },
@@ -684,7 +694,7 @@ export async function readMutedFacilityIds(
   try {
     const resp = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `'${CAMPING_INDEX_TAB}'!A:W`,
+      range: `'${CAMPING_INDEX_TAB}'!A:Y`,
     });
     raw = (resp.data.values ?? []) as (string | number | boolean)[][];
   } catch { return []; }
@@ -710,7 +720,7 @@ export async function setMutedInCampingIndex(
 ): Promise<void> {
   const resp = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: `'${CAMPING_INDEX_TAB}'!A:W`,
+    range: `'${CAMPING_INDEX_TAB}'!A:Y`,
   });
   const rows = (resp.data.values ?? []) as (string | number | boolean)[][];
   if (rows.length < 2) return;

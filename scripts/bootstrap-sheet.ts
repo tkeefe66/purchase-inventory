@@ -72,7 +72,8 @@ const CRON_LOG_HEADERS = [
 ];
 
 const CAMPING_INDEX_HEADERS = [
-  'Facility ID', 'Name', 'Agency', 'Parent Unit', 'Region', 'Lat', 'Lng',
+  'Facility ID', 'Name', 'Site URL', 'Map URL',
+  'Agency', 'Parent Unit', 'Region', 'Lat', 'Lng',
   'Lead Days', 'Special Release', 'Season Start', 'Season End', 'Fee',
   'Reservation Type', 'Use Type', 'Restrictions', 'Has Restrooms',
   'Amenities', 'Tent-Eligible Sites', 'Active',
