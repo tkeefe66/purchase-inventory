@@ -6,6 +6,7 @@ import { Stats, formatStats } from '../apps/bot/stats.js';
 import { ConversationStore } from '../lib/conversations.js';
 import { filterToActiveOutdoor } from '../domains/outdoor/inventory.js';
 import { OutdoorAgent } from '../domains/outdoor/agent.js';
+import { createWeatherClient } from '../domains/outdoor/integrations/weather.js';
 
 async function main(): Promise<void> {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -38,6 +39,9 @@ async function main(): Promise<void> {
   });
   const conversations = new ConversationStore({ idleTtlMs: 30 * 60 * 1000 });
 
+  const pirateWeatherKey = process.env.PIRATE_WEATHER_API_KEY ?? '';
+  const weather = createWeatherClient({ apiKey: pirateWeatherKey });
+
   const agent = new OutdoorAgent({
     cache,
     conversations,
@@ -45,6 +49,7 @@ async function main(): Promise<void> {
     anthropic,
     sheets,
     spreadsheetId,
+    weather,
     updateRowStatus,
   });
 

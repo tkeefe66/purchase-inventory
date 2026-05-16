@@ -7,6 +7,7 @@ import { Stats } from '../../apps/bot/stats.js';
 import { callWithRetry } from '../../lib/anthropic-retry.js';
 import { AGENT_PRIMARY_MODEL, AGENT_FALLBACK_MODELS } from '../../lib/models.js';
 import { createTools, TOOL_SCHEMAS, SERVER_TOOLS, type ToolHandlers } from './tools.js';
+import type { WeatherClient } from './integrations/weather.js';
 
 export interface SystemPromptInput {
   compactViewText: string;
@@ -30,9 +31,11 @@ Telegram renders Markdown. When you reference a specific item from Tom's invento
 
 const REI_PREFERENCE = `When recommending purchases, prefer REI when both retailers carry an item — Tom is a co-op member and that's his default store. Mention the dividend or return-policy advantage in close calls.`;
 
-const TOOL_GUIDANCE = `You have three tools available:
+const TOOL_GUIDANCE = `You have four tools available:
 
-- web_search — use for anything time-sensitive: current prices, current trail/snow/surf/weather conditions, recent product releases, reviews from the past year, current park/trail status. Do NOT search for things in Tom's inventory (already in context) or for general outdoor knowledge (you already know). Capped at 3 searches per turn. When you do search, cite the source domain in your reply so Tom can verify (e.g., "per outdoorgearlab.com").
+- web_search — use for anything time-sensitive: current prices, current trail/snow/surf/weather conditions in prose form, recent product releases, reviews from the past year, current park/trail status. Do NOT search for things in Tom's inventory (already in context) or for general outdoor knowledge (you already know). Capped at 3 searches per turn. When you do search, cite the source domain in your reply so Tom can verify (e.g., "per outdoorgearlab.com").
+
+- get_forecast(location, days) — call this when the user asks about weather or packing for a real upcoming trip. Pair it with the inventory you already have in context to give specific gear recommendations ("you have the Patagonia Houdini for the wind, but the forecast shows 0.6in of rain Thursday — bring the shell instead"). Don't call it for climatology questions or vague "what's it like there in spring" — only for specific forecasts in the next 7 days. Always include the destination + dates in your reply so Tom can verify. Prefer this over web_search for any weather question, since it returns structured numeric data.
 
 - update_status(item_id, new_status) — when the user tells you they lost, sold, donated, retired, returned, or broke an item, or wants to mark it excluded. Possible new_status values: active, retired, returned, lost, broken, sold, donated, excluded. After calling this tool, confirm to the user what changed.
 
@@ -63,6 +66,7 @@ export interface OutdoorAgentOptions {
   anthropic: Anthropic;
   sheets: SheetsClient;
   spreadsheetId: string;
+  weather: WeatherClient;
   updateRowStatus: (
     sheets: SheetsClient,
     spreadsheetId: string,
@@ -81,6 +85,7 @@ export class OutdoorAgent {
       sheets: opts.sheets,
       spreadsheetId: opts.spreadsheetId,
       updateRowStatus: opts.updateRowStatus,
+      weather: opts.weather,
     });
   }
 
@@ -188,6 +193,9 @@ export class OutdoorAgent {
     }
     if (name === 'update_status') {
       return this.tools.update_status(input as { item_id: string; new_status: Status });
+    }
+    if (name === 'get_forecast') {
+      return this.tools.get_forecast(input as { location: string; days: number });
     }
     return { ok: false, message: `Unknown tool: ${name}` };
   }

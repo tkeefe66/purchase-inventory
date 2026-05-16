@@ -103,6 +103,7 @@ describe('OutdoorAgent.handleMessage', () => {
       anthropic: anthropic as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['anthropic'],
       sheets: {} as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['sheets'],
       spreadsheetId: 'TEST',
+      weather: { getForecast: async () => { throw new Error('not used'); } } as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['weather'],
       updateRowStatus: vi.fn() as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['updateRowStatus'],
     });
     const out = await agent.handleMessage('chat-1', 'hello');
@@ -129,6 +130,7 @@ describe('OutdoorAgent.handleMessage', () => {
       anthropic: anthropic as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['anthropic'],
       sheets: {} as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['sheets'],
       spreadsheetId: 'TEST',
+      weather: { getForecast: async () => { throw new Error('not used'); } } as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['weather'],
       updateRowStatus: vi.fn() as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['updateRowStatus'],
     });
     await agent.handleMessage('chat-1', 'hi');
@@ -163,6 +165,7 @@ describe('OutdoorAgent.handleMessage', () => {
       anthropic: anthropic as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['anthropic'],
       sheets: {} as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['sheets'],
       spreadsheetId: 'TEST',
+      weather: { getForecast: async () => { throw new Error('not used'); } } as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['weather'],
       updateRowStatus: vi.fn() as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['updateRowStatus'],
     });
     const out = await agent.handleMessage('chat-1', 'current R1 price?');
@@ -194,6 +197,7 @@ describe('OutdoorAgent.handleMessage', () => {
       anthropic: anthropic as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['anthropic'],
       sheets: {} as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['sheets'],
       spreadsheetId: 'TEST',
+      weather: { getForecast: async () => { throw new Error('not used'); } } as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['weather'],
       updateRowStatus: updateRowStatus as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['updateRowStatus'],
     });
     const out = await agent.handleMessage('chat-1', 'give me the link');
@@ -221,6 +225,7 @@ describe('OutdoorAgent.handleMessage', () => {
       anthropic: anthropic as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['anthropic'],
       sheets: {} as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['sheets'],
       spreadsheetId: 'TEST',
+      weather: { getForecast: async () => { throw new Error('not used'); } } as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['weather'],
       updateRowStatus: vi.fn() as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['updateRowStatus'],
     });
     await agent.handleMessage('chat-1', 'hi');
@@ -245,6 +250,7 @@ describe('OutdoorAgent.handleMessage', () => {
       anthropic: anthropic as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['anthropic'],
       sheets: {} as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['sheets'],
       spreadsheetId: 'TEST',
+      weather: { getForecast: async () => { throw new Error('not used'); } } as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['weather'],
       updateRowStatus: vi.fn() as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['updateRowStatus'],
     });
     await agent.handleMessage('chat-1', 'are you there?');
@@ -271,6 +277,7 @@ describe('OutdoorAgent.handleMessage', () => {
       anthropic: anthropic as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['anthropic'],
       sheets: {} as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['sheets'],
       spreadsheetId: 'TEST',
+      weather: { getForecast: async () => { throw new Error('not used'); } } as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['weather'],
       updateRowStatus: vi.fn() as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['updateRowStatus'],
     });
     await expect(agent.handleMessage('chat-1', 'hi')).rejects.toThrow(/tool-call loop/i);
@@ -309,6 +316,7 @@ describe('OutdoorAgent.handleMessage', () => {
       anthropic: anthropic as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['anthropic'],
       sheets: {} as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['sheets'],
       spreadsheetId: 'TEST',
+      weather: { getForecast: async () => { throw new Error('not used'); } } as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['weather'],
       updateRowStatus: vi.fn() as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['updateRowStatus'],
     });
     const out = await agent.handleMessage('chat-1', 'hi');
@@ -352,6 +360,7 @@ describe('OutdoorAgent.handleMessage', () => {
       anthropic: anthropic as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['anthropic'],
       sheets: {} as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['sheets'],
       spreadsheetId: 'TEST',
+      weather: { getForecast: async () => { throw new Error('not used'); } } as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['weather'],
       updateRowStatus: vi.fn() as unknown as ConstructorParameters<typeof OutdoorAgent>[0]['updateRowStatus'],
     });
     const out = await agent.handleMessage('chat-1', 'hi');
