@@ -28,13 +28,13 @@ The architecture is multi-domain from day 1. The *delivery* is single-domain at 
 | **1** | Platform skeleton + outdoor inventory ingest | ~1 week | Cron runs hourly for 7 consecutive days with no parse errors, no duplicates, all outdoor purchases land with `Domain=Outdoor`, Telegram daily digest received at 19:00 Mountain |
 | **2** | Outdoor agent v1 — broad outdoor companion (Telegram, no external integrations). Includes `/log` manual entry + `/lost`, `/sold`, `/donated`, `/retired`, `/broken` status commands. | ~2 weeks | Bot answers 5 gear/activity questions correctly + slash commands work |
 | **2.5** | Add `web_search` tool to outdoor agent | ~1 day | Agent answers a "current conditions / current product / current price" question using fresh web info |
-| **3** | Outdoor + Weather integration | ~3 days | Agent answers "what should I bring tomorrow for [trip]?" using current forecast |
-| **3.5** | Calendar-aware trip prep (Google Calendar) | ~3 days | Cron checks calendar; sends Telegram packing-list nudge before upcoming outdoor events using inventory + weather |
+| **3** | Outdoor + Weather integration ✅ shipped 2026-05-15 | ~3 days | Agent answers "what should I bring tomorrow for [trip]?" using current forecast |
 | **4** | Outdoor + AllTrails (or fallback OSM) integration — covers hiking, mountain biking, trail running | ~1 week | Agent answers "what gear for [trail name]?" or "good MTB trails near X?" using trail data + inventory |
 | **5** | Outdoor + Free-camping integration | ~1 week | Agent answers "where can I camp free near [location]?" using a real source |
 | **5.5** | Gear age / maintenance nudges | ~1 day | Monthly cron surfaces items hitting age or maintenance thresholds via Telegram |
 | **6** | Web UI (read-only dashboard, all domains) | ~1 week | Filterable by domain/category/brand/year/status; spend chart |
-| **7+ (deferred)** | 2nd domain (Kitchen or Photography), more integrations, web UI editing | n/a | Out of scope until Phase 6 is in daily use for ≥1 month |
+| **6.5** | Calendar-aware trip prep (Google Calendar) — *was Phase 3.5; pushed to end of build by Tom 2026-05-15* | ~3 days | Cron checks calendar; sends Telegram packing-list nudge before upcoming outdoor events using inventory + weather |
+| **7+ (deferred)** | 2nd domain (Kitchen or Photography), more integrations, web UI editing | n/a | Out of scope until Phase 6.5 is in daily use for ≥1 month |
 
 **Hard rule:** do not start Phase 2 until Phase 1 has run unsupervised for 7 days without intervention. An agent grounded in bad data is worse than no agent.
 
@@ -181,7 +181,7 @@ TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=                    # Tom's chat ID for digests/errors
 
 # Outdoor integrations
-OPENWEATHERMAP_API_KEY=              # Phase 3
+PIRATE_WEATHER_API_KEY=              # Phase 3 (Nominatim geocoder is keyless)
 ALLTRAILS_*=                         # Phase 4 — TBD based on MCP availability
 RECREATIONGOV_API_KEY=               # Phase 5 (free; just a registration)
 
@@ -543,61 +543,30 @@ If any fail, debug + iterate before declaring Phase 2.5 done.
 
 ---
 
-## Phase 3: Outdoor + Weather integration
+## Phase 3: Outdoor + Weather integration ✅ SHIPPED 2026-05-15
 
 **Outcome:** Agent answers "what should I bring tomorrow for [trip]?" using current forecast + inventory.
 
-### Task 3.1: Weather client
+**Provider chosen:** **Pirate Weather** (Dark Sky-compatible JSON, generous free tier, no card-on-file) for forecasts + **Nominatim** (OSM geocoder, keyless, ≥1s/req policy with in-process cache) for location lookup. Rationale lives in `DECISIONS.md` under 2026-05-15.
+
+### Task 3.1: Weather client ✅
 
 **Files:** `domains/outdoor/integrations/weather.ts`
 
-**Provider:** OpenWeatherMap free tier (or NOAA for US-only — free forever). Pirate Weather is also worth considering.
+**Built:**
+- `geocode(query)` — Nominatim with in-process cache, ≥1s gap between calls, User-Agent set per usage policy
+- `getForecast(location, days)` — Pirate Weather; returns `DailyForecast[]` plus `hourlyTomorrow` anchored to destination-local next-day midnight (not UTC)
+- Typed errors: `rate_limited`, `api_error`, `no_match`, `bad_coords` — propagated as `ForecastError` and surfaced to the agent as `{ ok: false, error: ... }`
 
-**Functions:**
-- `getForecast(location, days): Forecast` — temp range, precipitation, wind
-- `geocode(query): Coords` — for converting "Yosemite" to lat/long
+### Task 3.2: New agent tool ✅
 
-### Task 3.2: New agent tool
+`get_forecast(location, days)` wired into `dispatchTool` (ok/false shape). System prompt updated with tool guidance.
 
-Add `get_forecast(location, days)` to outdoor agent's tool registry. Update system prompt to mention the capability.
+### Task 3.3: Acceptance test ✅ 2026-05-15
 
-### Task 3.3: Acceptance test
+**Pass:** "What should I bring for a 2-day trip to Moab, UT starting tomorrow?" → agent fetched live Pirate Weather forecast (May 15–16: highs 88–91°F, dry, calm), picked relevant inventory (Sahara Shade Hoodie, Denali polarized sunglasses, Sahara Convertible Pants, hiking shoes, daypack, water jug, headlamp, tent, sleeping bag), reasoned about hot/dry desert conditions and 60°F overnight lows.
 
-"What should I bring for a 2-day trip in [real place] starting tomorrow?" → bot uses forecast, picks relevant items from inventory (insulation if cold, shell if rain, etc.), and recommends.
-
----
-
-## Phase 3.5: Calendar-aware trip prep
-
-**Outcome:** A new daily cron task reads Tom's Google Calendar, identifies upcoming outdoor events, and proactively sends a Telegram packing-list nudge that combines calendar + weather + inventory.
-
-This is one of the features that uniquely justifies building the custom system over a Claude Project — a Project can't run scheduled background tasks against your calendar.
-
-### Task 3.5.1: Calendar client
-
-**Files:** `lib/calendar.ts`
-
-**Responsibilities:**
-- Authenticate using existing Google OAuth refresh token (Calendar API scope must be added — `https://www.googleapis.com/auth/calendar.readonly`)
-- `getUpcomingEvents(days: number): CalendarEvent[]` — events within next N days
-- `classifyAsOutdoor(event): boolean` — heuristic on title/description/location keywords (hike, ski, climb, trip, camping, MTB, Yosemite, etc.); fall back to Claude classification if heuristic is low-confidence
-
-**Note:** OAuth scope expansion requires re-running `scripts/auth.ts` once to mint a new refresh token covering Calendar.
-
-### Task 3.5.2: Trip-prep nudge job
-
-**Files:** `apps/cron/trip-prep.ts` (new), wire into `apps/cron/index.ts`
-
-**Behavior:**
-- Runs once per day (separate cron entry from the email-ingest cron, or same cron with a flag)
-- Fetches calendar events in next 5 days
-- For each outdoor event: looks up forecast for the location, queries inventory for relevant gear by activity, asks Claude to compose a packing-list message
-- Sends one Telegram message per event, with the event name + date + forecast summary + suggested items
-- De-dupes — doesn't send the same nudge twice (track sent-events in a small state file or sheet tab)
-
-### Task 3.5.3: Acceptance test
-
-Add a real outdoor event to your calendar 2 days out (e.g., "Saturday hike at [location]") → next morning's cron sends a Telegram message with forecast + packing suggestions sourced from inventory. Re-running the cron same day does not re-send.
+**Smoke harness:** `npx tsx scripts/smoke-weather.ts <city>` hits real Pirate Weather + Nominatim end-to-end.
 
 ---
 
@@ -734,6 +703,42 @@ Railway service for `apps/web/`, separate from cron and bot.
 
 ---
 
+## Phase 6.5: Calendar-aware trip prep
+
+> *Was originally Phase 3.5. Moved to the end of the build order by Tom 2026-05-15 — wants the agent feature set (Weather, AllTrails, Free camping, Maintenance, Web UI) shipped before proactive calendar nudges.*
+
+**Outcome:** A new daily cron task reads Tom's Google Calendar, identifies upcoming outdoor events, and proactively sends a Telegram packing-list nudge that combines calendar + weather + inventory.
+
+This is one of the features that uniquely justifies building the custom system over a Claude Project — a Project can't run scheduled background tasks against your calendar.
+
+### Task 6.5.1: Calendar client
+
+**Files:** `lib/calendar.ts`
+
+**Responsibilities:**
+- Authenticate using existing Google OAuth refresh token (Calendar API scope must be added — `https://www.googleapis.com/auth/calendar.readonly`)
+- `getUpcomingEvents(days: number): CalendarEvent[]` — events within next N days
+- `classifyAsOutdoor(event): boolean` — heuristic on title/description/location keywords (hike, ski, climb, trip, camping, MTB, Yosemite, etc.); fall back to Claude classification if heuristic is low-confidence
+
+**Note:** OAuth scope expansion requires re-running `scripts/auth.ts` once to mint a new refresh token covering Calendar.
+
+### Task 6.5.2: Trip-prep nudge job
+
+**Files:** `apps/cron/trip-prep.ts` (new), wire into `apps/cron/index.ts`
+
+**Behavior:**
+- Runs once per day (separate cron entry from the email-ingest cron, or same cron with a flag)
+- Fetches calendar events in next 5 days
+- For each outdoor event: looks up forecast for the location, queries inventory for relevant gear by activity, asks Claude to compose a packing-list message
+- Sends one Telegram message per event, with the event name + date + forecast summary + suggested items
+- De-dupes — doesn't send the same nudge twice (track sent-events in a small state file or sheet tab)
+
+### Task 6.5.3: Acceptance test
+
+Add a real outdoor event to your calendar 2 days out (e.g., "Saturday hike at [location]") → next morning's cron sends a Telegram message with forecast + packing suggestions sourced from inventory. Re-running the cron same day does not re-send.
+
+---
+
 ## Phase 7+ (deferred — DO NOT BUILD without explicit go-ahead)
 
 ### 7a. Second domain (Kitchen or Photography)
@@ -776,7 +781,7 @@ These block specific tasks. Surface at session start so they don't surprise mid-
 | Telegram chat ID | Task 1.8 | ⏳ Send `/start` to bot |
 | Anthropic API key | Tasks 1.3, 2.4 | ⏳ Tom to obtain |
 | GCP project + OAuth credentials | Task 0.2 | ⏳ Tom + Claude walkthrough |
-| OpenWeatherMap API key (or NOAA decision) | Task 3.1 | ⏳ End of Phase 2 |
+| ~~OpenWeatherMap API key (or NOAA decision)~~ → **Pirate Weather** + **Nominatim** | Task 3.1 | ✅ Resolved 2026-05-15 |
 | AllTrails MCP availability check | Task 4.1 | ⏳ Start of Phase 4 |
 | Recreation.gov API key | Task 5.1 | ⏳ Start of Phase 5 |
 
