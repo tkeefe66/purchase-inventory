@@ -378,3 +378,72 @@ export async function updateRowStatus(
 }
 
 export { HEADERS as MASTER_HEADERS };
+
+const CRON_LOG_TAB = 'Cron Log';
+const CRON_LOG_HEADER = [
+  'Run Timestamp',
+  'Items Added',
+  'Items By Source',
+  'Items By Domain',
+  'Returns Applied',
+  'Messages Scanned',
+  'Errors Count',
+  'Duration (s)',
+] as const;
+
+export interface CronLogRow {
+  runTimestamp: string;
+  itemsAdded: number;
+  itemsBySource: Record<string, number>;
+  itemsByDomain: Record<string, number>;
+  returnsApplied: number;
+  messagesScanned: number;
+  errorsCount: number;
+  durationSeconds: number;
+}
+
+async function ensureCronLogTab(sheets: SheetsClient, spreadsheetId: string): Promise<void> {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId });
+  const exists = (meta.data.sheets ?? []).some(
+    (s) => s.properties?.title === CRON_LOG_TAB,
+  );
+  if (exists) return;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [{ addSheet: { properties: { title: CRON_LOG_TAB } } }],
+    },
+  });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `'${CRON_LOG_TAB}'!A1`,
+    valueInputOption: 'RAW',
+    requestBody: { values: [Array.from(CRON_LOG_HEADER)] },
+  });
+}
+
+export async function appendCronLogRow(
+  sheets: SheetsClient,
+  spreadsheetId: string,
+  row: CronLogRow,
+): Promise<void> {
+  await ensureCronLogTab(sheets, spreadsheetId);
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: `'${CRON_LOG_TAB}'!A:H`,
+    valueInputOption: 'RAW',
+    insertDataOption: 'INSERT_ROWS',
+    requestBody: {
+      values: [[
+        row.runTimestamp,
+        row.itemsAdded,
+        JSON.stringify(row.itemsBySource),
+        JSON.stringify(row.itemsByDomain),
+        row.returnsApplied,
+        row.messagesScanned,
+        row.errorsCount,
+        row.durationSeconds,
+      ]],
+    },
+  });
+}
