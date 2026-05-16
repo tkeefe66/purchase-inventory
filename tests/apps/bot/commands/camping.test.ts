@@ -58,4 +58,39 @@ describe('handleCampingCommand', () => {
     );
     expect(out).toMatch(/multiple matches/i);
   });
+
+  test('/plan-trip rejects past dates', async () => {
+    const writeTrips = vi.fn(async () => undefined);
+    const out = await handleCampingCommand(
+      { name: 'plan-trip', args: 'maroon bells 2020-01-01' },
+      makeDeps({ writeTrips }),
+    );
+    expect(writeTrips).not.toHaveBeenCalled();
+    expect(out).toMatch(/past/i);
+  });
+
+  test('/plan-trip rejects duplicate active trips for same facility+date', async () => {
+    const writeTrips = vi.fn(async () => undefined);
+    const existing = { trips: [{
+      id: 't-existing', facilityId: 'F1', visitDate: '2099-08-22',
+      plannedAt: '', nudges: [{ kind: '7-day', firedAt: null }, { kind: 'release-moment', firedAt: null }],
+      cancelledAt: null,
+    }] };
+    const out = await handleCampingCommand(
+      { name: 'plan-trip', args: 'maroon bells 2099-08-22' },
+      makeDeps({ writeTrips, readTrips: vi.fn(async () => existing) }),
+    );
+    expect(writeTrips).not.toHaveBeenCalled();
+    expect(out).toMatch(/already have an active trip/i);
+  });
+
+  test('/watch by facility name calls setMuted(false)', async () => {
+    const setMuted = vi.fn(async () => undefined);
+    const out = await handleCampingCommand(
+      { name: 'watch', args: 'maroon bells' },
+      makeDeps({ setMuted }),
+    );
+    expect(setMuted).toHaveBeenCalledWith(['F1'], false);
+    expect(out).toMatch(/un-muted/i);
+  });
 });

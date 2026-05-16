@@ -99,6 +99,8 @@ export async function handleCampingCommand(cmd: ParsedCommand, deps: CampingDeps
     const m = cmd.args.match(/^(.+?)\s+(\d{4}-\d{2}-\d{2})$/);
     if (!m) return 'Usage: /plan-trip <facility-name> <YYYY-MM-DD>';
     const [, query, visitDate] = m;
+    const today = new Date().toISOString().slice(0, 10);
+    if (visitDate! < today) return `Visit date ${visitDate} is in the past (today is ${today}).`;
     const matches = fuzzyFindFacility(query!, idx.facilities);
     if (matches.length === 0) return `No facility match for "${query}".`;
     if (matches.length > 1) {
@@ -108,6 +110,8 @@ export async function handleCampingCommand(cmd: ParsedCommand, deps: CampingDeps
     const f = matches[0]!;
     const releaseDate = addDays(visitDate!, -f.leadTimeDays);
     const trips = await deps.readTrips();
+    const dup = trips.trips.find((t) => t.facilityId === f.facilityId && t.visitDate === visitDate && !t.cancelledAt);
+    if (dup) return `Already have an active trip to ${f.name} on ${visitDate}. Use /cancel-trip ${dup.id} first if you want to re-plan.`;
     const trip: PlannedTrip = {
       id: randomUUID(), facilityId: f.facilityId, visitDate: visitDate!,
       plannedAt: new Date().toISOString(),
