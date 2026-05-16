@@ -493,6 +493,46 @@ export async function readCronLogToday(
   return out;
 }
 
+export async function pruneCronLog(
+  sheets: SheetsClient,
+  spreadsheetId: string,
+  olderThanDays: number,
+): Promise<{ deleted: number }> {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId });
+  const tab = (meta.data.sheets ?? []).find((s) => s.properties?.title === CRON_LOG_TAB);
+  if (!tab?.properties?.sheetId) return { deleted: 0 };
+  const sheetId = tab.properties.sheetId;
+
+  const resp = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `'${CRON_LOG_TAB}'!A:H`,
+  });
+  const rows = (resp.data.values ?? []) as (string | number)[][];
+  if (rows.length < 2) return { deleted: 0 };
+
+  const cutoff = Date.now() - olderThanDays * 86400 * 1000;
+  const toDelete: number[] = [];
+  for (let i = 1; i < rows.length; i++) {
+    const ts = new Date(String(rows[i]![0] ?? ''));
+    if (Number.isNaN(ts.getTime())) continue;
+    if (ts.getTime() < cutoff) toDelete.push(i);
+  }
+  if (toDelete.length === 0) return { deleted: 0 };
+
+  // Sort descending so earlier deletes don't shift indices of later ones.
+  toDelete.sort((a, b) => b - a);
+  const requests = toDelete.map((i) => ({
+    deleteDimension: {
+      range: { sheetId, dimension: 'ROWS', startIndex: i, endIndex: i + 1 },
+    },
+  }));
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: { requests },
+  });
+  return { deleted: toDelete.length };
+}
+
 function safeJson(s: string): Record<string, number> {
   try {
     const parsed = JSON.parse(s) as unknown;

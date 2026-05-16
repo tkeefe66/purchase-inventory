@@ -1,5 +1,5 @@
 import { describe, test, expect, vi } from 'vitest';
-import { appendCronLogRow, readCronLogToday, type CronLogRow } from '../../lib/sheets.js';
+import { appendCronLogRow, readCronLogToday, pruneCronLog, type CronLogRow } from '../../lib/sheets.js';
 
 function makeSheetsMock(opts: {
   existingTabs: string[];
@@ -133,5 +133,59 @@ describe('readCronLogToday', () => {
     await expect(
       readCronLogToday(sheets as never, 'sheet-id', '2026-05-15'),
     ).rejects.toMatchObject({ code: 503 });
+  });
+});
+
+describe('pruneCronLog', () => {
+  function makePrunerSheets(rows: (string | number)[][]) {
+    const header = ['Run Timestamp', 'Items Added', 'Items By Source', 'Items By Domain',
+                    'Returns Applied', 'Messages Scanned', 'Errors Count', 'Duration (s)'];
+    const deleteRequests: { startIndex: number; endIndex: number }[] = [];
+    const sheets = {
+      spreadsheets: {
+        get: vi.fn().mockResolvedValue({
+          data: { sheets: [{ properties: { title: 'Cron Log', sheetId: 42 } }] },
+        }),
+        values: {
+          get: vi.fn().mockResolvedValue({ data: { values: [header, ...rows] } }),
+        },
+        batchUpdate: vi.fn(async (req: { requestBody: { requests: { deleteDimension: { range: { startIndex: number; endIndex: number } } }[] } }) => {
+          for (const r of req.requestBody.requests) {
+            deleteRequests.push(r.deleteDimension.range);
+          }
+          return { data: {} };
+        }),
+      },
+    };
+    return { sheets, deleteRequests };
+  }
+
+  test('deletes rows older than the threshold; keeps recent rows', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-15T12:00:00Z'));
+    const rows = [
+      ['2026-04-10T10:00:00.000Z', 1, '{}', '{}', 0, 1, 0, 1], // old → delete
+      ['2026-04-20T10:00:00.000Z', 1, '{}', '{}', 0, 1, 0, 1], // recent → keep
+      ['2026-04-01T10:00:00.000Z', 1, '{}', '{}', 0, 1, 0, 1], // old → delete
+    ];
+    const { sheets, deleteRequests } = makePrunerSheets(rows);
+    const result = await pruneCronLog(sheets as never, 'sheet-id', 30);
+    expect(result.deleted).toBe(2);
+    expect(deleteRequests.length).toBe(2);
+    vi.useRealTimers();
+  });
+
+  test('no-op when nothing is old enough', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-15T12:00:00Z'));
+    const rows = [
+      ['2026-05-10T10:00:00.000Z', 1, '{}', '{}', 0, 1, 0, 1],
+      ['2026-05-12T10:00:00.000Z', 1, '{}', '{}', 0, 1, 0, 1],
+    ];
+    const { sheets, deleteRequests } = makePrunerSheets(rows);
+    const result = await pruneCronLog(sheets as never, 'sheet-id', 30);
+    expect(result.deleted).toBe(0);
+    expect(deleteRequests).toEqual([]);
+    vi.useRealTimers();
   });
 });
