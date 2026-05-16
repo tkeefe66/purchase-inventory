@@ -83,9 +83,9 @@ ledger/                     # current folder name: outdoor-inventory
 |---|---|
 | Tech stack | Node.js 20 + TypeScript 5, vitest, googleapis, cheerio, `@anthropic-ai/sdk`, Next.js, node-telegram-bot-api |
 | Hosting | Railway, three services (cron, bot, web) sharing one repo |
-| Cron | 6am + 6pm Mountain Time |
+| Cron | Hourly (`0 * * * *` UTC). Telegram digest only at 19:00 Mountain (audible) — silent on every other hour. Errors trigger an immediate audible Telegram alert regardless of hour. |
 | Storage | Google Sheets (sheet ID in `PLAN.md`); no separate DB in v1 |
-| Sheet schema | 18 columns; key ones: Source, Order ID, Status, Domain, Type, Product URL, Reasoning, Notes. **Code accesses columns by HEADER NAME (not position)** via `buildHeaderMap` in `lib/sheets.ts` — admin can reorder columns in Sheets UI without breaking ingestion. |
+| Sheet schema | **Tab "All Purchases":** 18 columns; key ones: Source, Order ID, Status, Domain, Type, Product URL, Reasoning, Notes. **Tab "Cron Log":** 8 columns recording each cron run (Run Timestamp, Items Added, Items By Source/Domain as JSON, Returns Applied, Messages Scanned, Errors Count, Duration). Used by the 7pm daily digest. Auto-created on first write, auto-pruned to 30 days. **Code accesses columns by HEADER NAME** in both tabs via `buildHeaderMap` in `lib/sheets.ts`. |
 | Dedup key | Layered: **strong key `(Order ID, productId)`** where productId is the ASIN (Amazon) or numeric ID (REI) extracted from Product URL — catches cross-source item-name drift; falls back to full key `(Order ID, Brand, Item Name, Color, Size)` and a content key for blank-Order-ID historical rows. See `lib/dedup.ts` + `lib/productId.ts`. |
 | Item lifecycle | `Status` column M: `active` (default), `retired` (still own, not in active rotation), `returned`, `lost`, `broken`, `sold`, `donated`, `excluded` (don't include in inventory analysis). Returns auto-detected from `return@amazon.com` emails — see Amazon parser row. |
 | Year derivation | From `Date Purchased` in Mountain time |
@@ -102,7 +102,7 @@ ledger/                     # current folder name: outdoor-inventory
 | Dry-run | `--dry-run` flag prints proposed actions without writing |
 | Reprocess | `--reprocess --since=<date>` bypasses label filter |
 | OAuth consent screen | Must be **published** (not Testing) — refresh tokens expire after 7 days otherwise |
-| Notifications | Telegram for failure alerts and daily digest. **Digest is always audible** so Tom gets a heartbeat confirming the cron ran (decided 2026-05-15 after a 15-day gap that looked identical to silent-success and broken-cron). Optional v1.5 conversational interface. |
+| Notifications | Telegram: (a) immediate audible alert on any cron run with errors, (b) one audible "daily summary" message at 19:00 Mountain time aggregating that day's Cron Log rows, (c) silent every other hour. `/scan` from the bot returns its own reply, separate from the cron's digest path. |
 | Agent model | All Claude model IDs + agent pricing live in `lib/models.ts` (single source of truth). Currently: Opus 4.7 primary, Sonnet 4.6 / Haiku 4.5 fallback for the outdoor agent; Haiku 4.5 for the Amazon parser. **Always update to the latest Claude model when a new release lands — edit `lib/models.ts` only.** |
 | Prompt caching | Always on (per global CLAUDE.md). System prompts + tool definitions cached. |
 | Web UI v1 | Read-only dashboard; editing deferred |

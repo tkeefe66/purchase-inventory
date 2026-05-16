@@ -25,7 +25,7 @@ The architecture is multi-domain from day 1. The *delivery* is single-domain at 
 | Phase | Scope | Estimate | Ship gate |
 |-------|-------|----------|-----------|
 | **0** | Bootstrap: project scaffold, sheet schema migration, OAuth, historical CSV import | ~1 day | Sheet has cols K/L/M/N, "Needs Review" tab, refresh token in env, historical rows imported |
-| **1** | Platform skeleton + outdoor inventory ingest | ~1 week | Cron runs 2×/day for 7 consecutive days with no parse errors, no duplicates, all outdoor purchases land with `Domain=Outdoor`, Telegram digest received |
+| **1** | Platform skeleton + outdoor inventory ingest | ~1 week | Cron runs hourly for 7 consecutive days with no parse errors, no duplicates, all outdoor purchases land with `Domain=Outdoor`, Telegram daily digest received at 19:00 Mountain |
 | **2** | Outdoor agent v1 — broad outdoor companion (Telegram, no external integrations). Includes `/log` manual entry + `/lost`, `/sold`, `/donated`, `/retired`, `/broken` status commands. | ~2 weeks | Bot answers 5 gear/activity questions correctly + slash commands work |
 | **2.5** | Add `web_search` tool to outdoor agent | ~1 day | Agent answers a "current conditions / current product / current price" question using fresh web info |
 | **3** | Outdoor + Weather integration | ~3 days | Agent answers "what should I bring tomorrow for [trip]?" using current forecast |
@@ -57,8 +57,9 @@ ledger/                              # current name: outdoor-inventory; rename o
 │   └── PRODUCT.md                   # Source product vision (export of source docx)
 ├── apps/
 │   ├── cron/
-│   │   ├── index.ts                 # Entry for 6am/6pm cron
-│   │   └── pipeline.ts              # Orchestrates fetch → parse → route → dedupe → append → label
+│   │   ├── index.ts                 # Entry for hourly cron; owns Cron Log writes + Telegram sends
+│   │   ├── pipeline.ts              # Orchestrates fetch → parse → route → dedupe → append → label (side-effect-pure; returns PipelineResult only)
+│   │   └── digest.ts                # formatDailySummary, formatErrorAlert, shouldSendDailyDigestAt
 │   ├── bot/                         # Phase 2+
 │   │   ├── index.ts                 # Telegram listener
 │   │   ├── router.ts                # Route message to correct domain agent
@@ -284,7 +285,7 @@ DRY_RUN=false                        # Set true to print proposed actions withou
 
 ## Phase 1: Platform skeleton + outdoor inventory ingest
 
-**Outcome:** Cron runs 2×/day, ingests REI + Amazon emails, routes each item to a domain (Outdoor or Other in v1), writes to sheet, sends Telegram digest. Other domain folders exist as stubs.
+**Outcome:** Cron runs hourly, ingests REI + Amazon emails, routes each item to a domain (Outdoor or Other in v1), writes to sheet. Telegram digest fires once daily at 19:00 Mountain; errors send immediately. Other domain folders exist as stubs.
 
 ### Task 1.1: Gmail client
 
@@ -357,17 +358,23 @@ Append rows to `All Purchases` with all 14 columns including `Domain` (col N). N
 
 **Files:** `apps/cron/pipeline.ts`, `apps/cron/index.ts`
 
-**Flow:**
+**Flow (`pipeline.ts` — side-effect-pure, returns `PipelineResult`):**
 1. Auth + bootstrap sheet
 2. Fetch existing dedup keys
-3. Fetch unprocessed Gmail messages
+3. Fetch unprocessed Gmail messages (query includes `in:anywhere` — scans Trash + archive)
 4. For each message:
    - Route to retailer parser by sender
    - If parse returns null → Needs Review entry, do not label
    - For each item: domain router → in-domain classifier → check dedup → append if new
    - Apply `inventory-processed` label only if all items appended successfully
-5. Send Telegram digest
-6. Exit 0 on success, non-zero on unrecoverable errors
+5. Return `PipelineResult` (no Telegram sends inside the pipeline)
+
+**`index.ts` owns side effects:**
+- Append row to "Cron Log" sheet tab; prune rows older than 30 days
+- If errors: send immediate audible Telegram alert
+- If 19:00 Mountain: send audible daily summary aggregated from Cron Log
+- Otherwise: silent
+- Exit 0 on success, non-zero on unrecoverable errors
 
 **Flags:**
 - `--dry-run`: skip writes; print proposed actions
@@ -375,9 +382,9 @@ Append rows to `All Purchases` with all 14 columns including `Domain` (col N). N
 
 ### Task 1.8: Telegram digest
 
-**Files:** `lib/telegram.ts`
+**Files:** `lib/telegram.ts`, `apps/cron/digest.ts`
 
-Send digest after each cron run: counts of new items per domain, errors, needs-review entries. Send error notifications on catastrophic failure.
+Conditional send driven by `index.ts`: immediate audible alert on errors; one audible daily summary at 19:00 Mountain aggregated from the Cron Log; silent every other hour. `/scan` from the bot gets its own reply via `handleScan()`, separate from this path.
 
 ### Task 1.9: Domain stubs
 
@@ -390,15 +397,15 @@ One-paragraph README each: "This domain is not implemented yet. See `docs/PLAN.m
 **Files:** `railway.json`, `package.json` scripts
 
 **Cron config:**
-- Schedule: `0 6,18 * * *` in `America/Denver`
+- Schedule: `0 * * * *` UTC (hourly)
 - Build: `npm install && npm run build`
 - Start: `node dist/apps/cron/index.js`
 
 **Acceptance:**
 - Manual trigger from Railway UI works end-to-end
-- Telegram digest received
+- Telegram audible digest received at 19:00 Mountain
 - Sheet receives new rows with correct Domain
-- 6am MT next-day cron runs automatically
+- Hourly cron runs automatically
 
 ### Task 1.11: Soak test (the ship gate)
 
@@ -406,7 +413,7 @@ One-paragraph README each: "This domain is not implemented yet. See `docs/PLAN.m
 - Zero parser crashes
 - Zero duplicate rows
 - Zero Needs Review entries that should have parsed cleanly (manual verify)
-- Telegram digest received each run
+- Telegram audible digest received each evening at 19:00 Mountain
 
 If this fails, fix and restart the 7-day clock.
 
@@ -805,7 +812,7 @@ These block specific tasks. Surface at session start so they don't surprise mid-
 
 ### Sender-drift audit (shipped 2026-05-02)
 
-A weekly Gmail audit runs every Sunday morning Mountain time, paired with the existing 6am cron tick. It performs two broad searches across `amazon.com` / `rei.com` senders to detect:
+A weekly Gmail audit runs every Sunday morning Mountain time, paired with the hourly cron (fires on the first tick of the day). It performs two broad searches across `amazon.com` / `rei.com` senders to detect:
 
 - **Check A — Sender drift:** purchase-shaped subjects from senders NOT in the ingest allowlist.
 - **Check B — Subject drift:** purchase-keyword subjects from allowlisted senders that do not match the expected subject patterns.

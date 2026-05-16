@@ -983,6 +983,35 @@ Strong key is checked **first**. Falls back to the existing full key (orderId + 
 
 ---
 
+## 2026-05-15 — Trash-aware hourly cron + 7pm MT daily digest
+
+**Context:** Twice-daily cron created a ~12-hour visibility window during which a user-deleted purchase email could be lost forever (Gmail's default search excludes Trash). Even when the user didn't delete anything, the up-to-12-hour latency between purchase and row appearing felt long.
+
+**Decision:**
+1. Gmail query gains `in:anywhere` so Trash + archive are both scanned.
+2. Cron schedule moves from 2x/day to hourly (`0 * * * *` UTC on Railway).
+3. New "Cron Log" sheet tab persists one row per run (auto-created on first write, auto-pruned to 30 days).
+4. Telegram sending becomes conditional: immediate audible alert on any run with errors; a single audible daily summary at 19:00 Mountain time aggregated from the Cron Log; silent every other hour.
+5. `apps/cron/pipeline.ts` is now side-effect-pure — it returns `PipelineResult` only. `apps/cron/index.ts` owns Cron Log writes and Telegram sends. This keeps `/scan` (which calls `runPipeline` directly from the bot) simple and free of pipeline-side notifications.
+
+**Why:**
+- Trash inclusion closes the "I deleted it before the cron ran" gap permanently. Strong-key dedup ensures safe re-scanning.
+- Hourly cron tightens "appears in sheet" latency from ~12h to ~1h. Cost is negligible (Anthropic calls scale with parses, not runs; Railway compute is sub-cent).
+- 1 audible message/day was Tom's stated comfort level. Errors are immediate because waiting 24h to learn the cron is broken defeats the heartbeat purpose.
+
+**Trade-offs:** Spam folder is now also scanned as a free side effect of `in:anywhere` — accepted, strong-key dedup makes spurious matches harmless. If a run dies before writing its Cron Log row, that hour is invisible to the digest — accepted as an edge case.
+
+**How to apply:**
+- `apps/cron/pipeline.ts`: `buildQuery()` adds `in:anywhere`; runPipeline no longer sends Telegram.
+- `apps/cron/index.ts`: appends Cron Log, prunes, decides send (errors / 7pm / silent).
+- `apps/cron/digest.ts`: `formatDailySummary(rows, runCount)`, `formatErrorAlert(result)`, `shouldSendDailyDigestAt(now)`.
+- `lib/sheets.ts`: `CronLogRow`, `appendCronLogRow`, `readCronLogToday`, `pruneCronLog`.
+- `railway.cron.json`: `cronSchedule: "0 * * * *"`.
+- `scripts/bootstrap-sheet.ts`: includes the Cron Log tab in fresh sheet bootstrap.
+- One-time backfill: `npm run cron -- --reprocess --since=2026-04-30`.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale
