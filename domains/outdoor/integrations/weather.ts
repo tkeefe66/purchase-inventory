@@ -1,3 +1,5 @@
+import { formatInTimeZone } from 'date-fns-tz';
+
 export interface ForecastInput {
   location: string;
   days: number;
@@ -90,6 +92,19 @@ interface PirateHourData {
   windSpeed: number;
 }
 
+function mapDaily(fc: PirateWeatherResponse, days: number): DailyForecast[] {
+  const entries = fc.daily?.data ?? [];
+  return entries.slice(0, days).map((d) => ({
+    date: formatInTimeZone(d.time * 1000, fc.timezone, 'yyyy-MM-dd'),
+    tempHighF: d.temperatureHigh,
+    tempLowF: d.temperatureLow,
+    precipProbability: d.precipProbability,
+    precipAmountIn: d.precipAccumulation,
+    windMaxMph: d.windSpeed,
+    conditions: d.summary,
+  }));
+}
+
 export function createWeatherClient(opts: WeatherClientOptions): WeatherClient {
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
   const now = opts.now ?? (() => Date.now());
@@ -145,7 +160,7 @@ export function createWeatherClient(opts: WeatherClientOptions): WeatherClient {
       const fc = await fetchForecast(lat, lon);
       return {
         resolved: { name, lat, lon, timezone: fc.timezone },
-        daily: [],
+        daily: mapDaily(fc, input.days),
         hourlyTomorrow: [],
       };
     },

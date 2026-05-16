@@ -135,3 +135,40 @@ describe('geocoding (Nominatim)', () => {
     expect(sleepCalls.some((ms) => ms >= 700 && ms <= 900)).toBe(true);
   });
 });
+
+const PIRATE_3DAY = {
+  latitude: 38.5733,
+  longitude: -109.5498,
+  timezone: 'America/Denver',
+  daily: {
+    data: [
+      { time: 1684080000, summary: 'Sunny.', temperatureHigh: 82.4, temperatureLow: 56.7, precipProbability: 0.0, precipAccumulation: 0.0, windSpeed: 6.1 },
+      { time: 1684166400, summary: 'Rain.',  temperatureHigh: 71.2, temperatureLow: 52.1, precipProbability: 0.85, precipAccumulation: 0.42, windSpeed: 12.3 },
+      { time: 1684252800, summary: 'Partly cloudy.', temperatureHigh: 78.9, temperatureLow: 54.5, precipProbability: 0.1, precipAccumulation: 0.0, windSpeed: 8.5 },
+    ],
+  },
+  hourly: { data: [] },
+};
+
+describe('Pirate Weather daily mapping', () => {
+  test('maps daily entries and trims to requested days', async () => {
+    const fetchImpl = mockFetch(new Map<string | RegExp, { status: number; json: unknown }>([
+      ['nominatim.openstreetmap.org', { status: 200, json: NOMINATIM_MOAB }],
+      ['pirateweather.net', { status: 200, json: PIRATE_3DAY }],
+    ]));
+    const client = createWeatherClient({ apiKey: 'test', fetchImpl });
+    const result = await client.getForecast({ location: 'Moab, UT', days: 2 });
+
+    expect(result.daily).toHaveLength(2);
+    expect(result.daily[0]).toMatchObject({
+      tempHighF: 82.4,
+      tempLowF: 56.7,
+      precipProbability: 0,
+      precipAmountIn: 0,
+      windMaxMph: 6.1,
+      conditions: 'Sunny.',
+    });
+    expect(result.daily[0]!.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(result.daily[1]!.precipProbability).toBeCloseTo(0.85);
+  });
+});
