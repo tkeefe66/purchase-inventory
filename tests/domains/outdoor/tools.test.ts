@@ -3,6 +3,8 @@ import { createTools, TOOL_SCHEMAS, type ToolDeps } from '../../../domains/outdo
 import { InventoryCache } from '../../../apps/bot/inventoryCache.js';
 import { itemId } from '../../../domains/outdoor/types.js';
 import type { MasterRow } from '../../../lib/types.js';
+import type { WeatherClient, ForecastResult } from '../../../domains/outdoor/integrations/weather.js';
+import { ForecastError } from '../../../domains/outdoor/integrations/weather.js';
 import {
   FIXTURE_THERMAREST,
   FIXTURE_SALOMON,
@@ -15,6 +17,9 @@ function makeDeps(rows: MasterRow[]): { deps: ToolDeps; cache: InventoryCache; u
     updateCalls.push(input);
   });
   const cache = new InventoryCache(async () => rows);
+  const fakeWeather: WeatherClient = {
+    getForecast: async () => { throw new Error('weather not configured in this test'); },
+  };
   return {
     cache,
     updateCalls,
@@ -23,8 +28,18 @@ function makeDeps(rows: MasterRow[]): { deps: ToolDeps; cache: InventoryCache; u
       sheets: fakeSheets,
       spreadsheetId: 'TEST_SHEET_ID',
       updateRowStatus: fakeUpdate as unknown as ToolDeps['updateRowStatus'],
+      weather: fakeWeather,
     },
   };
+}
+
+function makeWeather(impl: WeatherClient['getForecast']): WeatherClient {
+  return { getForecast: impl };
+}
+
+function makeDepsWithWeather(rows: MasterRow[], weather: WeatherClient): { deps: ToolDeps; cache: InventoryCache } {
+  const { deps, cache } = makeDeps(rows);
+  return { deps: { ...deps, weather }, cache };
 }
 
 describe('TOOL_SCHEMAS', () => {
@@ -114,5 +129,52 @@ describe('update_status handler', () => {
     });
     expect(result.ok).toBe(false);
     expect(updateCalls).toHaveLength(0);
+  });
+});
+
+describe('get_forecast handler', () => {
+  const fakeForecast: ForecastResult = {
+    resolved: { name: 'Moab, UT', lat: 38.57, lon: -109.55, timezone: 'America/Denver' },
+    daily: [
+      { date: '2026-05-16', tempHighF: 82.4, tempLowF: 56.7, precipProbability: 0.1, precipAmountIn: 0, windMaxMph: 6.1, conditions: 'Sunny.' },
+    ],
+    hourlyTomorrow: [],
+  };
+
+  test('happy path returns ok with forecast', async () => {
+    const weather = makeWeather(async () => fakeForecast);
+    const { deps, cache } = makeDepsWithWeather([FIXTURE_THERMAREST], weather);
+    await cache.refresh();
+    const tools = createTools(deps);
+    const result = await tools.get_forecast({ location: 'Moab, UT', days: 1 });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.forecast.resolved.name).toBe('Moab, UT');
+    }
+  });
+
+  test('no_match returns ok=false with human message', async () => {
+    const weather = makeWeather(async () => { throw new ForecastError('no_match', 'nominatim', undefined, 'no match'); });
+    const { deps, cache } = makeDepsWithWeather([FIXTURE_THERMAREST], weather);
+    await cache.refresh();
+    const tools = createTools(deps);
+    const result = await tools.get_forecast({ location: 'gibberish', days: 1 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe('no_match');
+      expect(result.message).toMatch(/couldn't find/i);
+    }
+  });
+
+  test('api_error returns ok=false with generic message', async () => {
+    const weather = makeWeather(async () => { throw new ForecastError('api_error', 'pirateweather', 503, 'boom'); });
+    const { deps, cache } = makeDepsWithWeather([FIXTURE_THERMAREST], weather);
+    await cache.refresh();
+    const tools = createTools(deps);
+    const result = await tools.get_forecast({ location: 'Moab', days: 1 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe('api_error');
+    }
   });
 });

@@ -2,6 +2,8 @@ import type { SheetsClient } from '../../lib/sheets.js';
 import { STATUS_VALUES, type MasterRow, type Status } from '../../lib/types.js';
 import type { InventoryCache } from '../../apps/bot/inventoryCache.js';
 import { itemId } from './types.js';
+import type { WeatherClient, ForecastErrorKind, ForecastResult } from './integrations/weather.js';
+import { ForecastError } from './integrations/weather.js';
 
 export interface ToolDeps {
   cache: InventoryCache;
@@ -12,6 +14,7 @@ export interface ToolDeps {
     spreadsheetId: string,
     input: { rowIndex: number; newStatus: Status },
   ) => Promise<void>;
+  weather: WeatherClient;
 }
 
 export interface GetProductUrlInput {
@@ -33,9 +36,30 @@ export interface UpdateStatusResult {
   message: string;
 }
 
+export interface GetForecastInput {
+  location: string;
+  days: number;
+}
+
+export type GetForecastResult =
+  | { ok: true; forecast: ForecastResult }
+  | { ok: false; error: ForecastErrorKind; message: string };
+
 export interface ToolHandlers {
   get_product_url: (input: GetProductUrlInput) => Promise<GetProductUrlResult>;
   update_status: (input: UpdateStatusInput) => Promise<UpdateStatusResult>;
+  get_forecast: (input: GetForecastInput) => Promise<GetForecastResult>;
+}
+
+function humanForecastMessage(e: ForecastError, query: string): string {
+  switch (e.kind) {
+    case 'no_match':
+      return `I couldn't find a location matching "${query}" — can you give me a state or country?`;
+    case 'rate_limited':
+      return 'Having trouble looking that up — try again in a moment.';
+    case 'api_error':
+      return 'Weather service is temporarily unavailable.';
+  }
 }
 
 export const TOOL_SCHEMAS = [
@@ -139,6 +163,18 @@ export function createTools(deps: ToolDeps): ToolHandlers {
       const updated: MasterRow = { ...snapshot[rowPosition]!, status: input.new_status };
       deps.cache.applyLocalChange(updated);
       return { ok: true, message: `Marked ${updated.itemName} as ${input.new_status}` };
+    },
+
+    async get_forecast(input: GetForecastInput): Promise<GetForecastResult> {
+      try {
+        const forecast = await deps.weather.getForecast(input);
+        return { ok: true, forecast };
+      } catch (e) {
+        if (e instanceof ForecastError) {
+          return { ok: false, error: e.kind, message: humanForecastMessage(e, input.location) };
+        }
+        throw e;
+      }
     },
   };
 }
