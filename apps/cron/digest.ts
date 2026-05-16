@@ -76,3 +76,12 @@ export function formatErrorAlert(result: PipelineResult): string {
   }
   return lines.join('\n');
 }
+
+/**
+ * Returns true if `now` falls within the 19:00 (7pm) hour in Mountain time.
+ * DST-aware via date-fns-tz.
+ */
+export function shouldSendDailyDigestAt(now: Date): boolean {
+  const hour = Number(formatInTimeZone(now, TZ, 'H'));
+  return hour === 19;
+}
