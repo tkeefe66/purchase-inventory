@@ -566,17 +566,33 @@ const CAMPING_INDEX_HEADER = [
 async function ensureCampingIndexTab(sheets: SheetsClient, spreadsheetId: string): Promise<void> {
   const meta = await sheets.spreadsheets.get({ spreadsheetId });
   const exists = (meta.data.sheets ?? []).some((s) => s.properties?.title === CAMPING_INDEX_TAB);
-  if (exists) return;
-  await sheets.spreadsheets.batchUpdate({
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: { requests: [{ addSheet: { properties: { title: CAMPING_INDEX_TAB } } }] },
+    });
+  }
+  // Always ensure the header row matches the current schema. This makes the
+  // mirror self-healing across column-schema migrations (e.g. when new
+  // computed columns are added — without this, a tab created under an older
+  // schema would keep its stale headers and new mirrors would write data
+  // into the wrong columns).
+  const headerResp = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    requestBody: { requests: [{ addSheet: { properties: { title: CAMPING_INDEX_TAB } } }] },
+    range: `'${CAMPING_INDEX_TAB}'!1:1`,
   });
-  await sheets.spreadsheets.values.update({
-    spreadsheetId,
-    range: `'${CAMPING_INDEX_TAB}'!A1`,
-    valueInputOption: 'RAW',
-    requestBody: { values: [Array.from(CAMPING_INDEX_HEADER)] },
-  });
+  const currentHeader = (headerResp.data.values?.[0] ?? []) as string[];
+  const expected = Array.from(CAMPING_INDEX_HEADER);
+  const stale = currentHeader.length !== expected.length
+    || expected.some((h, i) => currentHeader[i] !== h);
+  if (stale) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `'${CAMPING_INDEX_TAB}'!A1`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [expected] },
+    });
+  }
 }
 
 function facilityRow(f: Facility, todayMt: string): (string | number | boolean)[] {
