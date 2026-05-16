@@ -33,6 +33,7 @@
     "smoke-cache": "tsx scripts/smoke-cache.ts",
     "smoke-agent": "tsx scripts/smoke-agent.ts",
     "seed-camping": "tsx scripts/seed-camping-index.ts",
+    "smoke-camping": "tsx scripts/smoke-camping.ts",
     "bot": "tsx apps/bot/index.ts"
   },
   "dependencies": {
