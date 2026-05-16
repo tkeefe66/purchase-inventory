@@ -461,8 +461,12 @@ export async function readCronLogToday(
       range: `'${CRON_LOG_TAB}'!A:H`,
     });
     raw = (resp.data.values ?? []) as (string | number)[][];
-  } catch {
-    return []; // Tab probably doesn't exist yet.
+  } catch (err) {
+    // Only swallow "tab/range not found" — let real failures (auth, quota,
+    // network) propagate so the cron's error path surfaces them.
+    const code = (err as { code?: number }).code;
+    if (code === 400 || code === 404) return [];
+    throw err;
   }
   if (raw.length < 2) return [];
 

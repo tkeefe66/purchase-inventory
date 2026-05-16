@@ -121,4 +121,17 @@ describe('readCronLogToday', () => {
     };
     expect(await readCronLogToday(sheets as never, 'sheet-id', '2026-05-15')).toEqual([]);
   });
+
+  test('propagates non-404 errors (auth/network/quota) rather than swallowing them', async () => {
+    const sheets = {
+      spreadsheets: {
+        values: {
+          get: vi.fn().mockRejectedValue({ code: 503, message: 'Service Unavailable' }),
+        },
+      },
+    };
+    await expect(
+      readCronLogToday(sheets as never, 'sheet-id', '2026-05-15'),
+    ).rejects.toMatchObject({ code: 503 });
+  });
 });
