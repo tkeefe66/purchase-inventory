@@ -34,6 +34,10 @@ function mockSheets(opts: { existingTabs: string[]; existingRows?: (string | num
           appended.push(...req.requestBody.values);
           return { data: {} };
         }),
+        batchUpdate: vi.fn(async (req: { requestBody: { data: { range: string; values: unknown[][] }[] } }) => {
+          for (const d of req.requestBody.data) updated.push({ range: d.range, values: d.values });
+          return { data: {} };
+        }),
       },
     },
   };

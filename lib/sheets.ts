@@ -637,6 +637,7 @@ export async function mirrorCampingIndex(
     });
   }
 
+  const valueUpdates: { range: string; values: unknown[][] }[] = [];
   const toAppend: unknown[][] = [];
   for (const f of facilities) {
     const row = facilityRow(f, todayMt);
@@ -646,17 +647,23 @@ export async function mirrorCampingIndex(
       const notes: string | number | boolean = (typeof existing.notes === 'string' || typeof existing.notes === 'number' || typeof existing.notes === 'boolean') ? existing.notes : '';
       row.push(muted);
       row.push(notes);
-      await sheets.spreadsheets.values.update({
-        spreadsheetId,
+      valueUpdates.push({
         range: `'${CAMPING_INDEX_TAB}'!A${existing.gridRow}`,
-        valueInputOption: 'RAW',
-        requestBody: { values: [row] },
+        values: [row],
       });
     } else {
       row.push(false);
       row.push('');
       toAppend.push(row);
     }
+  }
+  // Batch all per-row updates into a single API call to stay under Sheets'
+  // 60 writes/min/user quota — N facilities = 1 request instead of N.
+  if (valueUpdates.length > 0) {
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId,
+      requestBody: { valueInputOption: 'RAW', data: valueUpdates },
+    });
   }
   if (toAppend.length > 0) {
     await sheets.spreadsheets.values.append({
