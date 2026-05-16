@@ -2,6 +2,8 @@ import { describe, test, expect, vi } from 'vitest';
 import {
   createWeatherClient,
   ForecastError,
+  type PirateHourData,
+  type PirateWeatherResponse,
 } from '../../../../domains/outdoor/integrations/weather.js';
 
 describe('weather module', () => {
@@ -170,5 +172,58 @@ describe('Pirate Weather daily mapping', () => {
     });
     expect(result.daily[0]!.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(result.daily[1]!.precipProbability).toBeCloseTo(0.85);
+  });
+});
+
+describe('Pirate Weather hourly anchoring', () => {
+  test('hourlyTomorrow has 24 entries starting at destination-local midnight', async () => {
+    // Byron Bay, AUS — UTC+10 (no DST in NSW for our purposes). When Tom asks at
+    // Mountain noon (19:00 UTC), Byron Bay is already 05:00 the next day local.
+    // "Tomorrow" should be the day AFTER Byron Bay's current day.
+    // Pirate Weather returns hourly UTC timestamps; we filter to entries whose
+    // destination-local date matches tomorrow's destination-local date.
+
+    // Fixed "now": 2026-05-15 19:00 UTC. Byron Bay local: 2026-05-16 05:00.
+    // Byron Bay's "tomorrow" → 2026-05-17.
+    const nowUtcMs = Date.UTC(2026, 4, 15, 19, 0, 0); // May=4
+    const tz = 'Australia/Sydney';
+
+    // Build 72 hourly entries starting 24h before "now" (so we have data
+    // before and after destination-local tomorrow).
+    const hourly: PirateHourData[] = [];
+    for (let h = -24; h < 72; h += 1) {
+      hourly.push({
+        time: Math.floor(nowUtcMs / 1000) + h * 3600,
+        summary: 'Mostly cloudy',
+        temperature: 70 + (h % 5),
+        precipProbability: 0.1,
+        windSpeed: 8,
+      });
+    }
+
+    const fetchImpl = mockFetch(new Map<string | RegExp, { status: number; json: unknown }>([
+      ['nominatim.openstreetmap.org', {
+        status: 200,
+        json: [{ lat: '-28.6474', lon: '153.6020', display_name: 'Byron Bay, NSW, Australia' }],
+      }],
+      ['pirateweather.net', {
+        status: 200,
+        json: {
+          latitude: -28.6474, longitude: 153.6020, timezone: tz,
+          daily: { data: [] },
+          hourly: { data: hourly },
+        } satisfies PirateWeatherResponse,
+      }],
+    ]));
+
+    const client = createWeatherClient({ apiKey: 'test', fetchImpl, now: () => nowUtcMs });
+    const result = await client.getForecast({ location: 'Byron Bay', days: 1 });
+
+    expect(result.hourlyTomorrow).toHaveLength(24);
+    // Every entry's destination-local date must equal 2026-05-17 (Byron Bay tomorrow).
+    for (const entry of result.hourlyTomorrow) {
+      const date = entry.time.slice(0, 10);
+      expect(date).toBe('2026-05-17');
+    }
   });
 });

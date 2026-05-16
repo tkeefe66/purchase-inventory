@@ -66,7 +66,7 @@ interface NominatimResult {
   display_name: string;
 }
 
-interface PirateWeatherResponse {
+export interface PirateWeatherResponse {
   latitude: number;
   longitude: number;
   timezone: string;
@@ -84,7 +84,7 @@ interface PirateDayData {
   windSpeed: number;
 }
 
-interface PirateHourData {
+export interface PirateHourData {
   time: number;
   summary: string;
   temperature: number;
@@ -103,6 +103,31 @@ function mapDaily(fc: PirateWeatherResponse, days: number): DailyForecast[] {
     windMaxMph: d.windSpeed,
     conditions: d.summary,
   }));
+}
+
+function destinationTomorrow(nowMs: number, tz: string): string {
+  const todayStr = formatInTimeZone(nowMs, tz, 'yyyy-MM-dd');
+  const nextMs = nowMs + 24 * 60 * 60 * 1000;
+  let candidate = formatInTimeZone(nextMs, tz, 'yyyy-MM-dd');
+  if (candidate === todayStr) {
+    candidate = formatInTimeZone(nextMs + 60 * 60 * 1000, tz, 'yyyy-MM-dd');
+  }
+  return candidate;
+}
+
+function mapHourlyTomorrow(fc: PirateWeatherResponse, nowMs: number): HourlyForecast[] {
+  const entries = fc.hourly?.data ?? [];
+  const tz = fc.timezone;
+  const targetDate = destinationTomorrow(nowMs, tz);
+  return entries
+    .filter((h) => formatInTimeZone(h.time * 1000, tz, 'yyyy-MM-dd') === targetDate)
+    .map((h) => ({
+      time: formatInTimeZone(h.time * 1000, tz, "yyyy-MM-dd'T'HH:mm:ssXXX"),
+      tempF: h.temperature,
+      precipProbability: h.precipProbability,
+      windMph: h.windSpeed,
+      conditions: h.summary,
+    }));
 }
 
 export function createWeatherClient(opts: WeatherClientOptions): WeatherClient {
@@ -161,7 +186,7 @@ export function createWeatherClient(opts: WeatherClientOptions): WeatherClient {
       return {
         resolved: { name, lat, lon, timezone: fc.timezone },
         daily: mapDaily(fc, input.days),
-        hourlyTomorrow: [],
+        hourlyTomorrow: mapHourlyTomorrow(fc, now()),
       };
     },
   };
