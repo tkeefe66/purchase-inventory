@@ -7,6 +7,6 @@
   "deploy": {
     "startCommand": "node dist/apps/cron/index.js",
     "restartPolicyType": "NEVER",
-    "cronSchedule": "0 12,0 * * *"
+    "cronSchedule": "0 * * * *"
   }
 }
