@@ -47,4 +47,19 @@ describe('geocoding (Nominatim)', () => {
     expect(result.resolved.lon).toBeCloseTo(-109.5498);
     expect(result.resolved.name).toContain('Moab');
   });
+
+  test('caches geocode results across calls', async () => {
+    const responses = new Map<string | RegExp, { status: number; json: unknown }>([
+      ['nominatim.openstreetmap.org', { status: 200, json: NOMINATIM_MOAB }],
+      ['pirateweather.net', { status: 200, json: { latitude: 38.57, longitude: -109.55, timezone: 'America/Denver', daily: { data: [] }, hourly: { data: [] } } }],
+    ]);
+    const fetchImpl = mockFetch(responses);
+    const client = createWeatherClient({ apiKey: 'test', fetchImpl });
+    await client.getForecast({ location: 'Moab, UT', days: 1 });
+    await client.getForecast({ location: 'Moab, UT', days: 1 });
+
+    const calls = (fetchImpl as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const nominatimCalls = calls.filter(([url]) => String(url).includes('nominatim'));
+    expect(nominatimCalls).toHaveLength(1);
+  });
 });

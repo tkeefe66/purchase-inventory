@@ -90,8 +90,12 @@ interface PirateHourData {
 
 export function createWeatherClient(opts: WeatherClientOptions): WeatherClient {
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+  const geocodeCache = new Map<string, { lat: number; lon: number; name: string }>();
 
   async function geocode(query: string): Promise<{ lat: number; lon: number; name: string }> {
+    const key = query.trim().toLowerCase();
+    const cached = geocodeCache.get(key);
+    if (cached) return cached;
     const url = `${NOMINATIM_URL}?q=${encodeURIComponent(query)}&format=json&limit=1`;
     const res = await fetchImpl(url, {
       headers: { 'User-Agent': 'outdoor-inventory-bot/1.0 (tkeefe66@gmail.com)' },
@@ -104,7 +108,9 @@ export function createWeatherClient(opts: WeatherClientOptions): WeatherClient {
       throw new ForecastError('no_match', 'nominatim', undefined, `no match for "${query}"`);
     }
     const first = body[0]!;
-    return { lat: parseFloat(first.lat), lon: parseFloat(first.lon), name: first.display_name };
+    const resolved = { lat: parseFloat(first.lat), lon: parseFloat(first.lon), name: first.display_name };
+    geocodeCache.set(key, resolved);
+    return resolved;
   }
 
   async function fetchForecast(lat: number, lon: number): Promise<PirateWeatherResponse> {
