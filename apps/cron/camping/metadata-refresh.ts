@@ -1,5 +1,6 @@
 import type { CampingIndex, Facility } from '../../../lib/reccgov/types.js';
 import type { RecGovClient } from '../../../lib/reccgov/client.js';
+import { seasonForFacility } from '../../../lib/reccgov/seasons.js';
 
 const TENT_TYPES = new Set([
   'TENT ONLY NONELECTRIC', 'TENT ONLY ELECTRIC',
@@ -38,12 +39,13 @@ export async function runMetadataRefresh(opts: RunMetadataRefreshOpts): Promise<
         : deriveTentEligible(await opts.client.getFacilityCampsites(f.facilityId));
       const totalSites = f.useType === 'day-use' ? 0 : tentSites.length;
       const amenities = (meta.amenities as string[] | undefined) ?? [];
+      const seasonFallback = seasonForFacility(f.facilityId);
       const updated: Facility = {
         ...f,
         leadTimeDays: meta.leadTimeDays ?? f.leadTimeDays ?? 180,
         specialReleaseDate: meta.specialReleaseDate ?? f.specialReleaseDate,
-        seasonStart: meta.seasonStart ?? f.seasonStart,
-        seasonEnd: meta.seasonEnd ?? f.seasonEnd,
+        seasonStart: meta.seasonStart ?? f.seasonStart ?? seasonFallback.seasonStart,
+        seasonEnd: meta.seasonEnd ?? f.seasonEnd ?? seasonFallback.seasonEnd,
         feeUSD: meta.feeUSD ?? f.feeUSD ?? 0,
         reservationType: meta.reservationType ?? f.reservationType ?? 'reservation',
         restrictions: (meta.restrictions as string[] | undefined) ?? f.restrictions,

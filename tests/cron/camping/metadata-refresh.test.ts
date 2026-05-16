@@ -43,4 +43,30 @@ describe('runMetadataRefresh', () => {
     expect(rv.active).toBe(false);
     expect(result.deactivated).toBe(1);
   });
+
+  test('falls back to DEFAULT_SEASON when RIDB returns no seasonStart/seasonEnd', async () => {
+    // RIDB v1 reality: getFacility does NOT return season fields. Without
+    // the seasonForFacility fallback, seasonStart stays null and T10's
+    // 90-day season-opener nudge never fires.
+    const existing: CampingIndex = {
+      facilities: [
+        { facilityId: 'NOSEASON', name: 'X', state: 'CO', parentUnit: 'Y', region: null, lat: 0, lng: 0,
+          agency: 'USFS', useType: 'overnight', leadTimeDays: 0, specialReleaseDate: null,
+          seasonStart: null, seasonEnd: null, feeUSD: 0, reservationType: 'reservation',
+          tentEligibleSites: [], totalSites: 0, restrictions: [], amenities: [], hasRestrooms: false,
+          reservationUrl: '', lastMetadataRefresh: '', active: true },
+      ],
+    };
+    const client = {
+      getFacility: vi.fn(async () => ({ /* no seasonStart, no seasonEnd */ })),
+      getFacilityCampsites: vi.fn(async () => [
+        { campsiteId: 'S1', campsiteType: 'TENT ONLY NONELECTRIC' },
+      ]),
+    };
+
+    const result = await runMetadataRefresh({ existingIndex: existing, client: client as never });
+    const f = result.index.facilities[0]!;
+    expect(f.seasonStart).toBe('05-15');
+    expect(f.seasonEnd).toBe('10-15');
+  });
 });
