@@ -1,5 +1,4 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { formatInTimeZone } from 'date-fns-tz';
 import { createClassifier } from '../../lib/classifier.js';
 import { dedupItems } from '../../lib/dedup.js';
 import {
@@ -31,7 +30,6 @@ import {
   pickRole,
   pickSource,
 } from '../../lib/sources.js';
-import { sendMessage } from '../../lib/telegram.js';
 import type { MasterRow, Source } from '../../lib/types.js';
 
 const PROCESSED_LABEL = process.env.PROCESSED_LABEL ?? 'inventory-processed';
@@ -246,26 +244,6 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineResult
 
   result.endedAt = new Date().toISOString();
 
-  // Telegram digest
-  if (opts.telegramBotToken && opts.telegramChatId) {
-    try {
-      await sendMessage(
-        { botToken: opts.telegramBotToken },
-        {
-          chat_id: opts.telegramChatId,
-          text: formatDigest(result),
-          // Always audible — Tom wants a daily heartbeat confirming the cron ran,
-          // not just a noisy ping on activity. If this becomes too chatty, we'll
-          // dial it back to "audible on activity, silent only when nothing
-          // interesting changed AND it's mid-week".
-          disable_notification: false,
-        },
-      );
-    } catch (err) {
-      log(`✗ Telegram digest failed: ${err instanceof Error ? err.message : err}`);
-    }
-  }
-
   return result;
 }
 
@@ -361,47 +339,6 @@ async function safeGetSubject(gmail: GmailClient, msgId: string): Promise<string
   } catch {
     return '(failed to fetch subject)';
   }
-}
-
-function formatDigest(r: PipelineResult): string {
-  const tz = process.env.TZ ?? 'America/Denver';
-  const when = formatInTimeZone(new Date(r.startedAt), tz, 'EEE MMM d, h:mm a zzz');
-  const lines: string[] = [];
-  lines.push(`Inventory cron @ ${when}${r.dryRun ? ' [DRY RUN]' : ''}`);
-
-  if (r.itemsAdded > 0) {
-    lines.push(`✅ ${r.itemsAdded} new item${r.itemsAdded === 1 ? '' : 's'}`);
-    const bySource = Object.entries(r.itemsBySource).map(([k, v]) => `${k}: ${v}`).join(', ');
-    if (bySource) lines.push(`   ${bySource}`);
-    const byDomain = Object.entries(r.itemsByDomain)
-      .sort(([, a], [, b]) => b - a)
-      .map(([k, v]) => `${k}: ${v}`)
-      .join(', ');
-    if (byDomain) lines.push(`   Domains: ${byDomain}`);
-  } else {
-    lines.push(`📭 No new items`);
-  }
-
-  lines.push(
-    `${r.messagesScanned} email${r.messagesScanned === 1 ? '' : 's'} scanned, ${r.skippedNonReceipts} skipped (non-receipts), ${r.duplicatesIgnored} duplicates filtered`,
-  );
-
-  if (r.returnsApplied > 0 || r.returnsUnmatched > 0) {
-    const parts: string[] = [];
-    if (r.returnsApplied > 0) parts.push(`${r.returnsApplied} returned`);
-    if (r.returnsUnmatched > 0) parts.push(`${r.returnsUnmatched} return(s) unmatched`);
-    lines.push(`↩️ ${parts.join(', ')}`);
-  }
-
-  if (r.errors.length > 0) {
-    lines.push(`❌ ${r.errors.length} error${r.errors.length === 1 ? '' : 's'}:`);
-    for (const e of r.errors.slice(0, 5)) {
-      lines.push(`   • ${e.subject.slice(0, 50)} — ${e.error.slice(0, 100)}`);
-    }
-    if (r.errors.length > 5) lines.push(`   …and ${r.errors.length - 5} more`);
-  }
-
-  return lines.join('\n');
 }
 
 function log(msg: string): void {
