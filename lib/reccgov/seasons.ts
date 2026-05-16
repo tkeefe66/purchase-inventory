@@ -1,5 +1,6 @@
 import { formatInTimeZone } from 'date-fns-tz';
-import type { Facility } from './types.js';
+import type { Facility, BookingWindows } from './types.js';
+import type { RateSeason } from './client.js';
 
 /**
  * Season-window data layer for Rec.gov facilities.
@@ -99,4 +100,57 @@ export function nextReminderDate(
 ): string | null {
   const open = nextSeasonOpenDate(f, todayMt);
   return open ? addDays(open, -90) : null;
+}
+
+/**
+ * Derive a facility's booking-windows from Rec.gov's /rates response.
+ *
+ * The rates_list is a chronological list of "season" blocks, each typed as
+ * "Walk In" (= FCFS) or "Peak"/"Off-Peak"/etc. (= reservable). A campground's
+ * yearly cycle is a contiguous group of these blocks. We treat any gap of
+ * more than 60 days between consecutive blocks as the boundary between
+ * cycles. The "upcoming cycle" is the first cycle whose last season hasn't
+ * yet ended.
+ *
+ * From that cycle we derive:
+ *   seasonOpenDate      = first season_start
+ *   fcfsStartDate       = first "Walk In" season_start (if any)
+ *   reservableStartDate = first non-Walk-In season_start (if any)
+ *   seasonCloseDate     = last season_end
+ *   nextSeasonStartDate = next cycle's first season_start (if any)
+ */
+export function deriveBookingWindows(rates: readonly RateSeason[], todayIso: string): BookingWindows {
+  const upcoming = rates
+    .filter((r) => r.season_end.slice(0, 10) >= todayIso)
+    .map((r) => ({ ...r, _start: r.season_start.slice(0, 10), _end: r.season_end.slice(0, 10) }))
+    .sort((a, b) => a._start.localeCompare(b._start));
+
+  if (upcoming.length === 0) {
+    return { seasonOpenDate: null, fcfsStartDate: null, reservableStartDate: null, seasonCloseDate: null, nextSeasonStartDate: null };
+  }
+
+  const CYCLE_GAP_DAYS = 60;
+  const cycle: typeof upcoming = [upcoming[0]!];
+  let firstAfterCycle: typeof upcoming[number] | null = null;
+  for (let i = 1; i < upcoming.length; i++) {
+    const prevEnd = new Date(`${cycle[cycle.length - 1]!._end}T00:00:00Z`).getTime();
+    const thisStart = new Date(`${upcoming[i]!._start}T00:00:00Z`).getTime();
+    const gapDays = (thisStart - prevEnd) / (24 * 60 * 60 * 1000);
+    if (gapDays > CYCLE_GAP_DAYS) {
+      firstAfterCycle = upcoming[i]!;
+      break;
+    }
+    cycle.push(upcoming[i]!);
+  }
+
+  const fcfs = cycle.find((s) => s.season_type === 'Walk In');
+  const reservable = cycle.find((s) => s.season_type !== 'Walk In');
+
+  return {
+    seasonOpenDate: cycle[0]!._start,
+    fcfsStartDate: fcfs ? fcfs._start : null,
+    reservableStartDate: reservable ? reservable._start : null,
+    seasonCloseDate: cycle[cycle.length - 1]!._end,
+    nextSeasonStartDate: firstAfterCycle ? firstAfterCycle._start : null,
+  };
 }

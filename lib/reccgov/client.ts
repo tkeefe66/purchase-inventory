@@ -1,6 +1,10 @@
 import type { Facility, RecGovError } from './types.js';
 
 const BASE_URL = 'https://ridb.recreation.gov/api/v1';
+// The recreation.gov internal API powers the user-facing site (booking
+// timeline, rates, releases). It's unauthenticated for the read endpoints
+// we use, but we still pace requests to be a good citizen.
+const PUBLIC_BASE_URL = 'https://www.recreation.gov/api/camps';
 
 export interface RecGovClientOpts {
   apiKey: string;
@@ -15,10 +19,32 @@ export interface FacilitySearchOpts {
   offset?: number;
 }
 
+export interface ReleasesResponse {
+  current_release: ReleaseBlock | null;
+  next_release: ReleaseBlock | null;
+}
+export interface ReleaseBlock {
+  release_time: string;   // ISO timestamp with timezone offset, e.g. "2026-05-16T17:00:00-04:00"
+  end: string;             // ISO timestamp
+  sliding_end?: string;
+}
+
+export interface RatesResponse {
+  rates_list: RateSeason[];
+}
+export interface RateSeason {
+  season_start: string;    // ISO timestamp (date portion only is significant)
+  season_end: string;
+  season_type: string;     // "Walk In", "Peak", "Off-Peak", etc.
+  season_description?: string;
+}
+
 export interface RecGovClient {
   searchFacilities(opts: FacilitySearchOpts): Promise<Partial<Facility>[]>;
   getFacility(facilityId: string): Promise<Partial<Facility>>;
   getFacilityCampsites(facilityId: string): Promise<Array<{ campsiteId: string; campsiteType: string }>>;
+  getCampgroundReleases(facilityId: string): Promise<ReleasesResponse>;
+  getCampgroundRates(facilityId: string): Promise<RatesResponse>;
 }
 
 function makeError(code: RecGovError['code'], message: string, status?: number): RecGovError {
@@ -44,11 +70,18 @@ export function createRecGovClient(opts: RecGovClientOpts): RecGovClient {
   async function call<T>(path: string, query: Record<string, string | number>): Promise<T> {
     const url = new URL(`${BASE_URL}${path}`);
     for (const [k, v] of Object.entries(query)) url.searchParams.set(k, String(v));
+    return runRequest<T>(url, { apikey: opts.apiKey, Accept: 'application/json' }, path);
+  }
+
+  async function callPublic<T>(path: string): Promise<T> {
+    const url = new URL(`${PUBLIC_BASE_URL}${path}`);
+    return runRequest<T>(url, { Accept: 'application/json', 'User-Agent': 'outdoor-inventory/1.0' }, path);
+  }
+
+  async function runRequest<T>(url: URL, headers: Record<string, string>, path: string): Promise<T> {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       await pace();
-      const resp = await fetch(url.toString(), {
-        headers: { apikey: opts.apiKey, Accept: 'application/json' },
-      });
+      const resp = await fetch(url.toString(), { headers });
       if (resp.status === 429) {
         if (attempt === maxRetries) throw makeError('rate_limited', `Rec.gov 429 after ${maxRetries} retries`, 429);
         await new Promise((r) => setTimeout(r, retryDelayMs * Math.pow(2, attempt)));
@@ -100,6 +133,12 @@ export function createRecGovClient(opts: RecGovClientOpts): RecGovClient {
         campsiteId: String(r.CampsiteID ?? ''),
         campsiteType: String(r.CampsiteType ?? ''),
       }));
+    },
+    async getCampgroundReleases(facilityId) {
+      return callPublic<ReleasesResponse>(`/campgrounds/${facilityId}/releases`);
+    },
+    async getCampgroundRates(facilityId) {
+      return callPublic<RatesResponse>(`/campgrounds/${facilityId}/rates`);
     },
   };
 }

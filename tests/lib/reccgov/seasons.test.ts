@@ -7,7 +7,9 @@ import {
   todayMtDateString,
   nextSeasonOpenDate,
   nextReminderDate,
+  deriveBookingWindows,
 } from '../../../lib/reccgov/seasons.js';
+import type { RateSeason } from '../../../lib/reccgov/client.js';
 
 describe('seasonForFacility', () => {
   test('returns DEFAULT_SEASON for an un-overridden facility', () => {
@@ -80,5 +82,59 @@ describe('nextReminderDate', () => {
   test('returns null when no open date is known', () => {
     const f = { specialReleaseDate: null, seasonStart: null, leadTimeDays: 0 };
     expect(nextReminderDate(f, '2026-08-18')).toBeNull();
+  });
+});
+
+describe('deriveBookingWindows', () => {
+  // Real-world example from Rec.gov CASCADE (231866). Captured 2026-05-16.
+  const cascadeRates: RateSeason[] = [
+    { season_start: '2026-05-15T00:00:00Z', season_end: '2026-05-21T00:00:00Z', season_type: 'Walk In', season_description: 'First-come, First-served Season' },
+    { season_start: '2026-05-22T00:00:00Z', season_end: '2026-09-21T00:00:00Z', season_type: 'Peak', season_description: 'Peak Season' },
+    { season_start: '2026-09-22T00:00:00Z', season_end: '2026-10-11T00:00:00Z', season_type: 'Walk In', season_description: '' },
+    { season_start: '2027-06-04T00:00:00Z', season_end: '2027-09-18T00:00:00Z', season_type: 'Peak', season_description: 'Peak Season' },
+    // Older historical seasons that should be filtered out
+    { season_start: '2025-05-23T00:00:00Z', season_end: '2025-10-11T00:00:00Z', season_type: 'Peak', season_description: 'Peak Season' },
+  ];
+
+  test('derives the full booking-windows from CASCADE real-world rates_list', () => {
+    const out = deriveBookingWindows(cascadeRates, '2026-05-16');
+    expect(out).toEqual({
+      seasonOpenDate: '2026-05-15',
+      fcfsStartDate: '2026-05-15',
+      reservableStartDate: '2026-05-22',
+      seasonCloseDate: '2026-10-11',
+      nextSeasonStartDate: '2027-06-04',
+    });
+  });
+
+  test('returns all nulls when no upcoming seasons remain', () => {
+    const stale: RateSeason[] = [
+      { season_start: '2020-05-15T00:00:00Z', season_end: '2020-10-11T00:00:00Z', season_type: 'Peak', season_description: '' },
+    ];
+    expect(deriveBookingWindows(stale, '2026-05-16')).toEqual({
+      seasonOpenDate: null, fcfsStartDate: null, reservableStartDate: null, seasonCloseDate: null, nextSeasonStartDate: null,
+    });
+  });
+
+  test('handles a single-season cycle (no FCFS bracket)', () => {
+    const r: RateSeason[] = [
+      { season_start: '2026-06-01T00:00:00Z', season_end: '2026-09-30T00:00:00Z', season_type: 'Peak', season_description: '' },
+    ];
+    const out = deriveBookingWindows(r, '2026-05-16');
+    expect(out.seasonOpenDate).toBe('2026-06-01');
+    expect(out.fcfsStartDate).toBeNull();
+    expect(out.reservableStartDate).toBe('2026-06-01');
+    expect(out.seasonCloseDate).toBe('2026-09-30');
+    expect(out.nextSeasonStartDate).toBeNull();
+  });
+
+  test('a gap of >60 days starts a new cycle', () => {
+    const r: RateSeason[] = [
+      { season_start: '2026-05-15T00:00:00Z', season_end: '2026-09-15T00:00:00Z', season_type: 'Peak', season_description: '' },
+      { season_start: '2026-12-15T00:00:00Z', season_end: '2027-03-01T00:00:00Z', season_type: 'Peak', season_description: '' }, // 91-day gap
+    ];
+    const out = deriveBookingWindows(r, '2026-05-16');
+    expect(out.seasonCloseDate).toBe('2026-09-15');
+    expect(out.nextSeasonStartDate).toBe('2026-12-15');
   });
 });

@@ -77,6 +77,8 @@ const CAMPING_INDEX_HEADERS = [
   'Lead Days', 'Special Release', 'Season Start', 'Season End', 'Fee',
   'Reservation Type', 'Use Type', 'Restrictions', 'Has Restrooms',
   'Amenities', 'Tent-Eligible Sites', 'Active',
+  'Season Opens', 'FCFS Start', 'Reservable Start', 'Season Close', 'Next Season Opens',
+  'Next Release Moment',
   'Next Calendar Opens', 'Next Reminder Fires',
   'Muted', 'Notes',
 ];

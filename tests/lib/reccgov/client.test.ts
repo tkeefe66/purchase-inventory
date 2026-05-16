@@ -97,3 +97,48 @@ describe('RecGovClient.getFacility', () => {
     expect(out.state).toBe('CO');
   });
 });
+
+describe('RecGovClient.getCampgroundReleases', () => {
+  beforeEach(() => { vi.restoreAllMocks(); });
+
+  test('hits the recreation.gov public API and returns the parsed response', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({
+        current_release: {
+          release_time: '2026-05-16T17:00:00-04:00',
+          end: '2026-10-11T00:00:00Z',
+          sliding_end: '2026-10-11T00:00:00Z',
+        },
+        next_release: {
+          release_time: '2026-12-04T10:00:00-05:00',
+          end: '2027-06-04T00:00:00Z',
+        },
+      }), { status: 200 }),
+    );
+    const client = createRecGovClient({ apiKey: 'TEST' });
+    const out = await client.getCampgroundReleases('231866');
+    expect(out.current_release?.release_time).toBe('2026-05-16T17:00:00-04:00');
+    expect(out.next_release?.release_time).toBe('2026-12-04T10:00:00-05:00');
+    expect((spy.mock.calls[0]![0] as string)).toContain('recreation.gov/api/camps/campgrounds/231866/releases');
+  });
+});
+
+describe('RecGovClient.getCampgroundRates', () => {
+  beforeEach(() => { vi.restoreAllMocks(); });
+
+  test('returns the parsed rates_list', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({
+        rates_list: [
+          { season_start: '2026-05-15T00:00:00Z', season_end: '2026-05-21T00:00:00Z', season_type: 'Walk In', season_description: 'First-come, First-served Season' },
+          { season_start: '2026-05-22T00:00:00Z', season_end: '2026-09-21T00:00:00Z', season_type: 'Peak', season_description: 'Peak Season' },
+        ],
+      }), { status: 200 }),
+    );
+    const client = createRecGovClient({ apiKey: 'TEST' });
+    const out = await client.getCampgroundRates('231866');
+    expect(out.rates_list).toHaveLength(2);
+    expect(out.rates_list[0]!.season_type).toBe('Walk In');
+    expect((spy.mock.calls[0]![0] as string)).toContain('recreation.gov/api/camps/campgrounds/231866/rates');
+  });
+});

@@ -8,6 +8,8 @@ const HEADER = [
   'Lead Days', 'Special Release', 'Season Start', 'Season End', 'Fee',
   'Reservation Type', 'Use Type', 'Restrictions', 'Has Restrooms',
   'Amenities', 'Tent-Eligible Sites', 'Active',
+  'Season Opens', 'FCFS Start', 'Reservable Start', 'Season Close', 'Next Season Opens',
+  'Next Release Moment',
   'Next Calendar Opens', 'Next Reminder Fires',
   'Muted', 'Notes',
 ];
@@ -72,30 +74,67 @@ describe('mirrorCampingIndex', () => {
   test('updates existing rows by Facility ID without touching Muted or Notes', async () => {
     const { sheets, updated } = mockSheets({
       existingTabs: ['All Purchases', 'Camping Index'],
-      // 25 cols: ID(0), Name(1), Site URL(2), Map URL(3), Agency(4), ParentUnit(5),
+      // 31 cols: ID(0), Name(1), Site URL(2), Map URL(3), Agency(4), ParentUnit(5),
       // Region(6), Lat(7), Lng(8), LeadDays(9), SpecialRelease(10), SeasonStart(11),
       // SeasonEnd(12), Fee(13), ReservationType(14), UseType(15), Restrictions(16),
       // HasRestrooms(17), Amenities(18), TentSites(19), Active(20),
-      // NextCalendarOpens(21), NextReminderFires(22), Muted(23), Notes(24)
-      existingRows: [['F1', 'Old Name', '', '', 'USFS', '', '', 0, 0, 0, '', '', '', 0, '', '', '', false, '', '', false, '', '', true, 'my notes']],
+      // SeasonOpens(21), FCFSStart(22), ReservableStart(23), SeasonClose(24),
+      // NextSeasonOpens(25), NextReleaseMoment(26),
+      // NextCalendarOpens(27), NextReminderFires(28), Muted(29), Notes(30)
+      existingRows: [['F1', 'Old Name', '', '', 'USFS', '', '', 0, 0, 0, '', '', '', 0, '', '', '', false, '', '', false,
+        '', '', '', '', '', '', '', '', true, 'my notes']],
     });
     await mirrorCampingIndex(sheets as never, 'sid', [sampleFacility]);
     expect(updated.length).toBeGreaterThan(0);
     const updatedRow = updated.find((u) => u.range.includes('A2'))!.values[0]!;
     expect(updatedRow[1]).toBe('Test CG');         // Name updated
-    expect(updatedRow[23]).toBe(true);              // Muted preserved (col index 23)
-    expect(updatedRow[24]).toBe('my notes');        // Notes preserved (col index 24)
+    expect(updatedRow[29]).toBe(true);              // Muted preserved (col index 29)
+    expect(updatedRow[30]).toBe('my notes');        // Notes preserved (col index 30)
   });
 
   test('writes computed Next Calendar Opens + Next Reminder Fires for rolling-release sites', async () => {
     const { sheets, appended } = mockSheets({ existingTabs: ['All Purchases', 'Camping Index'] });
     await mirrorCampingIndex(sheets as never, 'sid', [sampleFacility]);
     expect(appended).toHaveLength(1);
-    const nextOpens = appended[0]![21] as string;       // col index 21
-    const nextReminder = appended[0]![22] as string;    // col index 22
+    const nextOpens = appended[0]![27] as string;       // heuristic Next Calendar Opens
+    const nextReminder = appended[0]![28] as string;    // heuristic Next Reminder Fires
     expect(nextOpens).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(nextReminder).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(nextReminder < nextOpens).toBe(true);
+  });
+
+  test('writes Tier-3 booking-windows columns when facility has bookingWindows data', async () => {
+    const facilityWithBW: Facility = {
+      ...sampleFacility,
+      bookingWindows: {
+        seasonOpenDate: '2026-05-15',
+        fcfsStartDate: '2026-05-15',
+        reservableStartDate: '2026-05-22',
+        seasonCloseDate: '2026-09-21',
+        nextSeasonStartDate: '2027-06-04',
+      },
+      nextReleaseAtIso: '2026-05-16T17:00:00-04:00',
+    };
+    const { sheets, appended } = mockSheets({ existingTabs: ['All Purchases', 'Camping Index'] });
+    await mirrorCampingIndex(sheets as never, 'sid', [facilityWithBW]);
+    expect(appended[0]![21]).toBe('2026-05-15');   // Season Opens
+    expect(appended[0]![22]).toBe('2026-05-15');   // FCFS Start
+    expect(appended[0]![23]).toBe('2026-05-22');   // Reservable Start
+    expect(appended[0]![24]).toBe('2026-09-21');   // Season Close
+    expect(appended[0]![25]).toBe('2027-06-04');   // Next Season Opens
+    expect(appended[0]![26]).toMatch(/2026-05-16 15:00 MDT/); // Next Release Moment (17:00 EDT = 15:00 MDT)
+  });
+
+  test('emits blanks for Tier-3 columns when bookingWindows is absent', async () => {
+    const { sheets, appended } = mockSheets({ existingTabs: ['All Purchases', 'Camping Index'] });
+    await mirrorCampingIndex(sheets as never, 'sid', [sampleFacility]);
+    // sampleFacility has no bookingWindows / nextReleaseAtIso
+    expect(appended[0]![21]).toBe('');
+    expect(appended[0]![22]).toBe('');
+    expect(appended[0]![23]).toBe('');
+    expect(appended[0]![24]).toBe('');
+    expect(appended[0]![25]).toBe('');
+    expect(appended[0]![26]).toBe('');
   });
 
   test('writes constructed Site URL + Map URL for each facility', async () => {
@@ -118,11 +157,14 @@ describe('readMutedFacilityIds', () => {
   test('returns Facility IDs where Muted=TRUE', async () => {
     const { sheets } = mockSheets({
       existingTabs: ['All Purchases', 'Camping Index'],
-      // 25-col rows: Muted at index 23
+      // 31-col rows: Active=true at 20, Muted at 29, Notes at 30
       existingRows: [
-        ['F1', 'A', '', '', 'USFS', '', '', 0, 0, 0, '', '', '', 0, '', '', '', false, '', '', true, '', '', true, ''],
-        ['F2', 'B', '', '', 'USFS', '', '', 0, 0, 0, '', '', '', 0, '', '', '', false, '', '', true, '', '', false, ''],
-        ['F3', 'C', '', '', 'USFS', '', '', 0, 0, 0, '', '', '', 0, '', '', '', false, '', '', true, '', '', 'TRUE', ''],
+        ['F1', 'A', '', '', 'USFS', '', '', 0, 0, 0, '', '', '', 0, '', '', '', false, '', '', true,
+          '', '', '', '', '', '', '', '', true, ''],
+        ['F2', 'B', '', '', 'USFS', '', '', 0, 0, 0, '', '', '', 0, '', '', '', false, '', '', true,
+          '', '', '', '', '', '', '', '', false, ''],
+        ['F3', 'C', '', '', 'USFS', '', '', 0, 0, 0, '', '', '', 0, '', '', '', false, '', '', true,
+          '', '', '', '', '', '', '', '', 'TRUE', ''],
       ],
     });
     const out = await readMutedFacilityIds(sheets as never, 'sid');

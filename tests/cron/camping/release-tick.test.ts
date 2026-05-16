@@ -68,4 +68,49 @@ describe('runReleaseTick', () => {
     });
     expect(res.fired).toBe(0);
   });
+
+  test('uses nextReleaseAtIso time-of-day for precise release timing when available', async () => {
+    // CASCADE-style: API says daily release fires at 17:00 EDT (= 21:00 UTC).
+    // Visit Aug 22, leadTime 180 → release calendar date Feb 23. With API time
+    // applied, the precise release moment is 2026-02-23T21:00:00Z.
+    const facility = f({ nextReleaseAtIso: '2026-05-16T17:00:00-04:00' });
+    const trips: CampingTrips = { trips: [{
+      id: 't1', facilityId: 'F1', visitDate: '2026-08-22',
+      plannedAt: '', nudges: [{ kind: 'release-moment', firedAt: null }], cancelledAt: null,
+    }] };
+
+    // Now = 2026-02-23T21:00:00Z (exact API release moment) → should fire
+    const fires = await runReleaseTick({
+      now: new Date('2026-02-23T21:00:00Z'),
+      index: { facilities: [facility] }, trips,
+      sendTelegram: async () => {},
+    });
+    expect(fires.fired).toBe(1);
+
+    // Now = 2026-02-23T05:00:00Z (old 5am UTC approximation) → should NOT fire
+    // because the precise release happens 16 hours later
+    const noFire = await runReleaseTick({
+      now: new Date('2026-02-23T05:00:00Z'),
+      index: { facilities: [facility] }, trips: { trips: [{
+        id: 't1', facilityId: 'F1', visitDate: '2026-08-22',
+        plannedAt: '', nudges: [{ kind: 'release-moment', firedAt: null }], cancelledAt: null,
+      }] },
+      sendTelegram: async () => {},
+    });
+    expect(noFire.fired).toBe(0);
+  });
+
+  test('falls back to 5am UTC approximation when nextReleaseAtIso is absent (pre-Tier-3 facilities)', async () => {
+    const facility = f(); // omits nextReleaseAtIso entirely
+    const trips: CampingTrips = { trips: [{
+      id: 't1', facilityId: 'F1', visitDate: '2026-08-22',
+      plannedAt: '', nudges: [{ kind: 'release-moment', firedAt: null }], cancelledAt: null,
+    }] };
+    const res = await runReleaseTick({
+      now: new Date('2026-02-23T05:00:00Z'),
+      index: { facilities: [facility] }, trips,
+      sendTelegram: async () => {},
+    });
+    expect(res.fired).toBe(1);
+  });
 });

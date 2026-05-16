@@ -15,19 +15,28 @@ export interface ReleaseTickResult {
 
 /**
  * Compute the release moment (UTC Date) for a trip on a given facility.
- * Rolling-release: 10pm MT the day before the release date (== midnight Eastern == 04:00 UTC during MDT, 05:00 UTC during MST).
- * Special release: 7am MT on specialReleaseDate.
- * We approximate: rolling = (visitDate - leadTimeDays) at 05:00 UTC; backstop window is ±5 min.
+ *
+ * Preferred path: if `f.nextReleaseAtIso` is set (populated by metadata-refresh
+ * from Rec.gov's /releases endpoint), use its time-of-day applied to
+ * (visitDate − leadTimeDays). Precise per-facility release time.
+ *
+ * Fallback (pre-Tier-3 facilities): 5am UTC approximation (~10pm MT prev day)
+ * for rolling releases, 14:00 UTC for special-release dates. ±5 min backstop
+ * in runReleaseTick covers minor drift.
  */
 function releaseAt(f: Facility, trip: { visitDate: string }): Date {
   if (f.specialReleaseDate) {
-    // 7am MT on special release date — use 14:00 UTC (works for both DST and STD with 5-min tolerance).
+    if (f.nextReleaseAtIso) return new Date(f.nextReleaseAtIso);
     return new Date(`${f.specialReleaseDate}T14:00:00Z`);
   }
-  // Rolling: midnight Eastern the day before booking-open.
   const releaseDate = new Date(`${trip.visitDate}T00:00:00Z`);
   releaseDate.setUTCDate(releaseDate.getUTCDate() - f.leadTimeDays);
-  releaseDate.setUTCHours(5, 0, 0, 0); // 10pm MT prev day in MST window
+  if (f.nextReleaseAtIso) {
+    const apiTime = new Date(f.nextReleaseAtIso);
+    releaseDate.setUTCHours(apiTime.getUTCHours(), apiTime.getUTCMinutes(), apiTime.getUTCSeconds(), 0);
+  } else {
+    releaseDate.setUTCHours(5, 0, 0, 0);
+  }
   return releaseDate;
 }
 

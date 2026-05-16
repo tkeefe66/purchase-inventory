@@ -1,6 +1,6 @@
-import type { CampingIndex, Facility } from '../../../lib/reccgov/types.js';
+import type { CampingIndex, Facility, BookingWindows } from '../../../lib/reccgov/types.js';
 import type { RecGovClient } from '../../../lib/reccgov/client.js';
-import { seasonForFacility, DEFAULT_LEAD_TIME_DAYS } from '../../../lib/reccgov/seasons.js';
+import { seasonForFacility, DEFAULT_LEAD_TIME_DAYS, deriveBookingWindows } from '../../../lib/reccgov/seasons.js';
 
 const TENT_TYPES = new Set([
   'TENT ONLY NONELECTRIC', 'TENT ONLY ELECTRIC',
@@ -30,6 +30,7 @@ export async function runMetadataRefresh(opts: RunMetadataRefreshOpts): Promise<
   let failures = 0;
   const out: Facility[] = [];
   const nowIso = new Date().toISOString();
+  const todayIso = nowIso.slice(0, 10);
   for (const f of opts.existingIndex.facilities) {
     if (!f.active) { out.push(f); continue; }
     try {
@@ -40,6 +41,29 @@ export async function runMetadataRefresh(opts: RunMetadataRefreshOpts): Promise<
       const totalSites = f.useType === 'day-use' ? 0 : tentSites.length;
       const amenities = (meta.amenities as string[] | undefined) ?? [];
       const seasonFallback = seasonForFacility(f.facilityId);
+      // Will this facility remain active? Only fetch /rates and /releases if so —
+      // saves ~95% of public-API calls on the first metadata-refresh pass.
+      const reservationType = (meta.reservationType ?? f.reservationType ?? 'reservation') as Facility['reservationType'];
+      const willRemainActive = !(f.useType === 'overnight' && tentSites.length === 0 && reservationType !== 'permit');
+
+      let nextReleaseAtIso: string | null = null;
+      let bookingWindows: BookingWindows | null = null;
+      if (willRemainActive) {
+        try {
+          const releases = await opts.client.getCampgroundReleases(f.facilityId);
+          nextReleaseAtIso = releases.current_release?.release_time ?? null;
+        } catch (err) {
+          // Not fatal — other fields still useful. Log and continue.
+          console.warn(`[metadata-refresh] ${f.facilityId} /releases failed:`, err instanceof Error ? err.message : err);
+        }
+        try {
+          const rates = await opts.client.getCampgroundRates(f.facilityId);
+          bookingWindows = deriveBookingWindows(rates.rates_list, todayIso);
+        } catch (err) {
+          console.warn(`[metadata-refresh] ${f.facilityId} /rates failed:`, err instanceof Error ? err.message : err);
+        }
+      }
+
       const updated: Facility = {
         ...f,
         // Use `||` not `??` here: index-refresh seeds new facilities with
@@ -51,7 +75,7 @@ export async function runMetadataRefresh(opts: RunMetadataRefreshOpts): Promise<
         seasonStart: meta.seasonStart ?? f.seasonStart ?? seasonFallback.seasonStart,
         seasonEnd: meta.seasonEnd ?? f.seasonEnd ?? seasonFallback.seasonEnd,
         feeUSD: meta.feeUSD ?? f.feeUSD ?? 0,
-        reservationType: meta.reservationType ?? f.reservationType ?? 'reservation',
+        reservationType,
         restrictions: (meta.restrictions as string[] | undefined) ?? f.restrictions,
         amenities,
         hasRestrooms: amenities.some((a) => RESTROOM_RE.test(a)),
@@ -59,6 +83,8 @@ export async function runMetadataRefresh(opts: RunMetadataRefreshOpts): Promise<
         tentEligibleSites: tentSites,
         totalSites,
         lastMetadataRefresh: nowIso,
+        nextReleaseAtIso,
+        bookingWindows,
       };
       if (f.useType === 'overnight' && updated.tentEligibleSites.length === 0 && updated.reservationType !== 'permit') {
         updated.active = false;

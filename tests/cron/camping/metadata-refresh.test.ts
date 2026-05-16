@@ -30,6 +30,8 @@ describe('runMetadataRefresh', () => {
           ? [{ campsiteId: 'S1', campsiteType: 'TENT ONLY NONELECTRIC' }, { campsiteId: 'S2', campsiteType: 'STANDARD NONELECTRIC' }]
           : [{ campsiteId: 'R1', campsiteType: 'RV ELECTRIC' }],
       ),
+      getCampgroundReleases: vi.fn(async () => ({ current_release: null, next_release: null })),
+      getCampgroundRates: vi.fn(async () => ({ rates_list: [] })),
     };
 
     const result = await runMetadataRefresh({ existingIndex: existing, client: client as never });
@@ -42,6 +44,70 @@ describe('runMetadataRefresh', () => {
     expect(rv.tentEligibleSites).toEqual([]);
     expect(rv.active).toBe(false);
     expect(result.deactivated).toBe(1);
+
+    // Optimization check: rates + releases NOT called for the soon-to-be-
+    // deactivated RV-only facility (saves ~95% of public API calls on first
+    // metadata-refresh pass).
+    expect(client.getCampgroundRates).toHaveBeenCalledTimes(1);
+    expect(client.getCampgroundReleases).toHaveBeenCalledTimes(1);
+    expect(client.getCampgroundRates).toHaveBeenCalledWith('TENT');
+  });
+
+  test('populates bookingWindows + nextReleaseAtIso from public endpoints', async () => {
+    const existing: CampingIndex = {
+      facilities: [{ facilityId: 'CASCADE', name: 'Cascade', state: 'CO', parentUnit: '', region: null,
+        lat: 0, lng: 0, agency: 'USFS', useType: 'overnight', leadTimeDays: 0,
+        specialReleaseDate: null, seasonStart: null, seasonEnd: null, feeUSD: 0,
+        reservationType: 'reservation', tentEligibleSites: [], totalSites: 0,
+        restrictions: [], amenities: [], hasRestrooms: false, reservationUrl: '',
+        lastMetadataRefresh: '', active: true }],
+    };
+    const client = {
+      getFacility: vi.fn(async () => ({})),
+      getFacilityCampsites: vi.fn(async () => [{ campsiteId: 'S1', campsiteType: 'TENT ONLY NONELECTRIC' }]),
+      getCampgroundReleases: vi.fn(async () => ({
+        current_release: { release_time: '2026-05-16T17:00:00-04:00', end: '2026-10-11T00:00:00Z' },
+        next_release: { release_time: '2026-12-04T10:00:00-05:00', end: '2027-06-04T00:00:00Z' },
+      })),
+      getCampgroundRates: vi.fn(async () => ({
+        rates_list: [
+          { season_start: '2026-05-15T00:00:00Z', season_end: '2026-05-21T00:00:00Z', season_type: 'Walk In', season_description: '' },
+          { season_start: '2026-05-22T00:00:00Z', season_end: '2026-09-21T00:00:00Z', season_type: 'Peak', season_description: '' },
+        ],
+      })),
+    };
+    const result = await runMetadataRefresh({ existingIndex: existing, client: client as never });
+    const f = result.index.facilities[0]!;
+    expect(f.nextReleaseAtIso).toBe('2026-05-16T17:00:00-04:00');
+    expect(f.bookingWindows).toEqual({
+      seasonOpenDate: '2026-05-15',
+      fcfsStartDate: '2026-05-15',
+      reservableStartDate: '2026-05-22',
+      seasonCloseDate: '2026-09-21',
+      nextSeasonStartDate: null,
+    });
+  });
+
+  test('gracefully sets bookingWindows=null when the public rates endpoint throws', async () => {
+    const existing: CampingIndex = {
+      facilities: [{ facilityId: 'X', name: 'X', state: 'CO', parentUnit: '', region: null,
+        lat: 0, lng: 0, agency: 'USFS', useType: 'overnight', leadTimeDays: 0,
+        specialReleaseDate: null, seasonStart: null, seasonEnd: null, feeUSD: 0,
+        reservationType: 'reservation', tentEligibleSites: [], totalSites: 0,
+        restrictions: [], amenities: [], hasRestrooms: false, reservationUrl: '',
+        lastMetadataRefresh: '', active: true }],
+    };
+    const client = {
+      getFacility: vi.fn(async () => ({})),
+      getFacilityCampsites: vi.fn(async () => [{ campsiteId: 'S1', campsiteType: 'TENT ONLY NONELECTRIC' }]),
+      getCampgroundReleases: vi.fn(async () => { throw new Error('500'); }),
+      getCampgroundRates: vi.fn(async () => { throw new Error('500'); }),
+    };
+    const result = await runMetadataRefresh({ existingIndex: existing, client: client as never });
+    const f = result.index.facilities[0]!;
+    expect(f.bookingWindows).toBeNull();
+    expect(f.nextReleaseAtIso).toBeNull();
+    expect(f.active).toBe(true); // not failed — main pipeline continued
   });
 
   test('falls back to DEFAULT_LEAD_TIME_DAYS (180) when index-refresh seeded leadTimeDays=0', async () => {
@@ -59,6 +125,8 @@ describe('runMetadataRefresh', () => {
     const client = {
       getFacility: vi.fn(async () => ({ /* no leadTimeDays from RIDB */ })),
       getFacilityCampsites: vi.fn(async () => [{ campsiteId: 'S1', campsiteType: 'TENT ONLY NONELECTRIC' }]),
+      getCampgroundReleases: vi.fn(async () => ({ current_release: null, next_release: null })),
+      getCampgroundRates: vi.fn(async () => ({ rates_list: [] })),
     };
     const result = await runMetadataRefresh({ existingIndex: existing, client: client as never });
     expect(result.index.facilities[0]!.leadTimeDays).toBe(180);
@@ -82,6 +150,8 @@ describe('runMetadataRefresh', () => {
       getFacilityCampsites: vi.fn(async () => [
         { campsiteId: 'S1', campsiteType: 'TENT ONLY NONELECTRIC' },
       ]),
+      getCampgroundReleases: vi.fn(async () => ({ current_release: null, next_release: null })),
+      getCampgroundRates: vi.fn(async () => ({ rates_list: [] })),
     };
 
     const result = await runMetadataRefresh({ existingIndex: existing, client: client as never });

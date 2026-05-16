@@ -560,9 +560,17 @@ const CAMPING_INDEX_HEADER = [
   'Lead Days', 'Special Release', 'Season Start', 'Season End', 'Fee',
   'Reservation Type', 'Use Type', 'Restrictions', 'Has Restrooms',
   'Amenities', 'Tent-Eligible Sites', 'Active',
+  // Rec.gov booking-windows data (this season's actual dates, from /rates)
+  'Season Opens', 'FCFS Start', 'Reservable Start', 'Season Close', 'Next Season Opens',
+  'Next Release Moment',
+  // Heuristic next-year planning (DEFAULT_SEASON-based, used when Rec.gov data unavailable)
   'Next Calendar Opens', 'Next Reminder Fires',
   'Muted', 'Notes',
 ] as const;
+
+// End-of-column reference for range strings, e.g. "A:AE" for the 31-column tab.
+// Uses the top-level colLetter exported above.
+const CAMPING_INDEX_RANGE_END = colLetter(CAMPING_INDEX_HEADER.length - 1);
 
 function siteUrlFor(facilityId: string): string {
   return `https://www.recreation.gov/camping/campgrounds/${facilityId}`;
@@ -570,6 +578,17 @@ function siteUrlFor(facilityId: string): string {
 
 function mapUrlFor(lat: number, lng: number): string {
   return `https://www.google.com/maps?q=${lat},${lng}`;
+}
+
+function fmtReleaseTimeMt(iso: string | null | undefined): string {
+  if (!iso) return '';
+  // Render the API release moment in Mountain Time for human readability.
+  // The bot fires the alert at the precise moment regardless of format here.
+  try {
+    return formatInTimeZone(new Date(iso), 'America/Denver', "yyyy-MM-dd HH:mm zzz");
+  } catch {
+    return '';
+  }
 }
 
 async function ensureCampingIndexTab(sheets: SheetsClient, spreadsheetId: string): Promise<void> {
@@ -607,13 +626,7 @@ async function ensureCampingIndexTab(sheets: SheetsClient, spreadsheetId: string
 function facilityRow(f: Facility, todayMt: string): (string | number | boolean)[] {
   const open = nextSeasonOpenDate(f, todayMt);
   const reminder = nextReminderDate(f, todayMt);
-  // Site URL emitted for every facility. The /camping/campgrounds/<id>
-  // path resolves correctly for actual Rec.gov campgrounds (including
-  // RV-only ones we deactivate). It will dead-link to a "something went
-  // wrong" page for non-campground facilities (trailheads, geological
-  // markers, etc.) — RIDB doesn't tell us which URL path applies to
-  // each facility type, so we emit the campgrounds path uniformly and
-  // accept some bad links over withholding good ones.
+  const bw = f.bookingWindows ?? null;
   return [
     f.facilityId, f.name, siteUrlFor(f.facilityId), mapUrlFor(f.lat, f.lng),
     f.agency, f.parentUnit, f.region ?? '',
@@ -622,6 +635,11 @@ function facilityRow(f: Facility, todayMt: string): (string | number | boolean)[
     f.reservationType, f.useType,
     f.restrictions.join('; '), f.hasRestrooms,
     f.amenities.join('; '), f.tentEligibleSites.length, f.active,
+    // Tier-3 booking windows (real Rec.gov data, empty when /rates unavailable)
+    bw?.seasonOpenDate ?? '', bw?.fcfsStartDate ?? '', bw?.reservableStartDate ?? '',
+    bw?.seasonCloseDate ?? '', bw?.nextSeasonStartDate ?? '',
+    fmtReleaseTimeMt(f.nextReleaseAtIso),
+    // Heuristic next-year planning
     open ?? '', reminder ?? '',
   ];
 }
@@ -635,7 +653,7 @@ export async function mirrorCampingIndex(
   const todayMt = todayMtDateString(new Date());
   const resp = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: `'${CAMPING_INDEX_TAB}'!A:Y`,
+    range: `'${CAMPING_INDEX_TAB}'!A:${CAMPING_INDEX_RANGE_END}`,
   });
   const rows = (resp.data.values ?? []) as (string | number | boolean)[][];
   const header = rows[0] ?? Array.from(CAMPING_INDEX_HEADER);
@@ -685,7 +703,7 @@ export async function mirrorCampingIndex(
   if (toAppend.length > 0) {
     await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range: `'${CAMPING_INDEX_TAB}'!A:Y`,
+      range: `'${CAMPING_INDEX_TAB}'!A:${CAMPING_INDEX_RANGE_END}`,
       valueInputOption: 'RAW',
       insertDataOption: 'INSERT_ROWS',
       requestBody: { values: toAppend },
@@ -701,7 +719,7 @@ export async function readMutedFacilityIds(
   try {
     const resp = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `'${CAMPING_INDEX_TAB}'!A:Y`,
+      range: `'${CAMPING_INDEX_TAB}'!A:${CAMPING_INDEX_RANGE_END}`,
     });
     raw = (resp.data.values ?? []) as (string | number | boolean)[][];
   } catch { return []; }
@@ -727,7 +745,7 @@ export async function setMutedInCampingIndex(
 ): Promise<void> {
   const resp = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: `'${CAMPING_INDEX_TAB}'!A:Y`,
+    range: `'${CAMPING_INDEX_TAB}'!A:${CAMPING_INDEX_RANGE_END}`,
   });
   const rows = (resp.data.values ?? []) as (string | number | boolean)[][];
   if (rows.length < 2) return;
@@ -736,7 +754,6 @@ export async function setMutedInCampingIndex(
   const mutedColIdx = header.indexOf('Muted');
   if (idIdx < 0 || mutedColIdx < 0) return;
   const targetSet = new Set(facilityIds);
-  const colLetter = (i: number): string => String.fromCharCode(65 + i);
   for (let i = 1; i < rows.length; i++) {
     const id = String(rows[i]![idIdx] ?? '');
     if (!targetSet.has(id)) continue;
