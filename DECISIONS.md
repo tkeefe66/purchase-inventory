@@ -1061,6 +1061,21 @@ Strong key is checked **first**. Falls back to the existing full key (orderId + 
 
 ---
 
+## 2026-05-15 — Phase 5: Free-camping search + reservation-release tracking
+
+**Context:** Shipped Phase 5 of the outdoor companion. Spec: `docs/superpowers/specs/2026-05-15-phase-5-camping-design.md`. Combines on-demand free-camping search (Rec.gov + iOverlander) with proactive reservation-release tracking via a Railway-side index of all CO tent-eligible Rec.gov facilities.
+
+**Key locked decisions:**
+- **Tent-eligible only** — index filters out RV-only sites, cabins, yurts. Picnic areas included with useType='day-use'.
+- **Auto-booking deferred:** Flavor A only (Telegram alert + deep link at the exact release moment). No headless-browser checkout in v1.
+- **Sheet authoritative for muted state.** "Camping Index" tab has writable Muted + Notes columns; cron preserves them across refreshes.
+- **Separate Railway cron service** (`railway.camping.json`, per-minute schedule). Each tick self-gates by cadence.
+- **Regions are both auto (parent unit) AND curated** (Front Range, Western Slope, San Juans, Sangres, Northern Mountains).
+
+**Out of scope (deferred v1.5+):** Camping Trips sheet tab, auto-booking flavors B/C, non-CO seeds, walk-up alerts, USFS MVUM integration.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale
