@@ -60,6 +60,17 @@ const NEEDS_REVIEW_HEADERS = [
   'Resolved',
 ];
 
+const CRON_LOG_HEADERS = [
+  'Run Timestamp',
+  'Items Added',
+  'Items By Source',
+  'Items By Domain',
+  'Returns Applied',
+  'Messages Scanned',
+  'Errors Count',
+  'Duration (s)',
+];
+
 async function main(): Promise<void> {
   const { clientId, clientSecret, refreshToken, spreadsheetId } = readEnv();
 
@@ -245,6 +256,24 @@ async function main(): Promise<void> {
       },
     });
   }
+
+  // Cron Log tab — create if missing.
+  const cronLogExists = allTabs.some((s) => s.properties?.title === 'Cron Log');
+  let cronLogWillBeCreated = false;
+  if (cronLogExists) {
+    console.log('Plan: "Cron Log" tab (already exists — skip)');
+  } else {
+    console.log('Plan: create "Cron Log" tab with 8 headers');
+    cronLogWillBeCreated = true;
+    requests.push({
+      addSheet: {
+        properties: {
+          title: 'Cron Log',
+          gridProperties: { rowCount: 1000, columnCount: CRON_LOG_HEADERS.length },
+        },
+      },
+    });
+  }
   console.log();
 
   console.log('Applying batch update...');
@@ -262,6 +291,16 @@ async function main(): Promise<void> {
       requestBody: { values: [NEEDS_REVIEW_HEADERS] },
     });
     console.log('✓ "Needs Review" headers written');
+  }
+
+  if (cronLogWillBeCreated) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `'Cron Log'!A1:${colLetter(CRON_LOG_HEADERS.length - 1)}1`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [CRON_LOG_HEADERS] },
+    });
+    console.log('✓ "Cron Log" headers written');
   }
 
   console.log();
