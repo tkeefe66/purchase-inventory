@@ -35,5 +35,6 @@ describe('buildQuery', () => {
     const q = buildQuery({ ...baseOpts, ingestAfterDate: '2026-04-01' });
     expect(q).toContain('after:2026/04/01');
     expect(q).not.toContain('newer_than:30d');
+    expect(q).toContain('in:anywhere');
   });
 });
