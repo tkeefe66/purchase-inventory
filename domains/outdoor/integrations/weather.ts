@@ -174,7 +174,8 @@ export function createWeatherClient(opts: WeatherClientOptions): WeatherClient {
     const url = `${PIRATE_WEATHER_URL}/${opts.apiKey}/${lat},${lon}?units=us&exclude=minutely,alerts`;
     const res = await fetchImpl(url);
     if (!res.ok) {
-      throw new ForecastError('api_error', 'pirateweather', res.status, `pirateweather ${res.status}`);
+      const kind: ForecastErrorKind = res.status === 429 ? 'rate_limited' : 'api_error';
+      throw new ForecastError(kind, 'pirateweather', res.status, `pirateweather ${res.status}`);
     }
     return (await res.json()) as PirateWeatherResponse;
   }

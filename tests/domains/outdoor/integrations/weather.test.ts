@@ -175,6 +175,33 @@ describe('Pirate Weather daily mapping', () => {
   });
 });
 
+describe('Pirate Weather errors', () => {
+  test('throws rate_limited on 429', async () => {
+    const fetchImpl = mockFetch(new Map<string | RegExp, { status: number; json: unknown }>([
+      ['nominatim.openstreetmap.org', { status: 200, json: NOMINATIM_MOAB }],
+      ['pirateweather.net', { status: 429, json: { error: 'too many requests' } }],
+    ]));
+    const client = createWeatherClient({ apiKey: 'test', fetchImpl });
+    await expect(client.getForecast({ location: 'Moab', days: 1 })).rejects.toMatchObject({
+      kind: 'rate_limited',
+      service: 'pirateweather',
+    });
+  });
+
+  test('throws api_error on 503', async () => {
+    const fetchImpl = mockFetch(new Map<string | RegExp, { status: number; json: unknown }>([
+      ['nominatim.openstreetmap.org', { status: 200, json: NOMINATIM_MOAB }],
+      ['pirateweather.net', { status: 503, json: { error: 'service unavailable' } }],
+    ]));
+    const client = createWeatherClient({ apiKey: 'test', fetchImpl });
+    await expect(client.getForecast({ location: 'Moab', days: 1 })).rejects.toMatchObject({
+      kind: 'api_error',
+      service: 'pirateweather',
+      status: 503,
+    });
+  });
+});
+
 describe('Pirate Weather hourly anchoring', () => {
   test('hourlyTomorrow has 24 entries starting at destination-local midnight', async () => {
     // Byron Bay, AUS — UTC+10 (no DST in NSW for our purposes). When Tom asks at
