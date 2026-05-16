@@ -23,6 +23,7 @@ import { lookupProduct, fetchProductName, fetchProductInfo } from '../../lib/par
 import { createClassifier } from '../../lib/classifier.js';
 import { routeMessage, routePhoto } from './router.js';
 import { runPipeline } from '../cron/pipeline.js';
+import { createWeatherClient } from '../../domains/outdoor/integrations/weather.js';
 
 const CACHE_REFRESH_MS = 15 * 60 * 1000;
 const POLL_TIMEOUT_S = 25;
@@ -36,6 +37,7 @@ interface Env {
   anthropicApiKey: string;
   telegramBotToken: string;
   authorizedChatIds: Set<string>;
+  pirateWeatherApiKey: string;
   /** Earliest YYYY-MM-DD to ingest from. Optional — when unset, /scan uses
    *  the pipeline default ("newer_than:30d"). Must match cron's value so
    *  scheduled and on-demand runs see the same Gmail window. */
@@ -51,6 +53,7 @@ function readEnv(): Env {
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
     TELEGRAM_AUTHORIZED_CHAT_IDS: process.env.TELEGRAM_AUTHORIZED_CHAT_IDS,
+    PIRATE_WEATHER_API_KEY: process.env.PIRATE_WEATHER_API_KEY,
   };
   const missing = Object.entries(required).filter(([, v]) => !v).map(([k]) => k);
   if (missing.length) {
@@ -64,6 +67,7 @@ function readEnv(): Env {
     spreadsheetId: required.GOOGLE_SHEET_ID!,
     anthropicApiKey: required.ANTHROPIC_API_KEY!,
     telegramBotToken: required.TELEGRAM_BOT_TOKEN!,
+    pirateWeatherApiKey: required.PIRATE_WEATHER_API_KEY!,
     authorizedChatIds: new Set(
       required.TELEGRAM_AUTHORIZED_CHAT_IDS!.split(',').map((s) => s.trim()).filter(Boolean),
     ),
@@ -81,6 +85,7 @@ async function main(): Promise<void> {
     refreshToken: env.googleRefreshToken,
   });
   const anthropic = new Anthropic({ apiKey: env.anthropicApiKey });
+  const weather = createWeatherClient({ apiKey: env.pirateWeatherApiKey });
   const telegramCfg: TelegramConfig = { botToken: env.telegramBotToken };
 
   const stats = new Stats();
@@ -105,6 +110,7 @@ async function main(): Promise<void> {
     anthropic,
     sheets,
     spreadsheetId: env.spreadsheetId,
+    weather,
     updateRowStatus,
   });
 
