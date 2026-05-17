@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { existsSync } from 'node:fs';
 import { formatInTimeZone } from 'date-fns-tz';
 import {
   shouldRunIndexRefresh,
@@ -65,8 +66,13 @@ async function main(): Promise<void> {
     console.log(`[camping-cron] metadata-refresh: ${res.refreshed} updated, ${res.deactivated} deactivated, ${res.failures} failures`);
   }
 
-  if (shouldRunDispersedRefresh(now)) {
-    console.log('[camping-cron] running dispersed-refresh');
+  // Run dispersed-refresh on its weekly schedule, OR opportunistically when
+  // the snapshot file is missing on disk (first boot after deploy — the
+  // agent's find_free_campsites returns no dispersed results until this
+  // populates /data/dispersed-snapshot.json).
+  const dispersedMissing = !existsSync(DISPERSED_PATH);
+  if (shouldRunDispersedRefresh(now) || dispersedMissing) {
+    console.log(`[camping-cron] running dispersed-refresh${dispersedMissing ? ' (snapshot missing — opportunistic seed)' : ''}`);
     const res = await runDispersedRefresh();
     await writeDispersedSnapshot(DISPERSED_PATH, res.snapshot);
     await mirrorDispersedSites(sheets, spreadsheetId, res.snapshot.spots);
