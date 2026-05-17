@@ -1,5 +1,6 @@
 import { WESTERN_US_BBOX } from './types.js';
 import type { DispersedSpot } from './types.js';
+import { buildAgencySearchUrl } from './search-url.js';
 
 /**
  * US Forest Service "Recreation Area Activities" ArcGIS feature layer.
@@ -94,17 +95,24 @@ export function mapUsfsFeature(feat: ArcgisFeature): DispersedSpot | null {
   if (!id) return null;
   const description = (a.recareadescription ?? '').trim();
   const hasRestrooms = RESTROOM_RE.test(description);
+  const name = (a.recareaname ?? '').trim() || `USFS Rec Area ${id}`;
+  const agency = (a.forestname ?? '').trim() || 'USFS';
+  // We don't use a.recareaurl — the legacy `?recid=<id>` URLs return HTTP
+  // 200 but silently redirect to the forest's generic recreation page
+  // after the 2024-25 fs.usda.gov redesign. Constructing a Google
+  // site-search URL instead lands users on the actual rec-area page even
+  // as USFS keeps shuffling URL patterns.
   return {
     source: 'USFS',
     id,
-    name: (a.recareaname ?? '').trim() || `USFS Rec Area ${id}`,
+    name,
     lat,
     lng,
     description,
-    agency: (a.forestname ?? '').trim() || 'USFS',
+    agency,
     amenities: [],
     hasRestrooms,
-    sourceUrl: (a.recareaurl ?? '').trim(),
+    sourceUrl: buildAgencySearchUrl(name, agency, 'fs.usda.gov'),
     lastVerified: null,
   };
 }

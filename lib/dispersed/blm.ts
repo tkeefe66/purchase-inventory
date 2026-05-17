@@ -1,5 +1,6 @@
 import { WESTERN_US_BBOX } from './types.js';
 import type { DispersedSpot } from './types.js';
+import { buildAgencySearchUrl } from './search-url.js';
 
 /**
  * Bureau of Land Management "BLM National Recreation Site Points" — Layer 4
@@ -84,17 +85,22 @@ export function mapBlmFeature(feat: ArcgisFeature): DispersedSpot | null {
   const hasRestrooms = RESTROOM_RE.test(description);
   const unit = (a.UNIT_NAME ?? '').trim();
   const agency = unit ? `BLM ${unit}` : 'BLM';
+  const name = (a.FET_NAME ?? '').trim() || `BLM Primitive Site ${id}`;
+  // WEB_LINK is null on most BLM records; fall back to a Google site-search
+  // URL that lands users on the actual page on blm.gov.
+  const apiUrl = (a.WEB_LINK ?? '').trim();
+  const sourceUrl = apiUrl || buildAgencySearchUrl(name, agency, 'blm.gov');
   return {
     source: 'BLM',
     id,
-    name: (a.FET_NAME ?? '').trim() || `BLM Primitive Site ${id}`,
+    name,
     lat,
     lng,
     description,
     agency,
     amenities: [],
     hasRestrooms,
-    sourceUrl: (a.WEB_LINK ?? '').trim(),
+    sourceUrl,
     lastVerified: null,
   };
 }

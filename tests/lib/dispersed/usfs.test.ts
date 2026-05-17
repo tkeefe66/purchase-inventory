@@ -38,7 +38,11 @@ describe('mapUsfsFeature', () => {
     expect(spot!.lat).toBe(41.6);
     expect(spot!.lng).toBe(-120.5);
     expect(spot!.hasRestrooms).toBe(true);
+    // sourceUrl is a Google site-search URL — the API's recareaurl is broken
+    // (silently redirects to a generic forest page) so we construct our own.
+    expect(spot!.sourceUrl).toContain('google.com/search');
     expect(spot!.sourceUrl).toContain('fs.usda.gov');
+    expect(spot!.sourceUrl).toContain(encodeURIComponent('"Red Tail Rim Trail North Trailhead"'));
   });
   test('parses string lat/lng (USFS returns them as strings, not numbers)', () => {
     const spot = mapUsfsFeature({

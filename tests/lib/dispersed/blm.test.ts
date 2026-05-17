@@ -32,7 +32,20 @@ describe('mapBlmFeature', () => {
     expect(spot!.agency).toBe('BLM Tres Rios Field Office');
     expect(spot!.lat).toBe(38.1);
     expect(spot!.lng).toBe(-108.7);
+    // WEB_LINK was provided, so use it verbatim
+    expect(spot!.sourceUrl).toBe('https://www.blm.gov/visit/lower-dolores');
+  });
+
+  test('falls back to Google site-search URL when WEB_LINK missing', () => {
+    const spot = mapBlmFeature({
+      attributes: {
+        OBJECTID: 1, FET_NAME: 'Miller Camp', UNIT_NAME: 'Tres Rios FO',
+        LAT: 38, LONG: -108,
+      },
+    });
+    expect(spot!.sourceUrl).toContain('google.com/search');
     expect(spot!.sourceUrl).toContain('blm.gov');
+    expect(spot!.sourceUrl).toContain(encodeURIComponent('"Miller Camp"'));
   });
   test('falls back to "BLM" agency when UNIT_NAME missing', () => {
     const spot = mapBlmFeature({
