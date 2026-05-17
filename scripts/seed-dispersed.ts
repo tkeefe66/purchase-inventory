@@ -19,11 +19,12 @@ async function main(): Promise<void> {
   const spreadsheetId = process.env.GOOGLE_SHEET_ID!;
   const snapshotPath = process.env.DISPERSED_SNAPSHOT_PATH ?? './local-data/dispersed-snapshot.json';
 
-  console.log('Pulling USFS + BLM + OSM dispersed sites...');
+  console.log(`Pulling dispersed sites (sources: ${process.env.DISPERSED_SOURCES ?? 'USFS,BLM (default)'})...`);
   const res = await runDispersedRefresh();
-  console.log(`  USFS: ${res.countsBySource.USFS}`);
-  console.log(`  BLM:  ${res.countsBySource.BLM}`);
-  console.log(`  OSM:  ${res.countsBySource.OSM}`);
+  console.log(`  enabled: ${res.enabledSources.join(', ')}`);
+  for (const src of res.enabledSources) {
+    console.log(`  ${src}: ${res.countsBySource[src]}`);
+  }
   console.log(`  total: ${res.snapshot.spots.length}`);
   if (res.failures.length > 0) {
     console.warn('Per-source failures:');

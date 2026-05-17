@@ -1,5 +1,5 @@
 import { describe, test, expect, vi } from 'vitest';
-import { runDispersedRefresh } from '../../../apps/cron/camping/dispersed-refresh.js';
+import { runDispersedRefresh, parseEnabledSources } from '../../../apps/cron/camping/dispersed-refresh.js';
 import { shouldRunDispersedRefresh } from '../../../apps/cron/camping/schedule.js';
 
 function mkArcgisResp(features: object[]): Response {
@@ -23,8 +23,34 @@ describe('shouldRunDispersedRefresh', () => {
   });
 });
 
+describe('parseEnabledSources', () => {
+  test('defaults to USFS + BLM when env var is unset', () => {
+    const out = parseEnabledSources(undefined);
+    expect(out.has('USFS')).toBe(true);
+    expect(out.has('BLM')).toBe(true);
+    expect(out.has('OSM')).toBe(false);
+  });
+  test('parses a comma-separated list', () => {
+    const out = parseEnabledSources('USFS,BLM,OSM');
+    expect(out.size).toBe(3);
+  });
+  test('ignores whitespace and invalid tokens', () => {
+    const out = parseEnabledSources('USFS, BLM , bogus, OSM');
+    expect(out.has('USFS')).toBe(true);
+    expect(out.has('BLM')).toBe(true);
+    expect(out.has('OSM')).toBe(true);
+    expect(out.size).toBe(3);
+  });
+  test('falls back to default when env var is all-invalid', () => {
+    const out = parseEnabledSources('garbage,trash');
+    expect(out.has('USFS')).toBe(true);
+    expect(out.has('BLM')).toBe(true);
+    expect(out.has('OSM')).toBe(false);
+  });
+});
+
 describe('runDispersedRefresh', () => {
-  test('merges spots from all three sources', async () => {
+  test('merges spots from enabled sources (USFS + BLM default)', async () => {
     const usfs = vi.fn().mockResolvedValue(mkArcgisResp([
       { attributes: { recareaid: 'u1', recareaname: 'A', forestname: 'F', recareadescription: '', longitude: -110, latitude: 40 } },
     ]));
@@ -38,11 +64,28 @@ describe('runDispersedRefresh', () => {
       usfsFetcher: usfs as never,
       blmFetcher: blm as never,
       osmFetcher: osm as never,
+      enabledSources: new Set(['USFS', 'BLM']),
     });
-    expect(res.snapshot.spots).toHaveLength(3);
-    expect(res.countsBySource).toEqual({ USFS: 1, BLM: 1, OSM: 1 });
-    expect(res.failures).toHaveLength(0);
-    expect(res.snapshot.refreshedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(res.snapshot.spots).toHaveLength(2);
+    expect(res.countsBySource).toEqual({ USFS: 1, BLM: 1, OSM: 0 });
+    expect(osm).not.toHaveBeenCalled();
+    expect(res.enabledSources.sort()).toEqual(['BLM', 'USFS']);
+  });
+
+  test('includes OSM when explicitly enabled', async () => {
+    const usfs = vi.fn().mockResolvedValue(mkArcgisResp([]));
+    const blm = vi.fn().mockResolvedValue(mkArcgisResp([]));
+    const osm = vi.fn().mockResolvedValue(mkOverpassResp([
+      { type: 'node', id: 99, lat: 42, lon: -112, tags: { name: 'C', tourism: 'camp_site' } },
+    ]));
+    const res = await runDispersedRefresh({
+      usfsFetcher: usfs as never,
+      blmFetcher: blm as never,
+      osmFetcher: osm as never,
+      enabledSources: new Set(['USFS', 'BLM', 'OSM']),
+    });
+    expect(res.snapshot.spots).toHaveLength(1);
+    expect(osm).toHaveBeenCalled();
   });
 
   test('records per-source failures without aborting other sources', async () => {
@@ -50,11 +93,10 @@ describe('runDispersedRefresh', () => {
     const blm = vi.fn().mockResolvedValue(mkArcgisResp([
       { attributes: { OBJECTID: 'b1', FET_NAME: 'B', UNIT_NAME: 'BFO', LAT: 41, LONG: -111 } },
     ]));
-    const osm = vi.fn().mockResolvedValue(mkOverpassResp([]));
     const res = await runDispersedRefresh({
       usfsFetcher: usfs as never,
       blmFetcher: blm as never,
-      osmFetcher: osm as never,
+      enabledSources: new Set(['USFS', 'BLM']),
     });
     expect(res.snapshot.spots).toHaveLength(1);
     expect(res.countsBySource.USFS).toBe(0);

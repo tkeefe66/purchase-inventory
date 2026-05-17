@@ -1173,6 +1173,8 @@ Strong key is checked **first**. Falls back to the existing full key (orderId + 
 
 **Refresh cadence:** weekly Sunday 5:00 AM Mountain (one hour after index-refresh) via a new `shouldRunDispersedRefresh` tick in `apps/cron/camping/schedule.ts`. Per-source failures don't abort the others; partial failures surface a Telegram alert.
 
+**Sources are gated by `DISPERSED_SOURCES` env var (added later same day).** Default is `USFS,BLM` (~793 Western-US rows). OSM is opt-in: the ~14,480 community-tagged points were noisy at the v1 scale and Tom wanted to keep them off the production sheet until we have a clearer use case for them. Set `DISPERSED_SOURCES=USFS,BLM,OSM` in Railway to re-enable.
+
 **Files added:**
 - `lib/dispersed/types.ts`, `lib/dispersed/cache.ts`, `lib/dispersed/usfs.ts`, `lib/dispersed/blm.ts`, `lib/dispersed/osm.ts`
 - `apps/cron/camping/dispersed-refresh.ts`
