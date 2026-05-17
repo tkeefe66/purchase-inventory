@@ -12,9 +12,13 @@ async function main(): Promise<void> {
   const indexPath = process.env.CAMPING_INDEX_PATH ?? '/data/camping-index.json';
 
   console.log('Clearing all data rows in Camping Index (preserving header)...');
+  // Range must cover every column the sheet uses today (29 cols → A:AC) AND
+  // any leftover columns from previous schemas (going wider — A:AZ — is
+  // cheap and prevents the "half-empty rows" bug where append() finds the
+  // next "empty A column" row past stale rightmost columns.
   await sheets.spreadsheets.values.clear({
     spreadsheetId,
-    range: "'Camping Index'!A2:Z5000",
+    range: "'Camping Index'!A2:AZ5000",
   });
   console.log('✓ Cleared');
 
