@@ -1,9 +1,16 @@
 import type { CampingIndex, Facility } from '../../../lib/reccgov/types.js';
-import type { IOverlanderSnapshot } from '../../../lib/iOverlander/cache.js';
+import type { DispersedSnapshot, DispersedSource } from '../../../lib/dispersed/types.js';
+
+/**
+ * The source attribution shown in agent / Telegram output. `rec.gov` =
+ * reservable developed campground from our Camping Index; USFS/BLM/OSM =
+ * dispersed walk-up spot from one of those three federal/community sources.
+ */
+export type CampsiteResultSource = 'rec.gov' | DispersedSource;
 
 export interface CampsiteResult {
   id: string;
-  source: 'recgov' | 'iOverlander';
+  source: CampsiteResultSource;
   name: string;
   distanceKm: number;
   agency: string;
@@ -23,7 +30,11 @@ export interface SearchOpts {
   radiusKm: number;
   includeDayUse: boolean;
   index: CampingIndex;
-  overlander: IOverlanderSnapshot;
+  /**
+   * Merged snapshot of dispersed-camping spots from USFS + BLM + OSM. Pass
+   * an empty `{ refreshedAt: '', spots: [] }` to skip dispersed sources.
+   */
+  dispersed: DispersedSnapshot;
 }
 
 function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
@@ -49,7 +60,7 @@ export function searchFreeCampsites(opts: SearchOpts): CampsiteResult[] {
   const recgov: CampsiteResult[] = opts.index.facilities
     .filter((f) => isEligible(f, opts.includeDayUse))
     .map((f) => ({
-      id: f.facilityId, source: 'recgov' as const, name: f.name,
+      id: f.facilityId, source: 'rec.gov' as const, name: f.name,
       distanceKm: haversineKm(center, f),
       agency: f.agency, lat: f.lat, lng: f.lng,
       useType: f.useType, reservationType: f.reservationType,
@@ -58,16 +69,16 @@ export function searchFreeCampsites(opts: SearchOpts): CampsiteResult[] {
     }))
     .filter((r) => r.distanceKm <= opts.radiusKm);
 
-  const io: CampsiteResult[] = opts.overlander.spots
+  const dispersed: CampsiteResult[] = opts.dispersed.spots
     .map((s) => ({
-      id: s.id, source: 'iOverlander' as const, name: s.name,
+      id: s.id, source: s.source, name: s.name,
       distanceKm: haversineKm(center, s),
-      agency: 'iOverlander community', lat: s.lat, lng: s.lng,
+      agency: s.agency, lat: s.lat, lng: s.lng,
       useType: 'overnight' as const, reservationType: 'walk-up',
       restrictions: [], amenities: s.amenities, hasRestrooms: s.hasRestrooms,
       sourceUrl: s.sourceUrl,
     }))
     .filter((r) => r.distanceKm <= opts.radiusKm);
 
-  return [...recgov, ...io].sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 10);
+  return [...recgov, ...dispersed].sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 10);
 }

@@ -4,21 +4,26 @@ import {
   shouldRunIndexRefresh,
   shouldRunMetadataRefresh,
   shouldRunNudgeTick,
+  shouldRunDispersedRefresh,
 } from './schedule.js';
 import { createRecGovClient } from '../../../lib/reccgov/client.js';
 import { createSheetsClient } from '../../../lib/sheets.js';
-import { readMutedFacilityIds, mirrorCampingIndex, readCampingTripsFromSheet, writeCampingTripsToSheet } from '../../../lib/sheets.js';
+import {
+  readMutedFacilityIds, mirrorCampingIndex,
+  readCampingTripsFromSheet, writeCampingTripsToSheet,
+  mirrorDispersedSites,
+} from '../../../lib/sheets.js';
 import { readCampingIndex, writeCampingIndex } from '../../../lib/campingState.js';
+import { writeDispersedSnapshot } from '../../../lib/dispersed/cache.js';
 import { runIndexRefresh } from './index-refresh.js';
 import { runMetadataRefresh } from './metadata-refresh.js';
 import { runNudgeTick } from './nudge-tick.js';
 import { runReleaseTick } from './release-tick.js';
+import { runDispersedRefresh } from './dispersed-refresh.js';
 import { sendMessage } from '../../../lib/telegram.js';
 
-// camping-index.json stays file-based — it's only read+written by this
-// cron service (its own volume). Trips state lives in the sheet so it can
-// be shared with the bot (Railway volumes are single-attach).
 const INDEX_PATH = process.env.CAMPING_INDEX_PATH ?? '/data/camping-index.json';
+const DISPERSED_PATH = process.env.DISPERSED_SNAPSHOT_PATH ?? '/data/dispersed-snapshot.json';
 
 async function main(): Promise<void> {
   const required = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_REFRESH_TOKEN',
@@ -58,6 +63,18 @@ async function main(): Promise<void> {
     await writeCampingIndex(INDEX_PATH, res.index);
     await mirrorCampingIndex(sheets, spreadsheetId, res.index.facilities);
     console.log(`[camping-cron] metadata-refresh: ${res.refreshed} updated, ${res.deactivated} deactivated, ${res.failures} failures`);
+  }
+
+  if (shouldRunDispersedRefresh(now)) {
+    console.log('[camping-cron] running dispersed-refresh');
+    const res = await runDispersedRefresh();
+    await writeDispersedSnapshot(DISPERSED_PATH, res.snapshot);
+    await mirrorDispersedSites(sheets, spreadsheetId, res.snapshot.spots);
+    console.log(`[camping-cron] dispersed-refresh: USFS=${res.countsBySource.USFS} BLM=${res.countsBySource.BLM} OSM=${res.countsBySource.OSM} (${res.failures.length} source failures)`);
+    if (res.failures.length > 0) {
+      const lines = res.failures.map((f) => `  - ${f.source}: ${f.error}`).join('\n');
+      await sendTelegram(`⚠️ dispersed-refresh partial failures:\n${lines}`);
+    }
   }
 
   if (shouldRunNudgeTick(now)) {

@@ -4,6 +4,7 @@ import type { Facility } from '../../lib/reccgov/types.js';
 
 const HEADER = [
   'Facility ID', 'Name', 'Site URL', 'Map URL', 'Photo',
+  'Source',
   'Agency', 'Parent Unit', 'Region', 'Lat', 'Lng',
   'Lead Days', 'Special Release', 'Fee',
   'Reservation Type', 'Use Type', 'Restrictions',
@@ -50,7 +51,8 @@ function mockSheets(opts: { existingTabs: string[]; existingRows?: (string | num
 }
 
 const sampleFacility: Facility = {
-  facilityId: 'F1', name: 'Test CG', state: 'CO', parentUnit: 'Test NF', region: 'Front Range',
+  facilityId: 'F1', name: 'Test CG', source: 'rec.gov',
+  state: 'CO', parentUnit: 'Test NF', region: 'Front Range',
   lat: 39, lng: -106, agency: 'USFS', useType: 'overnight',
   leadTimeDays: 180, specialReleaseDate: null, seasonStart: '05-15', seasonEnd: '10-15',
   feeUSD: 0, reservationType: 'reservation',
@@ -76,12 +78,12 @@ describe('mirrorCampingIndex', () => {
   test('updates existing rows by Facility ID without touching Muted or Notes', async () => {
     const { sheets, updated } = mockSheets({
       existingTabs: ['All Purchases', 'Camping Index'],
-      // 37 cols. Muted at 35, Notes at 36.
-      existingRows: [Array.from({ length: 37 }, (_, i) => {
+      // 38 cols. Muted at 36, Notes at 37.
+      existingRows: [Array.from({ length: 38 }, (_, i) => {
         if (i === 0) return 'F1';
         if (i === 1) return 'Old Name';
-        if (i === 35) return true;          // Muted
-        if (i === 36) return 'my notes';    // Notes
+        if (i === 36) return true;          // Muted
+        if (i === 37) return 'my notes';    // Notes
         return '';
       })],
     });
@@ -89,16 +91,16 @@ describe('mirrorCampingIndex', () => {
     expect(updated.length).toBeGreaterThan(0);
     const updatedRow = updated.find((u) => u.range.includes('A2'))!.values[0]!;
     expect(updatedRow[1]).toBe('Test CG');
-    expect(updatedRow[35]).toBe(true);              // Muted preserved
-    expect(updatedRow[36]).toBe('my notes');        // Notes preserved
+    expect(updatedRow[36]).toBe(true);              // Muted preserved
+    expect(updatedRow[37]).toBe('my notes');        // Notes preserved
   });
 
   test('writes computed Next Calendar Opens + Next Reminder Fires for rolling-release sites', async () => {
     const { sheets, appended } = mockSheets({ existingTabs: ['All Purchases', 'Camping Index'] });
     await mirrorCampingIndex(sheets as never, 'sid', [sampleFacility]);
     expect(appended).toHaveLength(1);
-    const nextOpens = appended[0]![33] as string;
-    const nextReminder = appended[0]![34] as string;
+    const nextOpens = appended[0]![34] as string;
+    const nextReminder = appended[0]![35] as string;
     expect(nextOpens).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(nextReminder).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(nextReminder < nextOpens).toBe(true);
@@ -118,23 +120,23 @@ describe('mirrorCampingIndex', () => {
     };
     const { sheets, appended } = mockSheets({ existingTabs: ['All Purchases', 'Camping Index'] });
     await mirrorCampingIndex(sheets as never, 'sid', [facilityWithBW]);
-    expect(appended[0]![27]).toBe('2026-05-15');   // Season Opens
-    expect(appended[0]![28]).toBe('2026-05-15');   // FCFS Start
-    expect(appended[0]![29]).toBe('2026-05-22');   // Reservable Start
-    expect(appended[0]![30]).toBe('2026-09-21');   // Season Close
-    expect(appended[0]![31]).toBe('2027-06-04');   // Next Season Opens
-    expect(appended[0]![32]).toMatch(/2026-05-16 15:00 MDT/); // Next Release Moment
+    expect(appended[0]![28]).toBe('2026-05-15');   // Season Opens
+    expect(appended[0]![29]).toBe('2026-05-15');   // FCFS Start
+    expect(appended[0]![30]).toBe('2026-05-22');   // Reservable Start
+    expect(appended[0]![31]).toBe('2026-09-21');   // Season Close
+    expect(appended[0]![32]).toBe('2027-06-04');   // Next Season Opens
+    expect(appended[0]![33]).toMatch(/2026-05-16 15:00 MDT/); // Next Release Moment
   });
 
   test('emits blanks for Tier-3 columns when bookingWindows is absent', async () => {
     const { sheets, appended } = mockSheets({ existingTabs: ['All Purchases', 'Camping Index'] });
     await mirrorCampingIndex(sheets as never, 'sid', [sampleFacility]);
-    expect(appended[0]![27]).toBe('');
     expect(appended[0]![28]).toBe('');
     expect(appended[0]![29]).toBe('');
     expect(appended[0]![30]).toBe('');
     expect(appended[0]![31]).toBe('');
     expect(appended[0]![32]).toBe('');
+    expect(appended[0]![33]).toBe('');
   });
 
   test('writes constructed Site URL + Map URL for each facility', async () => {
@@ -157,15 +159,15 @@ describe('readMutedFacilityIds', () => {
   test('returns Facility IDs where Muted=TRUE', async () => {
     const { sheets } = mockSheets({
       existingTabs: ['All Purchases', 'Camping Index'],
-      // 37 cols. Active at index 17, Muted at 35.
+      // 38 cols. Active at index 18, Muted at 36.
       existingRows: [
         { id: 'F1', muted: true },
         { id: 'F2', muted: false },
         { id: 'F3', muted: 'TRUE' },
-      ].map((spec) => Array.from({ length: 37 }, (_, i) => {
+      ].map((spec) => Array.from({ length: 38 }, (_, i) => {
         if (i === 0) return spec.id;
-        if (i === 17) return true;
-        if (i === 35) return spec.muted;
+        if (i === 18) return true;
+        if (i === 36) return spec.muted;
         return '';
       })),
     });

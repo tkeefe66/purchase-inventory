@@ -78,12 +78,16 @@ export async function runIndexRefresh(opts: RunIndexRefreshOpts): Promise<IndexR
       existing.lng = fresh.lng ?? existing.lng;
       existing.useType = fresh.useType ?? existing.useType;
       existing.active = true;
+      // Backfill provenance on existing rows: anything that came back from a
+      // Rec.gov RIDB call is `rec.gov`-sourced by definition.
+      existing.source = existing.source ?? 'rec.gov';
     } else {
       // Add new facility with defaults.
       added++;
       byId.set(fresh.facilityId, {
         facilityId: fresh.facilityId,
         name: fresh.name ?? '',
+        source: 'rec.gov',
         state: 'CO',
         parentUnit: fresh.parentUnit ?? '',
         region,

@@ -3,6 +3,15 @@ export type UseType = 'overnight' | 'day-use';
 export type ReservationType = 'reservation' | 'lottery' | 'walk-up' | 'permit';
 
 /**
+ * Where this facility's row originated. Distinct from `agency` (the land
+ * manager: USFS/BLM/NPS/etc.) — `source` is the *data system* we ingested
+ * from. Rec.gov covers reservable developed sites; USFS / BLM / OSM cover
+ * dispersed/free sites (those live in the "Dispersed Sites" tab, not here);
+ * `manual` is for anything we add by hand.
+ */
+export type FacilitySource = 'rec.gov' | 'manual';
+
+/**
  * Booking-windows data derived from Rec.gov's /api/camps/campgrounds/<id>/rates
  * endpoint. Mirrors the timeline shown on the campground page's "Seasons & Fees"
  * tab. All dates are ISO "YYYY-MM-DD" strings (no time-of-day). Null when the
@@ -19,6 +28,11 @@ export interface BookingWindows {
 export interface Facility {
   facilityId: string;
   name: string;
+  /**
+   * Provenance — which data system this row came from. Optional for
+   * backwards-compat with pre-multi-source JSON; new rows always set this.
+   */
+  source?: FacilitySource;
   state: string;
   parentUnit: string;
   region: string | null;

@@ -6,7 +6,7 @@ import type { WeatherClient, ForecastErrorKind, ForecastResult } from './integra
 import { ForecastError } from './integrations/weather.js';
 import { searchFreeCampsites } from './integrations/freecamping.js';
 import { readCampingIndex } from '../../lib/campingState.js';
-import { readIOverlanderSnapshot } from '../../lib/iOverlander/cache.js';
+import { readDispersedSnapshot } from '../../lib/dispersed/cache.js';
 
 export interface ToolDeps {
   cache: InventoryCache;
@@ -21,7 +21,7 @@ export interface ToolDeps {
   /** Resolve a free-text place name to coordinates. Throws on failure. */
   geocode: (query: string) => Promise<{ lat: number; lon: number; name: string }>;
   campingIndexPath: string;
-  iOverlanderCachePath: string;
+  dispersedSnapshotPath: string;
 }
 
 export interface GetProductUrlInput {
@@ -133,7 +133,7 @@ export const TOOL_SCHEMAS = [
   },
   {
     name: 'find_free_campsites',
-    description: 'Find free Rec.gov + iOverlander campsites within a radius of a location. Tent-eligible only; picnic areas optional. Use when the user asks where to camp free near somewhere.',
+    description: 'Find free campsites within a radius of a location. Merges reservable Rec.gov sites that happen to be free with dispersed/walk-up sites from USFS, BLM, and OpenStreetMap. Tent-eligible only; picnic areas optional. Use when the user asks where to camp free near somewhere.',
     input_schema: {
       type: 'object',
       properties: {
@@ -218,11 +218,11 @@ export function createTools(deps: ToolDeps): ToolHandlers {
       }
       const radiusKm = input.radius_km ?? 80;
       const index = await readCampingIndex(deps.campingIndexPath);
-      const overlander = (await readIOverlanderSnapshot(deps.iOverlanderCachePath)) ?? { refreshedAt: '', spots: [] };
+      const dispersed = (await readDispersedSnapshot(deps.dispersedSnapshotPath)) ?? { refreshedAt: '', spots: [] };
       const results = searchFreeCampsites({
         lat: coords.lat, lng: coords.lon, radiusKm,
         includeDayUse: input.include_day_use ?? false,
-        index, overlander,
+        index, dispersed,
       });
       return { ok: true, data: { location: input.location, coords, results } };
     },

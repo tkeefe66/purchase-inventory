@@ -1144,6 +1144,50 @@ Strong key is checked **first**. Falls back to the existing full key (orderId + 
 
 ---
 
+## 2026-05-17 (later) — Drop iOverlander; ship USFS + BLM + OSM as dispersed-camping sources
+
+**Context:** Phase 5 planned to combine Rec.gov (developed reservable campgrounds) with iOverlander (community-sourced dispersed/wild camping) inside `searchFreeCampsites`. The plan assumed iOverlander had a public bulk-download CSV URL — that URL was marked "TBD" in the deploy doc and never resolved. When the time came to actually wire it up, research found:
+
+- iOverlander's old `api.ioverlander.com/places/download.csv` returns **403**.
+- Per-country CSV/JSON exports at `app.ioverlander.com/countries/places_by_country` now require **login + paid Unlimited subscription** and ship via email-delivered link.
+- iOverlander ToS (2023) explicitly: *"personal, non-commercial use; no redistribution without written permission."* Caching the data on a Railway service to power a bot is a gray area at best.
+- **FreeRoam** (popular alternative) shut down in 2024.
+- **Campendium, The Dyrt, AllStays, Boondocking.org** — all closed/proprietary, no public APIs.
+
+**Decision:** drop iOverlander entirely. Replace with three federal/community sources, all free, all public-domain or ODbL, no auth required:
+
+1. **USFS Recreation Opportunities** — ArcGIS REST FeatureServer. Filter `markeractivity='Dispersed Camping'` + Western US bbox → ~600–800 records. Endpoint: `apps.fs.usda.gov/arcx/rest/services/EDW/EDW_RecreationAreaActivities_01/MapServer/0/query`. Public domain.
+2. **BLM National Recreation Site Points** — ArcGIS REST MapServer Layer 4 ("Campsite - Primitive"). Endpoint: `gis.blm.gov/arcgis/rest/services/recreation/BLM_Natl_Recs_pts/MapServer/4/query`. Public domain.
+3. **OpenStreetMap via Overpass** — `tourism=camp_site` + `camping=dispersed` nodes/ways. Endpoint: `overpass-api.de/api/interpreter` (POST). ODbL (attribution required, set agency='OSM community' on results so attribution shows in bot output).
+
+**Why this is strictly better than iOverlander would have been:**
+- Public-domain or ODbL licenses (vs iOverlander's personal-use-only ToS).
+- No auth, no API keys, no subscription gates.
+- Three sources cover overlapping/complementary terrain — USFS knows National Forests, BLM knows BLM land, OSM fills county/state-park/community-tagged gaps.
+- Same `DispersedSpot` shape from all three; merged into one `/data/dispersed-snapshot.json` on the Railway volume.
+
+**Schema changes:**
+- `Facility.source` was `'recreation.gov' | 'iOverlander' | 'manual'`; renamed and narrowed to `'rec.gov' | 'manual'`. (The Camping Index tab only holds reservable facilities, which today all come from Rec.gov.)
+- Dispersed sites get a new **"Dispersed Sites" sheet tab** (separate from Camping Index — no booking-window fields apply, schema is just Source/Name/Lat/Lng/Agency/Has Restrooms/Amenities/Description/Source URL/Last Verified).
+- `CampsiteResult.source` widened to `'rec.gov' | 'USFS' | 'BLM' | 'OSM'` so the agent + Telegram output can attribute sources.
+
+**Refresh cadence:** weekly Sunday 5:00 AM Mountain (one hour after index-refresh) via a new `shouldRunDispersedRefresh` tick in `apps/cron/camping/schedule.ts`. Per-source failures don't abort the others; partial failures surface a Telegram alert.
+
+**Files added:**
+- `lib/dispersed/types.ts`, `lib/dispersed/cache.ts`, `lib/dispersed/usfs.ts`, `lib/dispersed/blm.ts`, `lib/dispersed/osm.ts`
+- `apps/cron/camping/dispersed-refresh.ts`
+- `lib/sheets.ts` — `mirrorDispersedSites`
+- Tests: 38 new (USFS 11, BLM 10, OSM 12, dispersed-refresh 5)
+
+**Files removed:**
+- `lib/iOverlander/cache.ts`, `tests/lib/iOverlander/cache.test.ts`
+- `IOVERLANDER_CACHE_PATH` env var (replaced by `DISPERSED_SNAPSHOT_PATH`)
+- All iOverlander references from `freecamping.ts`, `tools.ts`, `agent.ts`
+
+**One-time backfill on existing sheet rows:** ran `npm run backfill-camping-source` once after the rename to migrate 1,085 Camping Index rows from `recreation.gov` → `rec.gov`.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale

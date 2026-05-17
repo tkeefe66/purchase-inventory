@@ -616,9 +616,17 @@ Add `lookup_trail(name, activity?)` and `search_trails_nearby(location, radius_k
 
 ---
 
-## Phase 5: Outdoor + Free camping ✅ SHIPPED 2026-05-15
+## Phase 5: Outdoor + Free camping ✅ SHIPPED 2026-05-15 (multi-source dispersed added 2026-05-17)
 
 See `docs/superpowers/specs/2026-05-15-phase-5-camping-design.md` and `docs/superpowers/plans/2026-05-15-phase-5-camping.md` for design + implementation. Ships two outcomes (search + tracking) as one phase.
+
+**Data sources (updated 2026-05-17 — see DECISIONS.md):**
+- **Rec.gov** (RIDB + public APIs) — reservable developed campgrounds, mirrored to "Camping Index" sheet tab. Powers reservation-release tracking.
+- **USFS Recreation Opportunities** (ArcGIS REST) — dispersed-camping rec areas (~600–800 in Western US).
+- **BLM National Recreation Site Points** (ArcGIS REST Layer 4 "Campsite - Primitive") — dispersed BLM sites.
+- **OpenStreetMap via Overpass** — `tourism=camp_site` + `camping=dispersed` nodes/ways. ODbL.
+
+USFS+BLM+OSM are merged into `/data/dispersed-snapshot.json` weekly (Sunday 5am MT) and mirrored to the "Dispersed Sites" sheet tab. iOverlander was the original plan but was dropped 2026-05-17 — its bulk-download URL is now gated behind login + paid subscription, and its ToS forbids redistribution.
 
 ---
 

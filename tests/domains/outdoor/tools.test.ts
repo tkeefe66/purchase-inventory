@@ -32,7 +32,7 @@ function makeDeps(rows: MasterRow[]): { deps: ToolDeps; cache: InventoryCache; u
       weather: fakeWeather,
       geocode: fakeGeocode,
       campingIndexPath: '/tmp/test-camping-index.json',
-      iOverlanderCachePath: '/tmp/test-ioverlander.json',
+      dispersedSnapshotPath: '/tmp/test-dispersed.json',
     },
   };
 }
@@ -218,7 +218,7 @@ describe('find_free_campsites handler', () => {
     await cache.refresh();
     const fakeGeocode: ToolDeps['geocode'] = async () => ({ lat: 38.57, lon: -109.55, name: 'Moab, UT' });
     const tools = createTools({ ...deps, geocode: fakeGeocode });
-    // Files don't exist at /tmp paths — readCampingIndex returns { facilities: [] } and readIOverlanderSnapshot returns null
+    // Files don't exist at /tmp paths — readCampingIndex returns { facilities: [] } and readDispersedSnapshot returns null
     const result = await tools.find_free_campsites({ location: 'Moab, UT', radius_km: 80 });
     expect(result.ok).toBe(true);
     if (result.ok) {

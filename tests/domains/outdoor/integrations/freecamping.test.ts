@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'vitest';
 import { searchFreeCampsites } from '../../../../domains/outdoor/integrations/freecamping.js';
 import type { CampingIndex, Facility } from '../../../../lib/reccgov/types.js';
-import type { IOverlanderSnapshot } from '../../../../lib/iOverlander/cache.js';
+import type { DispersedSnapshot } from '../../../../lib/dispersed/types.js';
 
 const f = (p: Partial<Facility>): Facility => ({
   facilityId: 'F', name: 'X', state: 'CO', parentUnit: '', region: null,
@@ -23,33 +23,42 @@ describe('searchFreeCampsites', () => {
       f({ facilityId: 'E', name: 'Picnic', lat: 39.5, lng: -106.0, useType: 'day-use', tentEligibleSites: [] }),
     ],
   };
-  const overlander: IOverlanderSnapshot = {
+  const dispersed: DispersedSnapshot = {
     refreshedAt: '',
     spots: [{
-      id: 'io1', name: 'Boondock', lat: 39.5, lng: -106.0,
-      description: '', amenities: [], hasRestrooms: false,
-      lastVerified: null, sourceUrl: '', type: 'wild_camping',
+      source: 'USFS', id: 'u1', name: 'Dispersed CG', lat: 39.5, lng: -106.0,
+      description: '', agency: 'Modoc National Forest', amenities: [],
+      hasRestrooms: false, sourceUrl: '', lastVerified: null,
     }],
   };
 
-  test('returns near + free + tent-eligible facilities, excludes paid/far/RV-only/picnic', () => {
+  test('returns near + free + tent-eligible facilities + dispersed spots, excludes paid/far/RV-only/picnic', () => {
     const out = searchFreeCampsites({
       lat: 39.5, lng: -106.0, radiusKm: 50, includeDayUse: false,
-      index, overlander,
+      index, dispersed,
     });
     const ids = out.map((r) => r.id);
     expect(ids).toContain('A');
-    expect(ids).toContain('io1');
+    expect(ids).toContain('u1');
     expect(ids).not.toContain('B');
     expect(ids).not.toContain('C');
     expect(ids).not.toContain('D');
     expect(ids).not.toContain('E');
   });
 
+  test('source field reflects origin (rec.gov vs USFS/BLM/OSM)', () => {
+    const out = searchFreeCampsites({
+      lat: 39.5, lng: -106.0, radiusKm: 50, includeDayUse: false,
+      index, dispersed,
+    });
+    expect(out.find((r) => r.id === 'A')!.source).toBe('rec.gov');
+    expect(out.find((r) => r.id === 'u1')!.source).toBe('USFS');
+  });
+
   test('includeDayUse=true adds picnic areas', () => {
     const out = searchFreeCampsites({
       lat: 39.5, lng: -106.0, radiusKm: 50, includeDayUse: true,
-      index, overlander,
+      index, dispersed,
     });
     expect(out.map((r) => r.id)).toContain('E');
   });
@@ -61,7 +70,7 @@ describe('searchFreeCampsites', () => {
     };
     const out = searchFreeCampsites({
       lat: 39.5, lng: -106.0, radiusKm: 100, includeDayUse: false,
-      index: many, overlander: { refreshedAt: '', spots: [] },
+      index: many, dispersed: { refreshedAt: '', spots: [] },
     });
     expect(out).toHaveLength(10);
     for (let i = 1; i < out.length; i++) {

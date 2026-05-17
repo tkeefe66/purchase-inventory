@@ -624,6 +624,10 @@ function safeJson(s: string): Record<string, number> {
 const CAMPING_INDEX_TAB = 'Camping Index';
 const CAMPING_INDEX_HEADER = [
   'Facility ID', 'Name', 'Site URL', 'Map URL', 'Photo',
+  // Provenance — which data system this row came from. Currently only
+  // 'rec.gov' or 'manual' for reservable facilities. Dispersed sites
+  // (USFS/BLM/OSM) live in a separate "Dispersed Sites" tab.
+  'Source',
   'Agency', 'Parent Unit', 'Region', 'Lat', 'Lng',
   'Lead Days', 'Special Release', 'Fee',
   'Reservation Type', 'Use Type', 'Restrictions',
@@ -707,6 +711,7 @@ function facilityRow(f: Facility, todayMt: string): (string | number | boolean)[
   const waterCell = f.hasDrinkingWater === true ? 'TRUE' : f.hasDrinkingWater === false ? 'FALSE' : '';
   return [
     f.facilityId, f.name, siteUrl, mapUrlFor(f.lat, f.lng), f.previewImageUrl ?? '',
+    f.source ?? '',
     f.agency, f.parentUnit, f.region ?? '',
     f.lat, f.lng, f.leadTimeDays, f.specialReleaseDate ?? '', f.feeUSD,
     f.reservationType, f.useType,
@@ -904,9 +909,14 @@ export async function readCampingIndexFromSheet(
     const nextSeasonStart = cellStr(row, 'Next Season Opens');
     const hasBW = !!(seasonOpen || fcfsStart || reservableStart || seasonClose || nextSeasonStart);
     const restrictionsRaw = cellStr(row, 'Restrictions');
+    const sourceCell = cellStr(row, 'Source');
+    const source = (sourceCell === 'rec.gov' || sourceCell === 'manual')
+      ? sourceCell as import('./reccgov/types.js').FacilitySource
+      : undefined;
     const f: Facility = {
       facilityId: id,
       name: cellStr(row, 'Name'),
+      ...(source ? { source } : {}),
       state: 'CO',
       parentUnit: cellStr(row, 'Parent Unit'),
       region: cellStr(row, 'Region') || null,
@@ -940,6 +950,92 @@ export async function readCampingIndexFromSheet(
     facilities.push(f);
   }
   return { facilities };
+}
+
+// ---------------------------------------------------------------------------
+// Dispersed Sites tab — USFS + BLM + OSM walk-up / dispersed-camping mirror
+// ---------------------------------------------------------------------------
+//
+// Separate from "Camping Index" because dispersed sites have a different
+// shape: no booking windows, no lead-time, no reservation, no Muted/Notes
+// columns. ~1,000–10,000 rows depending on OSM density.
+
+const DISPERSED_SITES_TAB = 'Dispersed Sites';
+const DISPERSED_SITES_HEADER = [
+  'Source', 'ID', 'Name', 'Lat', 'Lng', 'Map URL',
+  'Agency', 'Has Restrooms', 'Amenities',
+  'Description', 'Source URL', 'Last Verified',
+] as const;
+const DISPERSED_SITES_RANGE_END = colLetter(DISPERSED_SITES_HEADER.length - 1);
+
+async function ensureDispersedSitesTab(sheets: SheetsClient, spreadsheetId: string): Promise<void> {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId });
+  const exists = (meta.data.sheets ?? []).some((s) => s.properties?.title === DISPERSED_SITES_TAB);
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: { requests: [{ addSheet: { properties: { title: DISPERSED_SITES_TAB } } }] },
+    });
+  }
+  const headerResp = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `'${DISPERSED_SITES_TAB}'!1:1`,
+  });
+  const currentHeader = (headerResp.data.values?.[0] ?? []) as string[];
+  const expected = Array.from(DISPERSED_SITES_HEADER);
+  const stale = currentHeader.length !== expected.length
+    || expected.some((h, i) => currentHeader[i] !== h);
+  if (stale) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `'${DISPERSED_SITES_TAB}'!A1`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [expected] },
+    });
+  }
+}
+
+function truncate(s: string, n: number): string {
+  return s.length <= n ? s : s.slice(0, n - 1).trimEnd() + '…';
+}
+
+/**
+ * Write the merged USFS/BLM/OSM dispersed-site list to the "Dispersed Sites"
+ * sheet tab. Idempotent: clears existing data rows (preserving the header),
+ * then appends. Single-user low-volume sheet — atomicity tradeoff is fine.
+ */
+export async function mirrorDispersedSites(
+  sheets: SheetsClient,
+  spreadsheetId: string,
+  spots: ReadonlyArray<import('./dispersed/types.js').DispersedSpot>,
+): Promise<void> {
+  await ensureDispersedSitesTab(sheets, spreadsheetId);
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId,
+    range: `'${DISPERSED_SITES_TAB}'!A2:${DISPERSED_SITES_RANGE_END}5000000`,
+  });
+  if (spots.length === 0) return;
+  const values = spots.map((s) => [
+    s.source,
+    s.id,
+    s.name,
+    s.lat,
+    s.lng,
+    `https://www.google.com/maps?q=${s.lat},${s.lng}`,
+    s.agency,
+    s.hasRestrooms,
+    s.amenities.join(', '),
+    truncate(s.description, 500),
+    s.sourceUrl,
+    s.lastVerified ?? '',
+  ]);
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: `'${DISPERSED_SITES_TAB}'!A:${DISPERSED_SITES_RANGE_END}`,
+    valueInputOption: 'RAW',
+    insertDataOption: 'INSERT_ROWS',
+    requestBody: { values },
+  });
 }
 
 // ---------------------------------------------------------------------------

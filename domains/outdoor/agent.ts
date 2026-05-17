@@ -74,7 +74,7 @@ export interface OutdoorAgentOptions {
     input: { rowIndex: number; newStatus: Status },
   ) => Promise<void>;
   campingIndexPath?: string;
-  iOverlanderCachePath?: string;
+  dispersedSnapshotPath?: string;
 }
 
 type AnthropicMessage = { role: 'user' | 'assistant'; content: unknown };
@@ -91,7 +91,7 @@ export class OutdoorAgent {
       weather: opts.weather,
       geocode,
       campingIndexPath: opts.campingIndexPath ?? process.env.CAMPING_INDEX_PATH ?? '/data/camping-index.json',
-      iOverlanderCachePath: opts.iOverlanderCachePath ?? process.env.IOVERLANDER_CACHE_PATH ?? '/data/iOverlander.json',
+      dispersedSnapshotPath: opts.dispersedSnapshotPath ?? process.env.DISPERSED_SNAPSHOT_PATH ?? '/data/dispersed-snapshot.json',
     });
   }
 
