@@ -58,7 +58,7 @@ export async function dispatchCommand(chatId: string, text: string, deps: Handle
     name === 'watch' || name === 'unwatch' || name === 'watchlist' || name === 'regions'
     || name === 'plan-trip' || name === 'trips' || name === 'cancel-trip' || name === 'campsites'
   ) {
-    return handleCampingCommand({ name, args }, deps.camping);
+    return handleCampingCommand({ name, args }, deps.camping, chatId);
   }
   return null;
 }
@@ -126,9 +126,11 @@ async function handleLog(chatId: string, args: string, deps: HandlerDeps): Promi
 async function handleConfirm(chatId: string, deps: HandlerDeps): Promise<string> {
   const pending = deps.pendingActions.pop(chatId);
   if (!pending) return `Nothing to confirm.`;
+  // /confirm is only meaningful for log-append actions (set by /log or /addgear).
+  // Other pending kinds (camping selections) shouldn't be confirmed via this command.
+  if (pending.type !== 'log-append') return `Nothing to confirm.`;
   await deps.appendMasterRow(deps.sheets, deps.spreadsheetId, pending.row);
   deps.cache.applyLocalChange(pending.row);
-  // Successful write ends any /addgear flow that pre-parked this row.
   deps.addgearState.clear(chatId);
   return `Logged: ${pending.row.brand} ${pending.row.itemName} — $${pending.row.price}.`;
 }

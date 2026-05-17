@@ -5,6 +5,7 @@ function makeDeps(overrides: Partial<RouterDeps> = {}): RouterDeps {
   return {
     dispatchCommand: vi.fn(async () => null) as unknown as RouterDeps['dispatchCommand'],
     handleAddgearContinuation: vi.fn(async () => null) as unknown as RouterDeps['handleAddgearContinuation'],
+    handleCampingSelection: vi.fn(async () => null) as unknown as RouterDeps['handleCampingSelection'],
     handleAgentMessage: vi.fn(async () => 'agent reply') as unknown as RouterDeps['handleAgentMessage'],
     handlePhoto: vi.fn(async () => null) as unknown as RouterDeps['handlePhoto'],
     ...overrides,

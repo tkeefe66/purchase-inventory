@@ -1,6 +1,7 @@
 export interface RouterDeps {
   dispatchCommand: (chatId: string, text: string) => Promise<string | null>;
   handleAddgearContinuation: (chatId: string, text: string) => Promise<string | null>;
+  handleCampingSelection: (chatId: string, text: string) => Promise<string | null>;
   handleAgentMessage: (chatId: string, text: string) => Promise<string>;
   handlePhoto: (chatId: string, photoFileId: string, caption: string) => Promise<string | null>;
 }
@@ -12,6 +13,10 @@ export async function routeMessage(chatId: string, text: string, deps: RouterDep
     // /cancel and other commands take precedence over an in-flight addgear flow
     const slashReply = await deps.dispatchCommand(chatId, text);
     if (slashReply !== null) return slashReply;
+
+    // Numeric reply to a "Multiple matches" prompt from /plan-trip
+    const campingReply = await deps.handleCampingSelection(chatId, text);
+    if (campingReply !== null) return campingReply;
 
     // Mid-flow addgear continuation (plain-text replies like "2018" or "color: red")
     const addgearReply = await deps.handleAddgearContinuation(chatId, text);

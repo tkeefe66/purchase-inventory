@@ -127,9 +127,9 @@ describe('startAddgear — missing price triggers prompt after date', () => {
     const step = deps.addgearState.peek('chat-1');
     expect(step?.kind).toBe('awaiting-confirm');
     if (step?.kind === 'awaiting-confirm') {
-      expect(step.row.price).toBe(120);
-      expect(step.row.source).toBe('Image');
-      expect(step.row.orderId).toMatch(/^IMG-20260514-/);
+      expect(((step as { row: { price: any } }).row.price)).toBe(120);
+      expect(((step as { row: { source: any } }).row.source)).toBe('Image');
+      expect(((step as { row: { orderId: any } }).row.orderId)).toMatch(/^IMG-20260514-/);
     }
   });
 
@@ -142,7 +142,7 @@ describe('startAddgear — missing price triggers prompt after date', () => {
     const step = deps.addgearState.peek('chat-1');
     expect(step?.kind).toBe('awaiting-confirm');
     if (step?.kind === 'awaiting-confirm') {
-      expect(step.row.price).toBe(0);
+      expect(((step as { row: { price: any } }).row.price)).toBe(0);
     }
   });
 });
@@ -178,8 +178,8 @@ describe('continueAddgear — confirm, correct, cancel', () => {
     expect(deps.addgearState.peek('chat-1')?.kind).toBe('awaiting-confirm');
     const pending = deps.pendingActions.peek('chat-1');
     expect(pending).not.toBeNull();
-    expect(pending?.row.source).toBe('Image');
-    expect(pending?.row.brand).toBe('Patagonia');
+    expect(((pending && pending.type === 'log-append') ? ((pending as { row: { source: any } }).row.source) : undefined)).toBe('Image');
+    expect(((pending && pending.type === 'log-append') ? ((pending as { row: { brand: any } }).row.brand) : undefined)).toBe('Patagonia');
   });
 
   test('"yes" alias points the user at /confirm (does not write directly)', async () => {
@@ -200,11 +200,11 @@ describe('continueAddgear — confirm, correct, cancel', () => {
     const step = deps.addgearState.peek('chat-1');
     expect(step?.kind).toBe('awaiting-confirm');
     if (step?.kind === 'awaiting-confirm') {
-      expect(step.row.color).toBe('red');
+      expect(((step as { row: { color: any } }).row.color)).toBe('red');
     }
     // Pending action reflects the corrected row, not the original
     const pending = deps.pendingActions.peek('chat-1');
-    expect(pending?.row.color).toBe('red');
+    expect(((pending && pending.type === 'log-append') ? ((pending as { row: { color: any } }).row.color) : undefined)).toBe('red');
   });
 
   test('"/cancel" clears both state stores', async () => {
@@ -405,8 +405,8 @@ describe('continueAddgear — combined date+price during awaiting-date', () => {
     const step = deps.addgearState.peek('chat-1');
     expect(step?.kind).toBe('awaiting-confirm');
     if (step?.kind === 'awaiting-confirm') {
-      expect(step.row.date).toBe('2021-12-11');
-      expect(step.row.price).toBe(135.15);
+      expect(((step as { row: { date: any } }).row.date)).toBe('2021-12-11');
+      expect(((step as { row: { price: any } }).row.price)).toBe(135.15);
     }
   });
 
@@ -417,8 +417,8 @@ describe('continueAddgear — combined date+price during awaiting-date', () => {
     expect(reply).toMatch(/About to log/i);
     const step = deps.addgearState.peek('chat-1');
     if (step?.kind === 'awaiting-confirm') {
-      expect(step.row.date).toBe('2023-05-05');
-      expect(step.row.price).toBe(99);
+      expect(((step as { row: { date: any } }).row.date)).toBe('2023-05-05');
+      expect(((step as { row: { price: any } }).row.price)).toBe(99);
     }
   });
 
@@ -449,7 +449,7 @@ describe('continueAddgear — looser price parsing during awaiting-price', () =>
     await continueAddgear('chat-1', '$135.15', deps);
     const step = deps.addgearState.peek('chat-1');
     if (step?.kind === 'awaiting-confirm') {
-      expect(step.row.price).toBe(135.15);
+      expect(((step as { row: { price: any } }).row.price)).toBe(135.15);
     }
   });
 
@@ -460,7 +460,7 @@ describe('continueAddgear — looser price parsing during awaiting-price', () =>
     await continueAddgear('chat-1', 'for 120', deps);
     const step = deps.addgearState.peek('chat-1');
     if (step?.kind === 'awaiting-confirm') {
-      expect(step.row.price).toBe(120);
+      expect(((step as { row: { price: any } }).row.price)).toBe(120);
     }
   });
 });
@@ -519,8 +519,8 @@ describe('startAddgear — caption price hints across the year-range', () => {
     const step = deps.addgearState.peek('chat-1');
     expect(step?.kind).toBe('awaiting-confirm');
     if (step?.kind === 'awaiting-confirm') {
-      expect(step.row.price).toBe(1500);
-      expect(step.row.date).toBe('2019-01-01');
+      expect(((step as { row: { price: any } }).row.price)).toBe(1500);
+      expect(((step as { row: { date: any } }).row.date)).toBe('2019-01-01');
     }
   });
 
@@ -576,8 +576,8 @@ describe('startAddgear — product lookup populates URL candidates', () => {
     const step = deps.addgearState.peek('chat-1');
     expect(step?.kind).toBe('awaiting-confirm');
     if (step?.kind === 'awaiting-confirm') {
-      expect(step.row.itemName).toBe('Houdini Jacket');
-      expect(step.row.productUrl).toBe(twoCandidates[0]!.productUrl);
+      expect(((step as { row: { itemName: any } }).row.itemName)).toBe('Houdini Jacket');
+      expect(((step as { row: { productUrl: any } }).row.productUrl)).toBe(twoCandidates[0]!.productUrl);
     }
   });
 
@@ -596,8 +596,8 @@ describe('startAddgear — product lookup populates URL candidates', () => {
     expect(reply).toContain("Bean Boots Men's 8\" Insulated");
     const step = deps.addgearState.peek('chat-1');
     if (step?.kind === 'awaiting-confirm') {
-      expect(step.row.productUrl).toBe('https://example.com/my-thing');
-      expect(step.row.itemName).toBe("Bean Boots Men's 8\" Insulated");
+      expect(((step as { row: { productUrl: any } }).row.productUrl)).toBe('https://example.com/my-thing');
+      expect(((step as { row: { itemName: any } }).row.itemName)).toBe("Bean Boots Men's 8\" Insulated");
     }
   });
 
@@ -610,8 +610,8 @@ describe('startAddgear — product lookup populates URL candidates', () => {
     await continueAddgear('chat-1', 'https://example.com/my-thing', deps);
     const step = deps.addgearState.peek('chat-1');
     if (step?.kind === 'awaiting-confirm') {
-      expect(step.row.productUrl).toBe('https://example.com/my-thing');
-      expect(step.row.itemName).toBe('Houdini Jacket');  // vision's value, unchanged
+      expect(((step as { row: { productUrl: any } }).row.productUrl)).toBe('https://example.com/my-thing');
+      expect(((step as { row: { itemName: any } }).row.itemName)).toBe('Houdini Jacket');  // vision's value, unchanged
     }
   });
 
@@ -622,7 +622,7 @@ describe('startAddgear — product lookup populates URL candidates', () => {
     expect(reply).toMatch(/About to log/i);
     const step = deps.addgearState.peek('chat-1');
     if (step?.kind === 'awaiting-confirm') {
-      expect(step.row.productUrl).toBe('');
+      expect(((step as { row: { productUrl: any } }).row.productUrl)).toBe('');
     }
   });
 
@@ -659,7 +659,7 @@ describe('startAddgear — product lookup populates URL candidates', () => {
     const step = deps.addgearState.peek('chat-1');
     expect(step?.kind).toBe('awaiting-confirm');
     if (step?.kind === 'awaiting-confirm') {
-      expect(step.row.productUrl).toBe('');
+      expect(((step as { row: { productUrl: any } }).row.productUrl)).toBe('');
     }
   });
 
@@ -670,7 +670,7 @@ describe('startAddgear — product lookup populates URL candidates', () => {
     expect(reply).toMatch(/About to log/i);
     const step = deps.addgearState.peek('chat-1');
     if (step?.kind === 'awaiting-confirm') {
-      expect(step.row.productUrl).toBe('https://llbean.com/bean-boots');
+      expect(((step as { row: { productUrl: any } }).row.productUrl)).toBe('https://llbean.com/bean-boots');
     }
   });
 
@@ -706,9 +706,9 @@ describe('startAddgear — natural caption hints reach awaiting-confirm directly
     const step = deps.addgearState.peek('chat-1');
     expect(step?.kind).toBe('awaiting-confirm');
     if (step?.kind === 'awaiting-confirm') {
-      expect(step.row.date).toBe('2021-12-11');
-      expect(step.row.year).toBe('2021');
-      expect(step.row.price).toBe(135.15);
+      expect(((step as { row: { date: any } }).row.date)).toBe('2021-12-11');
+      expect(((step as { row: { year: any } }).row.year)).toBe('2021');
+      expect(((step as { row: { price: any } }).row.price)).toBe(135.15);
     }
   });
 
@@ -732,9 +732,9 @@ describe('startAddgear — natural caption hints reach awaiting-confirm directly
     const step = deps.addgearState.peek('chat-1');
     expect(step?.kind).toBe('awaiting-confirm');
     if (step?.kind === 'awaiting-confirm') {
-      expect(step.row.date).toBe('2021-12-11');
-      expect(step.row.price).toBe(135.15);
-      expect(step.row.brand).toBe('L.L.Bean');
+      expect(((step as { row: { date: any } }).row.date)).toBe('2021-12-11');
+      expect(((step as { row: { price: any } }).row.price)).toBe(135.15);
+      expect(((step as { row: { brand: any } }).row.brand)).toBe('L.L.Bean');
     }
   });
 });
@@ -753,7 +753,7 @@ describe('continueAddgear — url field correction at awaiting-confirm', () => {
     expect(reply).toContain('patagonia.com');
     const step = deps.addgearState.peek('chat-1');
     if (step?.kind === 'awaiting-confirm') {
-      expect(step.row.productUrl).toBe('https://patagonia.com/x');
+      expect(((step as { row: { productUrl: any } }).row.productUrl)).toBe('https://patagonia.com/x');
     }
   });
 
@@ -764,7 +764,7 @@ describe('continueAddgear — url field correction at awaiting-confirm', () => {
     await continueAddgear('chat-1', 'url: clear', deps);
     const step = deps.addgearState.peek('chat-1');
     if (step?.kind === 'awaiting-confirm') {
-      expect(step.row.productUrl).toBe('');
+      expect(((step as { row: { productUrl: any } }).row.productUrl)).toBe('');
     }
   });
 
@@ -810,10 +810,10 @@ describe('startAddgear — URL pasted in caption (fast path: skip product-pick)'
     const step = deps.addgearState.peek('chat-1');
     expect(step?.kind).toBe('awaiting-confirm');
     if (step?.kind === 'awaiting-confirm') {
-      expect(step.row.brand).toBe('Grass Sticks');
-      expect(step.row.itemName).toBe('Original Bamboo Ski Poles - Pair');
-      expect(step.row.productUrl).toContain('rei.com');
-      expect(step.row.color).toBe('natural'); // vision contributed color
+      expect(((step as { row: { brand: any } }).row.brand)).toBe('Grass Sticks');
+      expect(((step as { row: { itemName: any } }).row.itemName)).toBe('Original Bamboo Ski Poles - Pair');
+      expect(((step as { row: { productUrl: any } }).row.productUrl)).toContain('rei.com');
+      expect(((step as { row: { color: any } }).row.color)).toBe('natural'); // vision contributed color
     }
   });
 
@@ -870,7 +870,7 @@ describe('startAddgear — URL pasted in caption (fast path: skip product-pick)'
     const step = deps.addgearState.peek('chat-1');
     if (step?.kind === 'awaiting-confirm') {
       // URL wins, brand is from URL not from vision
-      expect(step.row.brand).toBe('Grass Sticks');
+      expect(((step as { row: { brand: any } }).row.brand)).toBe('Grass Sticks');
     }
   });
 

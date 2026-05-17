@@ -1,6 +1,9 @@
 import type { MasterRow } from './types.js';
+import type { Facility } from './reccgov/types.js';
 
-export type PendingAction = { type: 'log-append'; row: MasterRow };
+export type PendingAction =
+  | { type: 'log-append'; row: MasterRow }
+  | { type: 'camping-plan-trip-selection'; matches: Facility[]; visitDate: string };
 
 interface Entry {
   action: PendingAction;

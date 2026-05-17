@@ -53,6 +53,7 @@ function makeDeps(rows: MasterRow[], overrides: Partial<HandlerDeps> = {}): {
       writeTrips: vi.fn(async () => undefined),
       readMutedIds: vi.fn(async () => []),
       setMuted: vi.fn(async () => undefined),
+      pendingActions: new PendingActionStore({ ttlMs: 60_000 }),
     },
     ...overrides,
   };

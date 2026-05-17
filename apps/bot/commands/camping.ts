@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { CampingIndex, CampingTrips, Facility, PlannedTrip } from '../../../lib/reccgov/types.js';
 import { CURATED_REGIONS } from '../../../lib/reccgov/regions.js';
+import type { PendingActionStore } from '../../../lib/pendingActions.js';
 
 export interface CampingDeps {
   readIndex: () => Promise<CampingIndex>;
@@ -8,9 +9,65 @@ export interface CampingDeps {
   writeTrips: (t: CampingTrips) => Promise<void>;
   readMutedIds: () => Promise<string[]>;
   setMuted: (facilityIds: string[], muted: boolean) => Promise<void>;
+  pendingActions: PendingActionStore;
 }
 
 export interface ParsedCommand { name: string; args: string }
+
+/**
+ * Apply a /plan-trip action against a specific facility — used both by the
+ * direct happy path (one fuzzy match) and by the numeric-selection
+ * continuation (after the user picks "1" from the multi-match list).
+ */
+async function applyPlanTrip(
+  facility: Facility,
+  visitDate: string,
+  deps: CampingDeps,
+): Promise<string> {
+  const trips = await deps.readTrips();
+  const dup = trips.trips.find(
+    (t) => t.facilityId === facility.facilityId && t.visitDate === visitDate && !t.cancelledAt,
+  );
+  if (dup) return `Already have an active trip to ${facility.name} on ${visitDate}. Use /cancel-trip ${dup.id} first if you want to re-plan.`;
+  const releaseDate = addDays(visitDate, -facility.leadTimeDays);
+  const trip: PlannedTrip = {
+    id: randomUUID(),
+    facilityId: facility.facilityId,
+    visitDate,
+    plannedAt: new Date().toISOString(),
+    nudges: [
+      { kind: '7-day', firedAt: null },
+      { kind: 'release-moment', firedAt: null },
+    ],
+    cancelledAt: null,
+  };
+  await deps.writeTrips({ trips: [...trips.trips, trip] });
+  return `Planned ${facility.name} for ${visitDate}. Booking opens ${releaseDate}; I'll nudge you 7 days out and at the release moment.`;
+}
+
+/**
+ * Continuation handler: if the user has a pending camping selection (from a
+ * previous multi-match) and sends a plain numeric reply, resolve to the
+ * chosen facility and run the original action. Returns the result string,
+ * or null if the message isn't a selection reply.
+ */
+export async function handleCampingSelectionContinuation(
+  chatId: string,
+  text: string,
+  deps: CampingDeps,
+): Promise<string | null> {
+  const trimmed = text.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const pending = deps.pendingActions.peek(chatId);
+  if (!pending || pending.type !== 'camping-plan-trip-selection') return null;
+  const index = Number(trimmed) - 1;
+  if (index < 0 || index >= pending.matches.length) {
+    return `That number isn't in the list (1-${pending.matches.length}). Try again, or run /plan-trip with a more specific name.`;
+  }
+  const chosen = pending.matches[index]!;
+  deps.pendingActions.pop(chatId);
+  return applyPlanTrip(chosen, pending.visitDate, deps);
+}
 
 function fuzzyFindFacility(query: string, facilities: readonly Facility[]): Facility[] {
   const q = query.trim().toLowerCase();
@@ -37,7 +94,11 @@ function addDays(iso: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-export async function handleCampingCommand(cmd: ParsedCommand, deps: CampingDeps): Promise<string> {
+export async function handleCampingCommand(
+  cmd: ParsedCommand,
+  deps: CampingDeps,
+  chatId: string = '',
+): Promise<string> {
   const idx = await deps.readIndex();
   const mutedIds = new Set(await deps.readMutedIds());
 
@@ -105,24 +166,17 @@ export async function handleCampingCommand(cmd: ParsedCommand, deps: CampingDeps
     if (matches.length === 0) return `No facility match for "${query}".`;
     if (matches.length > 1) {
       const list = matches.map((m2, i) => `  ${i + 1}. ${m2.name} (${m2.parentUnit})`).join('\n');
-      return `Multiple matches:\n${list}\nReply with a more specific name.`;
+      // Park a pending selection so a numeric reply ("1") resolves to the picked
+      // facility without forcing the user to retype the whole command.
+      if (chatId) {
+        deps.pendingActions.set(chatId, {
+          type: 'camping-plan-trip-selection',
+          matches, visitDate: visitDate!,
+        });
+      }
+      return `Multiple matches:\n${list}\nReply with 1, 2, or 3 to pick — or re-run /plan-trip with a more specific name.`;
     }
-    const f = matches[0]!;
-    const releaseDate = addDays(visitDate!, -f.leadTimeDays);
-    const trips = await deps.readTrips();
-    const dup = trips.trips.find((t) => t.facilityId === f.facilityId && t.visitDate === visitDate && !t.cancelledAt);
-    if (dup) return `Already have an active trip to ${f.name} on ${visitDate}. Use /cancel-trip ${dup.id} first if you want to re-plan.`;
-    const trip: PlannedTrip = {
-      id: randomUUID(), facilityId: f.facilityId, visitDate: visitDate!,
-      plannedAt: new Date().toISOString(),
-      nudges: [
-        { kind: '7-day', firedAt: null },
-        { kind: 'release-moment', firedAt: null },
-      ],
-      cancelledAt: null,
-    };
-    await deps.writeTrips({ trips: [...trips.trips, trip] });
-    return `Planned ${f.name} for ${visitDate}. Booking opens ${releaseDate}; I'll nudge you 7 days out and at the release moment.`;
+    return applyPlanTrip(matches[0]!, visitDate!, deps);
   }
 
   if (cmd.name === 'trips') {

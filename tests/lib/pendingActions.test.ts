@@ -39,7 +39,8 @@ describe('PendingActionStore', () => {
     store.set('chat-1', { type: 'log-append', row: SAMPLE_ROW });
     const replaced = { ...SAMPLE_ROW, itemName: 'Different' };
     store.set('chat-1', { type: 'log-append', row: replaced });
-    expect(store.peek('chat-1')?.row.itemName).toBe('Different');
+    const peeked = store.peek('chat-1');
+    expect(peeked?.type === 'log-append' ? peeked.row.itemName : '').toBe('Different');
   });
 
   test('expires after the TTL', () => {

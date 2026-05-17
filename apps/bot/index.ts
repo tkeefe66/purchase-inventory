@@ -23,6 +23,7 @@ import { OutdoorAgent } from '../../domains/outdoor/agent.js';
 import { dispatchCommand, handlePhoto, handleAddgearContinuation, type HandlerDeps } from './handlers.js';
 import { extractLogDraft } from './commands/log.js';
 import { startAddgear, continueAddgear } from './commands/addgear.js';
+import { handleCampingSelectionContinuation } from './commands/camping.js';
 import { extractFromPhoto } from '../../lib/parsers/photo.js';
 import { lookupProduct, fetchProductName, fetchProductInfo } from '../../lib/parsers/product-lookup.js';
 import { createClassifier } from '../../lib/classifier.js';
@@ -158,6 +159,7 @@ async function main(): Promise<void> {
       writeTrips: (t) => writeCampingTripsToSheet(sheets, env.spreadsheetId, t),
       readMutedIds: () => readMutedFacilityIds(sheets, env.spreadsheetId),
       setMuted: (ids, muted) => setMutedInCampingIndex(sheets, env.spreadsheetId, ids, muted),
+      pendingActions,
     },
     // /scan triggers the same pipeline the cron runs. Telegram token is
     // intentionally omitted so the pipeline doesn't send its own digest —
@@ -182,6 +184,8 @@ async function main(): Promise<void> {
     handleAgentMessage: (chatId: string, text: string) => agent.handleMessage(chatId, text),
     handleAddgearContinuation: (chatId: string, text: string) =>
       handleAddgearContinuation(chatId, text, handlerDeps),
+    handleCampingSelection: (chatId: string, text: string) =>
+      handleCampingSelectionContinuation(chatId, text, handlerDeps.camping),
     handlePhoto: (chatId: string, photoFileId: string, caption: string) =>
       handlePhoto(chatId, photoFileId, caption, handlerDeps),
   };
