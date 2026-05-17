@@ -629,7 +629,7 @@ const CAMPING_INDEX_HEADER = [
   'Reservation Type', 'Use Type', 'Restrictions',
   'Tent-Eligible Sites', 'Active',
   // Rich /api/search data
-  'Rating', '# Reviews', 'Cell Coverage', 'Accessible Sites', 'Max RV Length (ft)',
+  'Rating', '# Reviews', 'Cell Bars (/5)', 'ADA Sites', 'Max RV Length (ft)',
   // Amenities (from per-campsite attributes + LLM-parsed prose)
   'Pets Allowed', 'Has Restrooms', 'Restroom Type', 'Drinking Water',
   // Rec.gov booking-windows data (this season's actual dates, from /rates)
@@ -700,7 +700,9 @@ function facilityRow(f: Facility, todayMt: string): (string | number | boolean)[
   const reminder = nextReminderDate(f, todayMt);
   const bw = f.bookingWindows ?? null;
   const siteUrl = f.active ? siteUrlFor(f.facilityId) : '';
-  const cellPct = (typeof f.cellCoverage === 'number') ? Math.round(f.cellCoverage * 100) + '%' : '';
+  // cellCoverage is a 0-5 "bars of signal" value, not a fraction. Display
+  // as one decimal (e.g. "1.4") so the column reads as bars-out-of-5.
+  const cellBars = (typeof f.cellCoverage === 'number') ? f.cellCoverage.toFixed(1) : '';
   const petsCell = f.petsAllowed === true ? 'TRUE' : f.petsAllowed === false ? 'FALSE' : '';
   const waterCell = f.hasDrinkingWater === true ? 'TRUE' : f.hasDrinkingWater === false ? 'FALSE' : '';
   return [
@@ -711,7 +713,7 @@ function facilityRow(f: Facility, todayMt: string): (string | number | boolean)[
     f.restrictions.join('; '),
     f.tentEligibleSites.length, f.active,
     // Rich /api/search data
-    f.rating ?? '', f.numReviews ?? '', cellPct, f.accessibleSitesCount ?? '', f.maxRvLength ?? '',
+    f.rating ?? '', f.numReviews ?? '', cellBars, f.accessibleSitesCount ?? '', f.maxRvLength ?? '',
     // Amenities
     petsCell, f.hasRestrooms, f.restroomType ?? '', waterCell,
     // Tier-3 booking windows

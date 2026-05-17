@@ -8,7 +8,7 @@ const HEADER = [
   'Lead Days', 'Special Release', 'Fee',
   'Reservation Type', 'Use Type', 'Restrictions',
   'Tent-Eligible Sites', 'Active',
-  'Rating', '# Reviews', 'Cell Coverage', 'Accessible Sites', 'Max RV Length (ft)',
+  'Rating', '# Reviews', 'Cell Bars (/5)', 'ADA Sites', 'Max RV Length (ft)',
   'Pets Allowed', 'Has Restrooms', 'Restroom Type', 'Drinking Water',
   'Season Opens', 'FCFS Start', 'Reservable Start', 'Season Close', 'Next Season Opens',
   'Next Release Moment',

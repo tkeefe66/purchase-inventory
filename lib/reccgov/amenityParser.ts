@@ -17,21 +17,39 @@ export interface AmenityFacts {
   hasRestrooms: boolean | null;
   restroomType: 'vault' | 'flush' | 'both' | 'none' | null;
   hasDrinkingWater: boolean | null;
+  /**
+   * Short-form rules / restrictions extracted from the description.
+   * Examples: "Pets must be leashed", "Max stay 14 days", "No campfires
+   * above 9000 ft". Empty array if the description doesn't mention any.
+   * Each entry should be one phrase, not a paragraph.
+   */
+  restrictions: string[];
 }
 
-const SYSTEM_PROMPT = `You extract structured camping amenities from Rec.gov campground descriptions.
+const SYSTEM_PROMPT = `You extract structured camping facts from Rec.gov campground descriptions.
 
-Read the description and return what it explicitly states or strongly implies about restrooms and drinking water. Be conservative — if the description doesn't mention an amenity, return null for that field (don't guess).
+Be conservative: if the description doesn't explicitly state or strongly imply something, return null (or [] for restrictions). Don't guess.
 
-Rules:
+Restrooms:
 - "vault toilet" / "pit toilet" / "outhouse" → restroomType: "vault", hasRestrooms: true
 - "flush toilet" / "modern restroom" / "comfort station" → restroomType: "flush", hasRestrooms: true
 - both mentioned → restroomType: "both", hasRestrooms: true
 - "no toilets" / "no restrooms" → restroomType: "none", hasRestrooms: false
 - not mentioned → both null
+
+Drinking water:
 - "drinking water" / "potable water" / "water spigot" → hasDrinkingWater: true
 - "no water" / "bring your own water" → hasDrinkingWater: false
 - not mentioned → null
+
+Restrictions (return short phrases, not full sentences):
+- Pet rules: "Pets on leash" / "No pets" / "Service animals only"
+- Stay limits: "Max stay 14 days" / "Max stay 7 days"
+- Fire rules: "No campfires" / "Fire ban above 9000 ft" / "Fire ring required"
+- Vehicle/RV limits: "No RVs over 30 ft" (only if it's a HARD rule, not a max-length field)
+- Other rules: "No generators after 10pm", "Bear box required", "Reservations only — no walk-ups"
+
+Return at most 6 of the most important restrictions. Skip generic advice ("be bear aware", "leave no trace") — those are warnings, not restrictions. Empty array if no specific restrictions stated.
 
 Return ONLY a JSON object matching the schema. No explanation.`;
 
@@ -48,12 +66,15 @@ const SCHEMA = {
       ],
     },
     hasDrinkingWater: { anyOf: [{ type: 'boolean' }, { type: 'null' }] },
+    restrictions: { type: 'array', items: { type: 'string' } },
   },
-  required: ['hasRestrooms', 'restroomType', 'hasDrinkingWater'] as const,
+  required: ['hasRestrooms', 'restroomType', 'hasDrinkingWater', 'restrictions'] as const,
   additionalProperties: false as const,
 };
 
-const EMPTY: AmenityFacts = { hasRestrooms: null, restroomType: null, hasDrinkingWater: null };
+const EMPTY: AmenityFacts = {
+  hasRestrooms: null, restroomType: null, hasDrinkingWater: null, restrictions: [],
+};
 
 export async function parseAmenities(
   description: string,
@@ -93,6 +114,7 @@ export async function parseAmenities(
       hasRestrooms: parsed.hasRestrooms ?? null,
       restroomType: parsed.restroomType ?? null,
       hasDrinkingWater: parsed.hasDrinkingWater ?? null,
+      restrictions: Array.isArray(parsed.restrictions) ? parsed.restrictions.slice(0, 6) : [],
     };
   } catch {
     return EMPTY;

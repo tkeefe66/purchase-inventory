@@ -80,6 +80,7 @@ export async function runMetadataRefresh(opts: RunMetadataRefreshOpts): Promise<
       let restroomType: 'vault' | 'flush' | 'both' | 'none' | null = null;
       let hasDrinkingWater: boolean | null = null;
       let hasRestroomsLLM: boolean | null = null;
+      let llmRestrictions: string[] | null = null;
       if (willRemainActive) {
         try {
           const releases = await opts.client.getCampgroundReleases(f.facilityId);
@@ -120,6 +121,11 @@ export async function runMetadataRefresh(opts: RunMetadataRefreshOpts): Promise<
             hasRestroomsLLM = facts.hasRestrooms;
             restroomType = facts.restroomType;
             hasDrinkingWater = facts.hasDrinkingWater;
+            // Use LLM-extracted restrictions only when the description
+            // produced any (RIDB never populates the structured field).
+            if (facts.restrictions.length > 0) {
+              llmRestrictions = facts.restrictions;
+            }
           } catch (err) {
             console.warn(`[metadata-refresh] ${f.facilityId} amenity parse failed:`, err instanceof Error ? err.message : err);
           }
@@ -140,7 +146,9 @@ export async function runMetadataRefresh(opts: RunMetadataRefreshOpts): Promise<
         // back to whatever meta has, then existing, then 0.
         feeUSD: derivedFeeUSD ?? meta.feeUSD ?? f.feeUSD ?? 0,
         reservationType,
-        restrictions: (meta.restrictions as string[] | undefined) ?? f.restrictions,
+        // Prefer LLM-extracted restrictions (real data from description prose);
+        // fall back to meta (RIDB doesn't populate it) then existing.
+        restrictions: llmRestrictions ?? (meta.restrictions as string[] | undefined) ?? f.restrictions,
         amenities,
         // hasRestrooms: prefer the LLM-parsed value (real data from prose).
         // Falls back to the legacy regex over `amenities` (only useful when
