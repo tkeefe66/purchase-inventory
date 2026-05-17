@@ -47,6 +47,7 @@ const EXPECTED_SUBJECT_PATTERNS: Record<SenderRole, RegExp[]> = {
     /has shipped/i,
     /has been (received|delivered|placed)/i,
     /order confirmation/i,
+    /eReceipt/i,
   ],
   'amazon-return': [
     /^Refund issued/i,

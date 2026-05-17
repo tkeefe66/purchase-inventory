@@ -75,6 +75,9 @@ describe('subjectMatchesExpected', () => {
   test('matches REI shipment pattern', () => {
     expect(subjectMatchesExpected('rei-order', 'Your REI order #1234567 has shipped')).toBe(true);
   });
+  test('matches REI in-store eReceipt pattern', () => {
+    expect(subjectMatchesExpected('rei-order', 'Your REI eReceipt - store purchase')).toBe(true);
+  });
   test('returns false for unrelated subject from allowlisted sender', () => {
     expect(subjectMatchesExpected('amazon-order', 'Action required: update your payment method')).toBe(false);
   });

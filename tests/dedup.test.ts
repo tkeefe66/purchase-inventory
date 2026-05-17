@@ -133,6 +133,32 @@ describe('dedupItems', () => {
     expect(dedupItems([newItem], existing)).toHaveLength(1);
   });
 
+  test('/log + REI eReceipt: /log row (blank Order ID) dedups against arriving eReceipt row', () => {
+    // Scenario: Tom buys a tent in the REI store and runs /log before the
+    // eReceipt arrives in his inbox. Later that night the eReceipt is ingested.
+    // The eReceipt row carries `S{store}-T{txn}` as Order ID; the /log row has
+    // blank Order ID. Cross-match on (brand, normalized item name) should
+    // recognize them as the same item and skip the eReceipt insert.
+    const logRow = {
+      orderId: '',
+      brand: 'REI Co-op',
+      itemName: 'Half Dome SL 2+ Tent with Footprint',
+      color: '',
+      size: '',
+    };
+    const existing = buildExistingKeySet([logRow]);
+
+    const eReceiptRow = {
+      orderId: 'S18-T6158',
+      brand: 'REI Co-op',
+      itemName: 'Half Dome SL 2+ Tent with Footprint',
+      color: '',
+      size: '',
+      productUrl: 'https://www.rei.com/product/235245',
+    };
+    expect(dedupItems([eReceiptRow], existing)).toHaveLength(0);
+  });
+
   test('legitimate re-buy: same item, two different Order IDs both land in sheet', () => {
     // First purchase already in sheet
     const existing = buildExistingKeySet([

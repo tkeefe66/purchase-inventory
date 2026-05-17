@@ -1076,6 +1076,42 @@ Strong key is checked **first**. Falls back to the existing full key (orderId + 
 
 ---
 
+## 2026-05-17 — REI in-store eReceipt ingestion + non-receipt labeling regression fix
+
+**Context:** Tom ran `/scan` after a same-day in-store REI purchase; the eReceipt was already in his inbox but the cron reported `0 emails scanned`. Two distinct bugs in one symptom.
+
+**Bug 1 — non-receipt labeling regression.** `apps/cron/pipeline.ts` was labeling any email that returned `'non-receipt'` from the parser with `inventory-processed`, then `-label:inventory-processed` in the query excluded it from all future scans. This directly violated the original locked decision (this file, line 162): *"If the parser determines an email isn't a receipt, skip silently. Don't apply the label so we can revisit later if needed."* The regression came from a Phase 1 implementation note (line 69) that was correct for its narrow context (Amazon order-confirms when the original architecture only ingested shipments) but became wrong once the architecture changed to parse both senders.
+
+**Fix:** removed the `messagesToLabel.push(msgId)` in the non-receipt branch. New formats / new senders will now stay visible until they're successfully parsed. Trade-off: REI marketing emails from `rei@notices.rei.com` (rare; we already filter by sender allowlist) would be re-fetched every scan. Cost negligible since REI parsing is pure cheerio. For Amazon shipment-tracking sub-formats that fail (`Delivered:`, `Out for delivery:`), the Haiku order-confirm fallback will be re-invoked each scan — accept the small token cost as the price of not silently burying new formats.
+
+**Bug 2 — no parser for REI in-store eReceipts.** The eReceipt subject `Your REI eReceipt - store purchase` and body don't match `parseReiEmail` (which keys on `A\d{8,}` online order IDs). Even with Bug 1 fixed, eReceipts would parse to nothing — they'd just stay un-labeled and never produce rows.
+
+**Scope expansion (Tom, 2026-05-17):** REI in-store eReceipts are now in-scope for ingest. *"The heart of this app is an inventory tracker so we need to track all inventory regardless of purchase method."* This applies as a principle to any retailer that sends structured emails for in-store purchases (Amazon Whole Foods, etc., as those domains come online). Manual `/log` remains the fallback for purchases that produce no email at all (cash, gifts, marketplace).
+
+**Parser:** new `parseReiReceiptEmail` in `lib/parsers/rei.ts`. Pure cheerio (consistent with online REI parser). Discriminator: `Transaction #:` + `Items purchased` markers in body (only appears on eReceipts, never on online-order REI emails — verified across fixtures). Dispatch in `apps/cron/pipeline.ts` tries online first, falls through to receipt parser — same pattern as Amazon shipment→order.
+
+**Channel marking (Q1):** No new column, no Source-value change. Tom's call: don't surface online-vs-in-store in the data. `Source` stays `"REI"` for both. Order ID for store transactions is synthesized as `S{store#}-T{transaction#}` (e.g., `S18-T6158`) — uniquely identifies the transaction across stores/registers while staying visually distinguishable from online IDs (`A398129839` etc.) for human readers.
+
+**Product ID for dedup:** the eReceipt body contains `Item #NNNNNN` (the 6-digit REI catalog ID, same value embedded in `rei.com/product/NNNNNN` URLs for online orders). Parser synthesizes `productUrl = https://www.rei.com/product/<itemId>` so the existing `extractProductId` returns `rei:NNNNNN`, and the standard strong key `(orderId, productId)` works the same as for online orders.
+
+**Aggregation:** REI eReceipts emit one line per scan, so 4 Clif bars rung up individually produce 4 lines all sharing `Item #604787`. Parser aggregates by Item # and sums `quantity` — matches how online orders represent multi-quantity items.
+
+**Color / size:** eReceipts don't expose either. Both fields land blank; dedup's `contentKey` cross-match (brand + normalized name) handles the resulting `/log`-vs-eReceipt collision case — verified by `tests/dedup.test.ts` "/log + REI eReceipt".
+
+**Backlog cleanup:** `scripts/unlabel-emails.ts` removes `inventory-processed` from messages matching a Gmail query. Ran it against `from:rei@notices.rei.com subject:eReceipt` after fixing Bug 1 — 7 historical eReceipts unlabeled. The most recent (within `newer_than:30d`) will be picked up by the next `/scan`; older ones need `--reprocess --since=<date>` to ingest.
+
+**Files:**
+- `apps/cron/pipeline.ts` (Bug 1 fix + REI dispatch fallthrough)
+- `lib/sources.ts` (added `/eReceipt/i` to `rei-order` subject patterns)
+- `lib/parsers/rei.ts` (new `parseReiReceiptEmail`)
+- `lib/gmail.ts` (new `removeLabel` helper)
+- `scripts/unlabel-emails.ts` + `scripts/fetch-fixtures.ts` (added eReceipt query)
+- `tests/parsers/rei-receipt.test.ts` (new, 10 tests)
+- `tests/dedup.test.ts` (added `/log` + eReceipt scenario)
+- `tests/sources.test.ts` (added eReceipt subject test)
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale

@@ -29,6 +29,7 @@
     "camping-cron:dry": "tsx apps/cron/camping/index.ts --dry-run",
     "audit": "tsx apps/cron/audit.ts",
     "label-historical": "tsx scripts/label-historical.ts",
+    "unlabel-emails": "tsx scripts/unlabel-emails.ts",
     "dedup-existing": "tsx scripts/dedup-existing.ts",
     "smoke-cache": "tsx scripts/smoke-cache.ts",
     "smoke-agent": "tsx scripts/smoke-agent.ts",

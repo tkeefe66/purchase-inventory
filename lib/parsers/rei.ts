@@ -1,6 +1,89 @@
 import { load } from 'cheerio';
 import type { ParsedItem, ParsedOrder } from './types.js';
 
+const SKU_IMG_SELECTOR = 'img[src*="rei.com/skuimage"]';
+const ITEM_ID_REGEX = /Item\s*#\s*(\d{4,})/i;
+const PRICE_REGEX = /\$([\d,]+(?:\.\d{2})?)/;
+const STORE_REGEX = /Store\s*#:\s*(\d+)/i;
+const TXN_REGEX = /Transaction\s*#:\s*(\d+)/i;
+
+/**
+ * REI in-store eReceipt parser. Triggered by `Transaction #` + `Items
+ * purchased` markers in the body (REI does not send this format for online
+ * orders, so this is a clean discriminator vs `parseReiEmail`).
+ *
+ * orderId is synthesized as `S{store}-T{txn}` to be unique across stores
+ * while keeping the column visually distinct from online order IDs
+ * (which are `A` + 8+ digits).
+ *
+ * The eReceipt does not include color/size, but it does include the
+ * 6+-digit REI Item # — we synthesize `https://www.rei.com/product/<id>`
+ * so dedup via `extractProductId` works the same as online orders.
+ *
+ * When the same product is rung up multiple times (consumables like
+ * Clif bars), the eReceipt shows one line per scan. We aggregate by
+ * Item # so the sheet gets one row with summed quantity.
+ */
+export function parseReiReceiptEmail(html: string): ParsedOrder | null {
+  const $ = load(html);
+  $('head, style, script').remove();
+  const bodyText = $('body').text();
+
+  const txnMatch = bodyText.match(TXN_REGEX);
+  if (!txnMatch) return null;
+  const storeMatch = bodyText.match(STORE_REGEX);
+  if (!storeMatch) return null;
+  if (!bodyText.includes('Items purchased')) return null;
+
+  const orderId = `S${storeMatch[1]}-T${txnMatch[1]}`;
+
+  const byProductId = new Map<string, ParsedItem>();
+
+  $(SKU_IMG_SELECTOR).each((_, img) => {
+    const $img = $(img);
+    const itemName = ($img.attr('alt') ?? '').trim();
+    if (!itemName) return;
+
+    const itemBlock = $img.closest('div');
+    const blockText = itemBlock.text();
+
+    const itemIdMatch = blockText.match(ITEM_ID_REGEX);
+    if (!itemIdMatch?.[1]) return;
+    const itemId = itemIdMatch[1];
+
+    const qtyMatch = blockText.match(/Qty:\s*(\d+)/i);
+    const quantity = qtyMatch?.[1] ? parseInt(qtyMatch[1], 10) : 1;
+
+    const priceMatch = blockText.match(PRICE_REGEX);
+    const price = priceMatch?.[1] ? parseFloat(priceMatch[1].replace(/,/g, '')) : 0;
+    if (price <= 0) return;
+
+    const productUrl = `https://www.rei.com/product/${itemId}`;
+    const existing = byProductId.get(itemId);
+    if (existing) {
+      existing.quantity += quantity;
+      return;
+    }
+    byProductId.set(itemId, {
+      itemName,
+      quantity,
+      price,
+      productUrl,
+      color: '',
+      size: '',
+    });
+  });
+
+  const items = [...byProductId.values()];
+  if (items.length === 0) return null;
+
+  return {
+    source: 'REI',
+    orderId,
+    items,
+  };
+}
+
 export function parseReiEmail(html: string): ParsedOrder | null {
   const $ = load(html);
   $('head, style, script').remove();

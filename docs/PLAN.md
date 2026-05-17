@@ -304,9 +304,14 @@ Fetch unprocessed messages from these senders, apply labels, ensure label exists
 
 **Files:** `lib/parsers/rei.ts`, `lib/parsers/types.ts`, `lib/url-fallback.ts` (already exists)
 
-Pure cheerio parser. Returns `ParsedOrder` with line items. Returns null for non-receipt emails. Tested against ≥3 saved fixtures.
+Two pure-cheerio parsers, both in `lib/parsers/rei.ts`:
 
-Each `ParsedItem` includes a `productUrl` field that is **always non-empty** for valid items. The parser tries to extract the `<a href>` on the product name / image for each line item. If absent, the parser calls `buildFallbackProductUrl({ source: 'REI', itemName })` from `lib/url-fallback.ts`, which produces an REI search URL. Real URLs preserve all tracking parameters (leave as-is).
+- `parseReiEmail` — online orders / shipments / delivery notices. Returns `ParsedOrder` keyed off the `A\d{8,}` order ID, line items with name/qty/price/productUrl/color/size. Returns null for emails without an `A`-prefixed Order ID.
+- `parseReiReceiptEmail` (added 2026-05-17) — in-store eReceipts. Detected by `Transaction #:` + `Items purchased` body markers. Synthesizes `orderId = S{store#}-T{transaction#}` and a productUrl (`https://www.rei.com/product/<itemId>`) per line so the standard `(orderId, productId)` strong dedup key works. Color/size left blank. Aggregates same-Item# lines into one entry with summed quantity. See DECISIONS.md (2026-05-17).
+
+`apps/cron/pipeline.ts` dispatches REI emails to the online parser first, falling through to the eReceipt parser if the online parser returns null — same pattern as Amazon shipment→order.
+
+Each `ParsedItem` includes a `productUrl` field that is **always non-empty** for valid items. The online parser tries to extract the `<a href>` on the product name / image for each line item; absent that, it falls back to `buildFallbackProductUrl({ source: 'REI', itemName })`. The eReceipt parser synthesizes the URL from the Item # (deterministic). Real URLs preserve all tracking parameters (leave as-is).
 
 ### Task 1.3: Amazon parser
 
@@ -780,7 +785,7 @@ These block specific tasks. Surface at session start so they don't surprise mid-
 - **Surfline / Magic Seaweed / surf-specific APIs** — explicitly skipped; web_search (Phase 2.5) handles surf-related queries
 - **Strava integration** — explicitly skipped
 - **Resale-value advisor** — explicitly skipped
-- **Photo / receipt OCR** — explicitly skipped (manual `/log` covers in-store buys)
+- **Photo / receipt OCR** — explicitly skipped. In-store buys are covered by (1) automatic ingest of retailer eReceipt emails when the retailer sends them (REI eReceipts, since 2026-05-17), and (2) manual `/log` for everything else (cash, gifts, marketplace, retailers without eReceipt emails).
 - **Weekly digest** — explicitly skipped (per-run Telegram digest from Phase 1 is sufficient)
 - **Voice notes via Telegram** — out of scope; typed `/log` is fine
 - **iMessage relay or any Apple Shortcuts integration** — out of scope

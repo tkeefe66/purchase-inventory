@@ -125,3 +125,15 @@ export async function applyLabel(
     requestBody: { addLabelIds: [labelId] },
   });
 }
+
+export async function removeLabel(
+  gmail: GmailClient,
+  messageId: string,
+  labelId: string,
+): Promise<void> {
+  await gmail.users.messages.modify({
+    userId: 'me',
+    id: messageId,
+    requestBody: { removeLabelIds: [labelId] },
+  });
+}

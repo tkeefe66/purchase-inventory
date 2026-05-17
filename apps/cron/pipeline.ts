@@ -13,7 +13,7 @@ import {
 } from '../../lib/gmail.js';
 import { parseAmazonShipmentEmail, parseAmazonOrderEmail } from '../../lib/parsers/amazon.js';
 import { parseAmazonReturnEmail, type ReturnAction } from '../../lib/parsers/amazon-return.js';
-import { parseReiEmail } from '../../lib/parsers/rei.js';
+import { parseReiEmail, parseReiReceiptEmail } from '../../lib/parsers/rei.js';
 import type { ParsedOrder } from '../../lib/parsers/types.js';
 import { extractProductId } from '../../lib/productId.js';
 import { routeItem } from '../../lib/router.js';
@@ -149,8 +149,11 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineResult
 
       const rows = await processOrderOrShipmentMessage(msg, classify, anthropic);
       if (rows === 'non-receipt') {
+        // Per DECISIONS.md (2026-04-30, "Non-receipt emails"): do NOT label
+        // unparsed emails. Leaving them un-labeled means a future parser
+        // (e.g., new sender format, REI in-store eReceipt) can pick them up
+        // on the next scan instead of being silently buried.
         result.skippedNonReceipts++;
-        messagesToLabel.push(msgId);
         continue;
       }
       newRows.push(...rows);
@@ -298,8 +301,12 @@ async function parseEmail(
   anthropic: Anthropic,
 ): Promise<ParsedOrder[] | null> {
   if (source === 'REI') {
-    const r = parseReiEmail(html);
-    return r ? [r] : null;
+    // Online-order parser is the fast path. Falls through to the in-store
+    // eReceipt parser if the email doesn't carry an `A`-prefixed order ID.
+    const online = parseReiEmail(html);
+    if (online) return [online];
+    const receipt = parseReiReceiptEmail(html);
+    return receipt ? [receipt] : null;
   }
   if (source === 'Amazon') {
     // Shipment-tracking is the fast path (cheerio, no LLM). Falls through to
