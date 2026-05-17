@@ -2,7 +2,7 @@
 
 Personal purchase-ingest + categorization platform that powers domain-specialist Claude agents. Outdoor first; other domains follow on the same architecture.
 
-> Status: **Phase 3 complete — Weather shipped 2026-05-15** (Pirate Weather + Nominatim). Heading into Phase 3.5 (calendar-aware trip prep). See `docs/PLAN.md` for the full roadmap and `DECISIONS.md` for the locked design decisions. Read `CLAUDE.md` first if you're an AI assistant working on this repo.
+> Status: **Phase 5 complete — Camping shipped 2026-05-15** (Recreation.gov + iOverlander, release-moment alerts). Most-recent change 2026-05-17: REI in-store eReceipts now ingest end-to-end (parser + Sonnet+web_search enrichment + auto-fixed labeling regression). See `docs/PLAN.md` for the full roadmap and `DECISIONS.md` for the locked design decisions. Read `CLAUDE.md` first if you're an AI assistant working on this repo.
 
 ## Quickstart (work-in-progress)
 
@@ -30,7 +30,7 @@ npm run bootstrap-sheet
 apps/        cron, bot (Phase 2+), web (Phase 6) — wires lib + domains together
 lib/         pure infrastructure (Sheets, Gmail, parsers, Claude, Telegram, dedup, router)
 domains/     one folder per domain; only outdoor is implemented in v1
-scripts/     one-time tools: auth, bootstrap-sheet, import-history
+scripts/     one-time tools: auth, bootstrap-sheet, import-history, fetch-fixtures, unlabel-emails, enrich-rows
 tests/       vitest; fixtures/ holds saved real emails for parser tests
 docs/        PLAN.md (roadmap), PRODUCT.md (vision)
 ```

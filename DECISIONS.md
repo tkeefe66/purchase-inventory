@@ -1112,6 +1112,38 @@ Strong key is checked **first**. Falls back to the existing full key (orderId + 
 
 ---
 
+## 2026-05-17 (later) — REI eReceipt itemName enrichment via Sonnet + web_search
+
+**Context:** Immediately after shipping `parseReiReceiptEmail` (this file, prior 2026-05-17 entry), the 27 newly-ingested historical eReceipt rows in the sheet had terrible item names. The eReceipt's `<img alt>` text is the POS register abbreviation, not a real product name. Examples: `LoungerDLChairMesh`, `Trlmade Rain Pant`, `CompressiblePillow`, `ThermalMerinBL14Zp`, `CLIFBAR      CH/CH/2.4  /*OZ`. Downstream the classifier (Haiku 4.5) was getting garbage inputs and producing bad brand/domain/category guesses (e.g. a Smith ski helmet stored as "Charger MIPS" with no brand).
+
+**Decision:** every in-store eReceipt item now goes through an enrichment step before classification. The enrichment takes the synthesized REI URL + the POS abbreviation + price paid and produces canonical `{brand, itemName, color, size}`.
+
+**Failed approach we attempted first — direct REI scrape.** Tom's instinct was "if no downside, scrape REI." We tried using the existing `lib/parsers/product-lookup.ts:fetchProductInfo`, which already does a polite User-Agent HTTP fetch for `<title>` / `og:title` and runs Haiku on the result. **REI hard-blocks non-browser User-Agents via Cloudflare.** Verified empirically: `curl -A "Mozilla/5.0 (compatible; outdoor-inventory/1.0)"` returns HTTP 403; even a full browser-mimic UA + Accept headers gets dropped mid-handshake (curl exit code 92). The CLAUDE.md no-scrape rule turns out to have teeth, not just be aspirational. **Filed as fact, not future work:** any code path that needs REI product data must go through Anthropic's `web_search`, never direct `fetch()`.
+
+**Chosen approach — Sonnet 4.6 + web_search.** `lib/parsers/rei-product-lookup.ts` exports `lookupReceiptItem(anthropic, item)`. Calls Sonnet 4.6 with a constrained system prompt and the `web_search_20260209` tool (max 2 searches). Sonnet runs queries like `site:rei.com <numeric-id>` and reads Google's snippets — these aren't blocked even when direct REI fetches are. Returns JSON `{brand, itemName, color, size}` or null. The `lib/parsers/rei-receipt-enrich.ts` orchestrator runs items 3 at a time concurrently and falls back to the raw parsed item if the lookup fails.
+
+**Why Sonnet not Haiku.** Considered Haiku for cost. The task involves disambiguating a noisy SKU code against potentially-thousands of REI products via web search — Sonnet has measurably better tool-use chaining and named-entity recovery than Haiku for this. Cost was the right tradeoff: ~$0.05-0.10 per item × 5-15 items per eReceipt × maybe 2-4 eReceipts/month = ~$5/year. Negligible vs the value of clean data.
+
+**Why not the existing `lookupProduct` (also Sonnet + web_search).** That function (in `lib/parsers/product-lookup.ts`) is shaped for the photo-capture flow: it takes a `brand + visionItemName`, returns up to 3 *candidate* product pages for the user to pick from. We needed a different shape: take a `productUrl + bad name + price`, return a single canonical record. Building a focused module keeps the prompts simple and the contracts tight.
+
+**Channel marking remains the same.** Per the prior 2026-05-17 decision (Q1), eReceipts use `Source = "REI"` and `Order ID = S{store}-T{txn}`. Enrichment doesn't change those — it only touches `Item Name`, `Brand`, `Color`, `Size`. After enrichment the classifier runs again and updates `Domain`, `Category`, `Sub-Category`, `Type`, `Reasoning`.
+
+**Backfill of historical rows.** `scripts/enrich-rows.ts` (npm script: `enrich-rows`) reads the sheet, filters rows where Order ID matches `^S\d+-T\d+$`, runs them through the same enrichment + classifier, batch-updates via the new `updateRowFields` helper in `lib/sheets.ts`. Default is dry-run; `--apply` writes. Ran once on 2026-05-17 against the 26 historical eReceipt rows — 26/26 enriched.
+
+**Known imperfections accepted.** Consumables lose flavor detail (`CLIFBAR CH/CH/2.4 /*OZ` → "Energy Bar"; "Stinger Waffle" → "Waffle") because the item ID alone doesn't carry flavor info. Brand can occasionally be wrong (the Smith Charger MIPS came back with brand "Charger" — model name confused for manufacturer). Acceptable; the manual edit path exists.
+
+**Files added/changed:**
+- `lib/parsers/rei-receipt-enrich.ts` — orchestrator, concurrency=3, fallback-to-raw
+- `lib/parsers/rei-product-lookup.ts` — Sonnet + web_search call, JSON contract
+- `lib/sheets.ts` — `updateRowFields` batch helper
+- `scripts/enrich-rows.ts` + `npm run enrich-rows`
+- `apps/cron/pipeline.ts` — calls enrichment for eReceipt items in `parseEmail`
+- `tests/parsers/rei-receipt-enrich.test.ts` — 6 tests (mocked lookup; tests delta-only updates, fallbacks, multi-item)
+
+**CLAUDE.md updated** to reflect: scraping policy is "no direct REI/Amazon HTTP fetches — use web_search"; REI parser table row now mentions enrichment.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale

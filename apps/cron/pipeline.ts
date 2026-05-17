@@ -14,6 +14,7 @@ import {
 import { parseAmazonShipmentEmail, parseAmazonOrderEmail } from '../../lib/parsers/amazon.js';
 import { parseAmazonReturnEmail, type ReturnAction } from '../../lib/parsers/amazon-return.js';
 import { parseReiEmail, parseReiReceiptEmail } from '../../lib/parsers/rei.js';
+import { enrichReiReceiptItems } from '../../lib/parsers/rei-receipt-enrich.js';
 import type { ParsedOrder } from '../../lib/parsers/types.js';
 import { extractProductId } from '../../lib/productId.js';
 import { routeItem } from '../../lib/router.js';
@@ -306,7 +307,12 @@ async function parseEmail(
     const online = parseReiEmail(html);
     if (online) return [online];
     const receipt = parseReiReceiptEmail(html);
-    return receipt ? [receipt] : null;
+    if (!receipt) return null;
+    // eReceipt `<img alt>` is the POS register's abbreviated product code,
+    // not a real product name. Enrich each item via the synthesized REI URL
+    // so the classifier downstream sees clean brand + itemName.
+    const enrichedItems = await enrichReiReceiptItems(receipt.items, anthropic);
+    return [{ ...receipt, items: enrichedItems }];
   }
   if (source === 'Amazon') {
     // Shipment-tracking is the fast path (cheerio, no LLM). Falls through to

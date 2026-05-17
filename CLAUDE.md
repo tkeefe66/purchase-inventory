@@ -91,7 +91,7 @@ ledger/                     # current folder name: outdoor-inventory
 | Year derivation | From `Date Purchased` in Mountain time |
 | Price | Line-item price, post-discount, no shipping/tax |
 | Email senders | REI: `rei@notices.rei.com`. Amazon: **THREE senders** — `auto-confirm@amazon.com` (order — "Ordered: …", ingested via Haiku), `shipment-tracking@amazon.com` (shipment — "Shipped: …", ingested via cheerio fast-path), `return@amazon.com` (returns/refunds — flips Status to `returned`). |
-| REI parser | Pure cheerio; no LLM |
+| REI parser | Two paths in `lib/parsers/rei.ts`, both pure cheerio: `parseReiEmail` (online orders/shipments/deliveries, requires `A\d{8,}` order ID) and `parseReiReceiptEmail` (in-store eReceipts; orderId synthesized as `S{store}-T{txn}`, productUrl synthesized from Item #, aggregates same-product lines). Pipeline tries online first, falls through to receipt. eReceipts then run through **`lib/parsers/rei-product-lookup.ts` (Sonnet 4.6 + `web_search`)** to resolve the POS register's abbreviated item name to the canonical brand + marketing name before classification. `scripts/enrich-rows.ts` does the same for existing sheet rows. |
 | Amazon parser | Two-path: `parseAmazonShipmentEmail` (sync, cheerio, IMG-alt + typographic `<sup>$</sup>` prices) and `parseAmazonOrderEmail` (async, Haiku 4.5, extracts per-line-item from auto-confirm HTML). Pipeline tries shipment first, falls through to order. Plus `parseAmazonReturnEmail` (Haiku) for `return@amazon.com`. |
 | Brand extraction | Allowlist seeded from existing sheet's Brand column; LLM as backup |
 | Color/Size for Amazon | Often blank; only filled when parser is confident |
@@ -174,7 +174,9 @@ ledger/                     # current folder name: outdoor-inventory
 ### DO NOT
 
 - Do not start a second domain before Outdoor is shipped through Phase 6 (or Phase 5 if web UI is deferred)
-- Do not log into or scrape REI.com or Amazon.com — even if it would make a feature easier
+- Do not log into REI.com or Amazon.com from the bot/cron under any circumstances (account safety + ToS).
+- **Scraping is allowed for narrow, low-volume product-info enrichment**, but REI hard-blocks non-browser User-Agents via Cloudflare (verified 2026-05-17 — `exit code 92` on first request). Use Anthropic's `web_search` tool instead (see `lib/parsers/rei-product-lookup.ts`). Direct `fetch()` of REI pages will fail; don't add code that depends on it.
+- Amazon scraping is even more aggressively defended — `FETCH_BLOCKED_HOSTS` in `lib/parsers/product-lookup.ts` already excludes it. Don't try to work around that list.
 - Do not skip the 7-day soak test before Phase 2
 - Do not add proactive features in v1 or v1.5 (no push notifications, no unsolicited suggestions)
 - Do not write code that imports across domains (`domains/outdoor/` cannot import from `domains/kitchen/`)

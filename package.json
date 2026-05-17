@@ -30,6 +30,7 @@
     "audit": "tsx apps/cron/audit.ts",
     "label-historical": "tsx scripts/label-historical.ts",
     "unlabel-emails": "tsx scripts/unlabel-emails.ts",
+    "enrich-rows": "tsx scripts/enrich-rows.ts",
     "dedup-existing": "tsx scripts/dedup-existing.ts",
     "smoke-cache": "tsx scripts/smoke-cache.ts",
     "smoke-agent": "tsx scripts/smoke-agent.ts",
