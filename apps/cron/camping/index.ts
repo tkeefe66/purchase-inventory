@@ -7,16 +7,18 @@ import {
 } from './schedule.js';
 import { createRecGovClient } from '../../../lib/reccgov/client.js';
 import { createSheetsClient } from '../../../lib/sheets.js';
-import { readMutedFacilityIds, mirrorCampingIndex } from '../../../lib/sheets.js';
-import { readCampingIndex, writeCampingIndex, readCampingTrips, writeCampingTrips } from '../../../lib/campingState.js';
+import { readMutedFacilityIds, mirrorCampingIndex, readCampingTripsFromSheet, writeCampingTripsToSheet } from '../../../lib/sheets.js';
+import { readCampingIndex, writeCampingIndex } from '../../../lib/campingState.js';
 import { runIndexRefresh } from './index-refresh.js';
 import { runMetadataRefresh } from './metadata-refresh.js';
 import { runNudgeTick } from './nudge-tick.js';
 import { runReleaseTick } from './release-tick.js';
 import { sendMessage } from '../../../lib/telegram.js';
 
+// camping-index.json stays file-based — it's only read+written by this
+// cron service (its own volume). Trips state lives in the sheet so it can
+// be shared with the bot (Railway volumes are single-attach).
 const INDEX_PATH = process.env.CAMPING_INDEX_PATH ?? '/data/camping-index.json';
-const TRIPS_PATH = process.env.CAMPING_TRIPS_PATH ?? '/data/camping-trips.json';
 
 async function main(): Promise<void> {
   const required = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_REFRESH_TOKEN',
@@ -61,19 +63,19 @@ async function main(): Promise<void> {
   if (shouldRunNudgeTick(now)) {
     console.log('[camping-cron] running nudge-tick');
     const idx = await readCampingIndex(INDEX_PATH);
-    const trips = await readCampingTrips(TRIPS_PATH);
+    const trips = await readCampingTripsFromSheet(sheets, spreadsheetId);
     const muted = await readMutedFacilityIds(sheets, spreadsheetId);
     const res = await runNudgeTick({ now, index: idx, trips, mutedFacilityIds: muted, sendTelegram });
-    await writeCampingTrips(TRIPS_PATH, res.trips);
+    await writeCampingTripsToSheet(sheets, spreadsheetId, res.trips);
     console.log(`[camping-cron] nudge-tick: ${res.seasonOpenerFired} season-opener, ${res.sevenDayFired} 7-day`);
   }
 
   // release-tick always runs; it self-gates.
   const idx = await readCampingIndex(INDEX_PATH);
-  const trips = await readCampingTrips(TRIPS_PATH);
+  const trips = await readCampingTripsFromSheet(sheets, spreadsheetId);
   const res = await runReleaseTick({ now, index: idx, trips, sendTelegram });
   if (res.fired > 0) {
-    await writeCampingTrips(TRIPS_PATH, res.trips);
+    await writeCampingTripsToSheet(sheets, spreadsheetId, res.trips);
     console.log(`[camping-cron] release-tick: fired ${res.fired} alerts`);
   }
 

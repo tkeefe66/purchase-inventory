@@ -82,6 +82,10 @@ const CAMPING_INDEX_HEADERS = [
   'Next Calendar Opens', 'Next Reminder Fires',
   'Muted', 'Notes',
 ];
+const CAMPING_TRIPS_HEADERS = [
+  'Trip ID', 'Facility ID', 'Visit Date', 'Planned At',
+  '7-Day Fired At', 'Release-Moment Fired At', 'Cancelled At',
+];
 
 async function main(): Promise<void> {
   const { clientId, clientSecret, refreshToken, spreadsheetId } = readEnv();
@@ -304,6 +308,24 @@ async function main(): Promise<void> {
       },
     });
   }
+
+  // Camping Trips tab — cross-service shared trip state (replaces JSON file).
+  const campingTripsExists = allTabs.some((s) => s.properties?.title === 'Camping Trips');
+  let campingTripsWillBeCreated = false;
+  if (campingTripsExists) {
+    console.log('Plan: "Camping Trips" tab (already exists — skip)');
+  } else {
+    console.log(`Plan: create "Camping Trips" tab with ${CAMPING_TRIPS_HEADERS.length} headers`);
+    campingTripsWillBeCreated = true;
+    requests.push({
+      addSheet: {
+        properties: {
+          title: 'Camping Trips',
+          gridProperties: { rowCount: 500, columnCount: CAMPING_TRIPS_HEADERS.length },
+        },
+      },
+    });
+  }
   console.log();
 
   console.log('Applying batch update...');
@@ -341,6 +363,16 @@ async function main(): Promise<void> {
       requestBody: { values: [CAMPING_INDEX_HEADERS] },
     });
     console.log('✓ "Camping Index" headers written');
+  }
+
+  if (campingTripsWillBeCreated) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `'Camping Trips'!A1:${colLetter(CAMPING_TRIPS_HEADERS.length - 1)}1`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [CAMPING_TRIPS_HEADERS] },
+    });
+    console.log('✓ "Camping Trips" headers written');
   }
 
   console.log();

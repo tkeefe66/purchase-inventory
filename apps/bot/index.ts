@@ -9,8 +9,10 @@ import {
   buildVocab,
   readMutedFacilityIds,
   setMutedInCampingIndex,
+  readCampingIndexFromSheet,
+  readCampingTripsFromSheet,
+  writeCampingTripsToSheet,
 } from '../../lib/sheets.js';
-import { readCampingIndex, readCampingTrips, writeCampingTrips } from '../../lib/campingState.js';
 import { sendMessage, getUpdates, getFile, downloadFile, type TelegramConfig } from '../../lib/telegram.js';
 import { InventoryCache } from './inventoryCache.js';
 import { Stats } from './stats.js';
@@ -147,9 +149,13 @@ async function main(): Promise<void> {
         cache.getSnapshot().map((r) => ({ brand: r.brand, itemName: r.itemName })),
     },
     camping: {
-      readIndex: () => readCampingIndex(process.env.CAMPING_INDEX_PATH ?? '/data/camping-index.json'),
-      readTrips: () => readCampingTrips(process.env.CAMPING_TRIPS_PATH ?? '/data/camping-trips.json'),
-      writeTrips: (t) => writeCampingTrips(process.env.CAMPING_TRIPS_PATH ?? '/data/camping-trips.json', t),
+      // All persistent camping state lives in the sheet (Camping Index +
+      // Camping Trips tabs). Cron writes the index after refresh phases;
+      // bot reads it here. /plan-trip and /cancel-trip flow through the
+      // Camping Trips tab so the camping-cron sees them on the next tick.
+      readIndex: () => readCampingIndexFromSheet(sheets, env.spreadsheetId),
+      readTrips: () => readCampingTripsFromSheet(sheets, env.spreadsheetId),
+      writeTrips: (t) => writeCampingTripsToSheet(sheets, env.spreadsheetId, t),
       readMutedIds: () => readMutedFacilityIds(sheets, env.spreadsheetId),
       setMuted: (ids, muted) => setMutedInCampingIndex(sheets, env.spreadsheetId, ids, muted),
     },

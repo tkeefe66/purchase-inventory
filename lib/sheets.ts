@@ -765,3 +765,205 @@ export async function setMutedInCampingIndex(
     });
   }
 }
+
+/**
+ * Read the Camping Index sheet tab and reconstruct CampingIndex (Facility[]).
+ *
+ * Used by the bot service so it doesn't need a synchronized JSON volume —
+ * the sheet IS the cross-service source of truth (the cron mirrors to it
+ * after each refresh phase). Returns whatever the sheet currently shows;
+ * facilities with empty Facility ID are dropped.
+ */
+export async function readCampingIndexFromSheet(
+  sheets: SheetsClient,
+  spreadsheetId: string,
+): Promise<import('./reccgov/types.js').CampingIndex> {
+  let resp;
+  try {
+    resp = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `'${CAMPING_INDEX_TAB}'!A:${CAMPING_INDEX_RANGE_END}`,
+    });
+  } catch {
+    return { facilities: [] };
+  }
+  const rows = (resp.data.values ?? []) as (string | number | boolean)[][];
+  if (rows.length < 2) return { facilities: [] };
+  const header = (rows[0] as (string | undefined)[]).map((h) => String(h ?? ''));
+  const map = new Map(header.map((h, i) => [h, i]));
+  const idx = (name: string): number => map.get(name) ?? -1;
+  const cell = (row: (string | number | boolean)[], name: string): string | number | boolean | undefined => {
+    const i = idx(name);
+    return i >= 0 ? row[i] : undefined;
+  };
+  const cellStr = (row: (string | number | boolean)[], name: string): string => {
+    const v = cell(row, name);
+    return v === undefined || v === null ? '' : String(v);
+  };
+  const cellNum = (row: (string | number | boolean)[], name: string): number => {
+    const v = cell(row, name);
+    if (typeof v === 'number') return v;
+    if (typeof v === 'string' && v) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
+    return 0;
+  };
+  const cellBool = (row: (string | number | boolean)[], name: string): boolean => {
+    const v = cell(row, name);
+    return v === true || v === 'TRUE' || v === 'true';
+  };
+
+  type Facility = import('./reccgov/types.js').Facility;
+  const facilities: Facility[] = [];
+  for (const row of rows.slice(1)) {
+    const id = cellStr(row, 'Facility ID');
+    if (!id) continue;
+    const seasonOpen = cellStr(row, 'Season Opens');
+    const fcfsStart = cellStr(row, 'FCFS Start');
+    const reservableStart = cellStr(row, 'Reservable Start');
+    const seasonClose = cellStr(row, 'Season Close');
+    const nextSeasonStart = cellStr(row, 'Next Season Opens');
+    const hasBW = !!(seasonOpen || fcfsStart || reservableStart || seasonClose || nextSeasonStart);
+    const restrictionsRaw = cellStr(row, 'Restrictions');
+    const amenitiesRaw = cellStr(row, 'Amenities');
+    const f: Facility = {
+      facilityId: id,
+      name: cellStr(row, 'Name'),
+      state: 'CO',
+      parentUnit: cellStr(row, 'Parent Unit'),
+      region: cellStr(row, 'Region') || null,
+      lat: cellNum(row, 'Lat'),
+      lng: cellNum(row, 'Lng'),
+      agency: (cellStr(row, 'Agency') || 'USFS') as import('./reccgov/types.js').Agency,
+      useType: (cellStr(row, 'Use Type') || 'overnight') as import('./reccgov/types.js').UseType,
+      leadTimeDays: cellNum(row, 'Lead Days') || 180,
+      specialReleaseDate: cellStr(row, 'Special Release') || null,
+      seasonStart: cellStr(row, 'Season Start') || null,
+      seasonEnd: cellStr(row, 'Season End') || null,
+      feeUSD: cellNum(row, 'Fee'),
+      reservationType: (cellStr(row, 'Reservation Type') || 'reservation') as import('./reccgov/types.js').ReservationType,
+      tentEligibleSites: [] as string[],
+      totalSites: cellNum(row, 'Tent-Eligible Sites'),
+      restrictions: restrictionsRaw ? restrictionsRaw.split('; ').filter(Boolean) : [],
+      amenities: amenitiesRaw ? amenitiesRaw.split('; ').filter(Boolean) : [],
+      hasRestrooms: cellBool(row, 'Has Restrooms'),
+      reservationUrl: '',
+      lastMetadataRefresh: '',
+      active: cellBool(row, 'Active'),
+      nextReleaseAtIso: null,
+      bookingWindows: hasBW ? {
+        seasonOpenDate: seasonOpen || null,
+        fcfsStartDate: fcfsStart || null,
+        reservableStartDate: reservableStart || null,
+        seasonCloseDate: seasonClose || null,
+        nextSeasonStartDate: nextSeasonStart || null,
+      } : null,
+    };
+    facilities.push(f);
+  }
+  return { facilities };
+}
+
+// ---------------------------------------------------------------------------
+// Camping Trips tab — shared cross-service trip state
+// ---------------------------------------------------------------------------
+//
+// The bot and camping-cron need to share trip state for /plan-trip to actually
+// trigger release alerts. Because Railway volumes are single-attach, we use
+// the Google Sheet as the cross-service source of truth (same pattern as the
+// Muted column in Camping Index).
+//
+// Schema: one row per trip, columns:
+//   A  Trip ID (UUID)
+//   B  Facility ID
+//   C  Visit Date (YYYY-MM-DD)
+//   D  Planned At (ISO timestamp)
+//   E  7-Day Nudge Fired At (ISO or empty)
+//   F  Release-Moment Nudge Fired At (ISO or empty)
+//   G  Cancelled At (ISO or empty)
+
+const CAMPING_TRIPS_TAB = 'Camping Trips';
+const CAMPING_TRIPS_HEADER = [
+  'Trip ID', 'Facility ID', 'Visit Date', 'Planned At',
+  '7-Day Fired At', 'Release-Moment Fired At', 'Cancelled At',
+] as const;
+const CAMPING_TRIPS_RANGE_END = colLetter(CAMPING_TRIPS_HEADER.length - 1);
+
+async function ensureCampingTripsTab(sheets: SheetsClient, spreadsheetId: string): Promise<void> {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId });
+  const exists = (meta.data.sheets ?? []).some((s) => s.properties?.title === CAMPING_TRIPS_TAB);
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: { requests: [{ addSheet: { properties: { title: CAMPING_TRIPS_TAB } } }] },
+    });
+  }
+  const headerResp = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `'${CAMPING_TRIPS_TAB}'!1:1`,
+  });
+  const currentHeader = (headerResp.data.values?.[0] ?? []) as string[];
+  const expected = Array.from(CAMPING_TRIPS_HEADER);
+  const stale = currentHeader.length !== expected.length
+    || expected.some((h, i) => currentHeader[i] !== h);
+  if (stale) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `'${CAMPING_TRIPS_TAB}'!A1`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [expected] },
+    });
+  }
+}
+
+export async function readCampingTripsFromSheet(
+  sheets: SheetsClient,
+  spreadsheetId: string,
+): Promise<import('./reccgov/types.js').CampingTrips> {
+  await ensureCampingTripsTab(sheets, spreadsheetId);
+  const resp = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `'${CAMPING_TRIPS_TAB}'!A:${CAMPING_TRIPS_RANGE_END}`,
+  });
+  const rows = (resp.data.values ?? []) as (string | number | boolean)[][];
+  if (rows.length < 2) return { trips: [] };
+  return {
+    trips: rows.slice(1).map((row) => ({
+      id: String(row[0] ?? ''),
+      facilityId: String(row[1] ?? ''),
+      visitDate: String(row[2] ?? ''),
+      plannedAt: String(row[3] ?? ''),
+      nudges: [
+        { kind: '7-day' as const, firedAt: row[4] ? String(row[4]) : null },
+        { kind: 'release-moment' as const, firedAt: row[5] ? String(row[5]) : null },
+      ],
+      cancelledAt: row[6] ? String(row[6]) : null,
+    })).filter((t) => t.id),
+  };
+}
+
+export async function writeCampingTripsToSheet(
+  sheets: SheetsClient,
+  spreadsheetId: string,
+  trips: import('./reccgov/types.js').CampingTrips,
+): Promise<void> {
+  await ensureCampingTripsTab(sheets, spreadsheetId);
+  // Clear all data rows (preserving the header at row 1), then append the new state.
+  // Single user, low volume — atomicity tradeoff is fine.
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId,
+    range: `'${CAMPING_TRIPS_TAB}'!A2:${CAMPING_TRIPS_RANGE_END}`,
+  });
+  if (trips.trips.length === 0) return;
+  const values = trips.trips.map((t) => [
+    t.id, t.facilityId, t.visitDate, t.plannedAt,
+    t.nudges.find((n) => n.kind === '7-day')?.firedAt ?? '',
+    t.nudges.find((n) => n.kind === 'release-moment')?.firedAt ?? '',
+    t.cancelledAt ?? '',
+  ]);
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: `'${CAMPING_TRIPS_TAB}'!A:${CAMPING_TRIPS_RANGE_END}`,
+    valueInputOption: 'RAW',
+    insertDataOption: 'INSERT_ROWS',
+    requestBody: { values },
+  });
+}
