@@ -5,7 +5,7 @@ import type { Facility } from '../../lib/reccgov/types.js';
 const HEADER = [
   'Facility ID', 'Name', 'Site URL', 'Map URL',
   'Agency', 'Parent Unit', 'Region', 'Lat', 'Lng',
-  'Lead Days', 'Special Release', 'Season Start', 'Season End', 'Fee',
+  'Lead Days', 'Special Release', 'Fee',
   'Reservation Type', 'Use Type', 'Restrictions', 'Has Restrooms',
   'Amenities', 'Tent-Eligible Sites', 'Active',
   'Season Opens', 'FCFS Start', 'Reservable Start', 'Season Close', 'Next Season Opens',
@@ -74,30 +74,25 @@ describe('mirrorCampingIndex', () => {
   test('updates existing rows by Facility ID without touching Muted or Notes', async () => {
     const { sheets, updated } = mockSheets({
       existingTabs: ['All Purchases', 'Camping Index'],
-      // 31 cols: ID(0), Name(1), Site URL(2), Map URL(3), Agency(4), ParentUnit(5),
-      // Region(6), Lat(7), Lng(8), LeadDays(9), SpecialRelease(10), SeasonStart(11),
-      // SeasonEnd(12), Fee(13), ReservationType(14), UseType(15), Restrictions(16),
-      // HasRestrooms(17), Amenities(18), TentSites(19), Active(20),
-      // SeasonOpens(21), FCFSStart(22), ReservableStart(23), SeasonClose(24),
-      // NextSeasonOpens(25), NextReleaseMoment(26),
-      // NextCalendarOpens(27), NextReminderFires(28), Muted(29), Notes(30)
-      existingRows: [['F1', 'Old Name', '', '', 'USFS', '', '', 0, 0, 0, '', '', '', 0, '', '', '', false, '', '', false,
+      // 29 cols (dropped Season Start/End — replaced by Tier-3 Season Opens/Close).
+      // Muted at index 27, Notes at index 28.
+      existingRows: [['F1', 'Old Name', '', '', 'USFS', '', '', 0, 0, 0, '', 0, '', '', '', false, '', '', false,
         '', '', '', '', '', '', '', '', true, 'my notes']],
     });
     await mirrorCampingIndex(sheets as never, 'sid', [sampleFacility]);
     expect(updated.length).toBeGreaterThan(0);
     const updatedRow = updated.find((u) => u.range.includes('A2'))!.values[0]!;
-    expect(updatedRow[1]).toBe('Test CG');         // Name updated
-    expect(updatedRow[29]).toBe(true);              // Muted preserved (col index 29)
-    expect(updatedRow[30]).toBe('my notes');        // Notes preserved (col index 30)
+    expect(updatedRow[1]).toBe('Test CG');
+    expect(updatedRow[27]).toBe(true);              // Muted preserved (new index 27)
+    expect(updatedRow[28]).toBe('my notes');        // Notes preserved (new index 28)
   });
 
   test('writes computed Next Calendar Opens + Next Reminder Fires for rolling-release sites', async () => {
     const { sheets, appended } = mockSheets({ existingTabs: ['All Purchases', 'Camping Index'] });
     await mirrorCampingIndex(sheets as never, 'sid', [sampleFacility]);
     expect(appended).toHaveLength(1);
-    const nextOpens = appended[0]![27] as string;       // heuristic Next Calendar Opens
-    const nextReminder = appended[0]![28] as string;    // heuristic Next Reminder Fires
+    const nextOpens = appended[0]![25] as string;
+    const nextReminder = appended[0]![26] as string;
     expect(nextOpens).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(nextReminder).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(nextReminder < nextOpens).toBe(true);
@@ -117,24 +112,23 @@ describe('mirrorCampingIndex', () => {
     };
     const { sheets, appended } = mockSheets({ existingTabs: ['All Purchases', 'Camping Index'] });
     await mirrorCampingIndex(sheets as never, 'sid', [facilityWithBW]);
-    expect(appended[0]![21]).toBe('2026-05-15');   // Season Opens
-    expect(appended[0]![22]).toBe('2026-05-15');   // FCFS Start
-    expect(appended[0]![23]).toBe('2026-05-22');   // Reservable Start
-    expect(appended[0]![24]).toBe('2026-09-21');   // Season Close
-    expect(appended[0]![25]).toBe('2027-06-04');   // Next Season Opens
-    expect(appended[0]![26]).toMatch(/2026-05-16 15:00 MDT/); // Next Release Moment (17:00 EDT = 15:00 MDT)
+    expect(appended[0]![19]).toBe('2026-05-15');   // Season Opens
+    expect(appended[0]![20]).toBe('2026-05-15');   // FCFS Start
+    expect(appended[0]![21]).toBe('2026-05-22');   // Reservable Start
+    expect(appended[0]![22]).toBe('2026-09-21');   // Season Close
+    expect(appended[0]![23]).toBe('2027-06-04');   // Next Season Opens
+    expect(appended[0]![24]).toMatch(/2026-05-16 15:00 MDT/); // Next Release Moment
   });
 
   test('emits blanks for Tier-3 columns when bookingWindows is absent', async () => {
     const { sheets, appended } = mockSheets({ existingTabs: ['All Purchases', 'Camping Index'] });
     await mirrorCampingIndex(sheets as never, 'sid', [sampleFacility]);
-    // sampleFacility has no bookingWindows / nextReleaseAtIso
+    expect(appended[0]![19]).toBe('');
+    expect(appended[0]![20]).toBe('');
     expect(appended[0]![21]).toBe('');
     expect(appended[0]![22]).toBe('');
     expect(appended[0]![23]).toBe('');
     expect(appended[0]![24]).toBe('');
-    expect(appended[0]![25]).toBe('');
-    expect(appended[0]![26]).toBe('');
   });
 
   test('writes constructed Site URL + Map URL for each facility', async () => {
@@ -144,11 +138,11 @@ describe('mirrorCampingIndex', () => {
     expect(appended[0]![3]).toBe('https://www.google.com/maps?q=39,-106');
   });
 
-  test('Site URL emitted for inactive facilities too (some dead-link, but tradeoff is intentional)', async () => {
+  test('Site URL blank for inactive facilities (Rec.gov dead-link); Map URL still emitted', async () => {
     const inactiveFacility: Facility = { ...sampleFacility, facilityId: 'F2', active: false };
     const { sheets, appended } = mockSheets({ existingTabs: ['All Purchases', 'Camping Index'] });
     await mirrorCampingIndex(sheets as never, 'sid', [inactiveFacility]);
-    expect(appended[0]![2]).toBe('https://www.recreation.gov/camping/campgrounds/F2');
+    expect(appended[0]![2]).toBe('');
     expect(appended[0]![3]).toBe('https://www.google.com/maps?q=39,-106');
   });
 });
@@ -157,13 +151,13 @@ describe('readMutedFacilityIds', () => {
   test('returns Facility IDs where Muted=TRUE', async () => {
     const { sheets } = mockSheets({
       existingTabs: ['All Purchases', 'Camping Index'],
-      // 31-col rows: Active=true at 20, Muted at 29, Notes at 30
+      // 29-col rows: Active=true at 18, Muted at 27, Notes at 28
       existingRows: [
-        ['F1', 'A', '', '', 'USFS', '', '', 0, 0, 0, '', '', '', 0, '', '', '', false, '', '', true,
+        ['F1', 'A', '', '', 'USFS', '', '', 0, 0, 0, '', 0, '', '', '', false, '', '', true,
           '', '', '', '', '', '', '', '', true, ''],
-        ['F2', 'B', '', '', 'USFS', '', '', 0, 0, 0, '', '', '', 0, '', '', '', false, '', '', true,
+        ['F2', 'B', '', '', 'USFS', '', '', 0, 0, 0, '', 0, '', '', '', false, '', '', true,
           '', '', '', '', '', '', '', '', false, ''],
-        ['F3', 'C', '', '', 'USFS', '', '', 0, 0, 0, '', '', '', 0, '', '', '', false, '', '', true,
+        ['F3', 'C', '', '', 'USFS', '', '', 0, 0, 0, '', 0, '', '', '', false, '', '', true,
           '', '', '', '', '', '', '', '', 'TRUE', ''],
       ],
     });

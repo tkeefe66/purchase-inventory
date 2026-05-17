@@ -380,6 +380,74 @@ export async function updateRowStatus(
   });
 }
 
+/**
+ * Updates a subset of cells across one or more rows in a single batch API call.
+ *
+ * `rowIndex` is the 1-based spreadsheet row number (so the first data row is 2,
+ * not 0). `fields` is a partial MasterRow — only listed keys are written.
+ * Empty / omitted keys leave the existing cell untouched.
+ *
+ * Uses `values.batchUpdate`, which accepts multiple non-contiguous ranges per
+ * call — much cheaper than N separate `values.update` round-trips.
+ */
+export interface RowFieldsUpdate {
+  rowIndex: number;
+  fields: Partial<MasterRow>;
+}
+
+const FIELD_TO_HEADER: ReadonlyMap<keyof MasterRow, string> = new Map([
+  ['year', 'Year'],
+  ['date', 'Date Purchased'],
+  ['category', 'Category'],
+  ['subCategory', 'Sub-Category'],
+  ['brand', 'Brand'],
+  ['itemName', 'Item Name'],
+  ['color', 'Color'],
+  ['size', 'Size'],
+  ['qty', 'Qty'],
+  ['price', 'Price (Paid)'],
+  ['source', 'Source'],
+  ['orderId', 'Order ID'],
+  ['status', 'Status'],
+  ['domain', 'Domain'],
+  ['productUrl', 'Product URL'],
+  ['type', 'Type'],
+  ['reasoning', 'Reasoning'],
+  ['notes', 'Notes'],
+]);
+
+export async function updateRowFields(
+  sheets: SheetsClient,
+  spreadsheetId: string,
+  updates: readonly RowFieldsUpdate[],
+  tabName = 'All Purchases',
+): Promise<void> {
+  if (updates.length === 0) return;
+  const headerRow = await readHeaderRow(sheets, spreadsheetId, tabName);
+  const map = buildHeaderMap(headerRow);
+  requireColumns(map, HEADERS, tabName);
+
+  const data: Array<{ range: string; values: Array<Array<string | number>> }> = [];
+  for (const upd of updates) {
+    for (const [field, header] of FIELD_TO_HEADER) {
+      const value = upd.fields[field];
+      if (value === undefined) continue;
+      const col = map.get(header);
+      if (col === undefined) continue;
+      data.push({
+        range: `'${tabName}'!${colLetter(col)}${upd.rowIndex}`,
+        values: [[value as string | number]],
+      });
+    }
+  }
+  if (data.length === 0) return;
+
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId,
+    requestBody: { valueInputOption: 'USER_ENTERED', data },
+  });
+}
+
 export { HEADERS as MASTER_HEADERS };
 
 const CRON_LOG_TAB = 'Cron Log';
@@ -557,13 +625,13 @@ const CAMPING_INDEX_TAB = 'Camping Index';
 const CAMPING_INDEX_HEADER = [
   'Facility ID', 'Name', 'Site URL', 'Map URL',
   'Agency', 'Parent Unit', 'Region', 'Lat', 'Lng',
-  'Lead Days', 'Special Release', 'Season Start', 'Season End', 'Fee',
+  'Lead Days', 'Special Release', 'Fee',
   'Reservation Type', 'Use Type', 'Restrictions', 'Has Restrooms',
   'Amenities', 'Tent-Eligible Sites', 'Active',
   // Rec.gov booking-windows data (this season's actual dates, from /rates)
   'Season Opens', 'FCFS Start', 'Reservable Start', 'Season Close', 'Next Season Opens',
   'Next Release Moment',
-  // Heuristic next-year planning (DEFAULT_SEASON-based, used when Rec.gov data unavailable)
+  // Heuristic next-year planning (used when Rec.gov /rates data unavailable)
   'Next Calendar Opens', 'Next Reminder Fires',
   'Muted', 'Notes',
 ] as const;
@@ -627,11 +695,15 @@ function facilityRow(f: Facility, todayMt: string): (string | number | boolean)[
   const open = nextSeasonOpenDate(f, todayMt);
   const reminder = nextReminderDate(f, todayMt);
   const bw = f.bookingWindows ?? null;
+  // Site URL only emitted for active facilities. /camping/campgrounds/<id>
+  // 200s to a generic "something went wrong" homepage for non-campground
+  // facility IDs (trailheads, ranger districts, etc.), so emitting URLs for
+  // inactive rows just creates dead links.
+  const siteUrl = f.active ? siteUrlFor(f.facilityId) : '';
   return [
-    f.facilityId, f.name, siteUrlFor(f.facilityId), mapUrlFor(f.lat, f.lng),
+    f.facilityId, f.name, siteUrl, mapUrlFor(f.lat, f.lng),
     f.agency, f.parentUnit, f.region ?? '',
-    f.lat, f.lng, f.leadTimeDays, f.specialReleaseDate ?? '',
-    f.seasonStart ?? '', f.seasonEnd ?? '', f.feeUSD,
+    f.lat, f.lng, f.leadTimeDays, f.specialReleaseDate ?? '', f.feeUSD,
     f.reservationType, f.useType,
     f.restrictions.join('; '), f.hasRestrooms,
     f.amenities.join('; '), f.tentEligibleSites.length, f.active,
