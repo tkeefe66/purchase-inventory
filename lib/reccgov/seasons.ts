@@ -103,6 +103,23 @@ export function nextReminderDate(
 }
 
 /**
+ * Min nightly price across all upcoming seasons in a facility's rates_list.
+ * Returns 0 if nothing useful is in the data (which is correct for fee-free
+ * sites and also a safe default for sites where the rate data is missing).
+ */
+export function deriveFeeUSD(rates: readonly RateSeason[], todayIso: string): number {
+  let min: number | null = null;
+  for (const r of rates) {
+    if (r.season_end.slice(0, 10) < todayIso) continue;
+    const priceMap = r.price_map ?? {};
+    for (const v of Object.values(priceMap)) {
+      if (typeof v === 'number' && v > 0 && (min === null || v < min)) min = v;
+    }
+  }
+  return min ?? 0;
+}
+
+/**
  * Derive a facility's booking-windows from Rec.gov's /rates response.
  *
  * The rates_list is a chronological list of "season" blocks, each typed as

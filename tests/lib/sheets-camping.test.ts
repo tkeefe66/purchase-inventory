@@ -6,8 +6,8 @@ const HEADER = [
   'Facility ID', 'Name', 'Site URL', 'Map URL',
   'Agency', 'Parent Unit', 'Region', 'Lat', 'Lng',
   'Lead Days', 'Special Release', 'Fee',
-  'Reservation Type', 'Use Type', 'Restrictions', 'Has Restrooms',
-  'Amenities', 'Tent-Eligible Sites', 'Active',
+  'Reservation Type', 'Use Type', 'Restrictions',
+  'Tent-Eligible Sites', 'Active',
   'Season Opens', 'FCFS Start', 'Reservable Start', 'Season Close', 'Next Season Opens',
   'Next Release Moment',
   'Next Calendar Opens', 'Next Reminder Fires',
@@ -74,25 +74,25 @@ describe('mirrorCampingIndex', () => {
   test('updates existing rows by Facility ID without touching Muted or Notes', async () => {
     const { sheets, updated } = mockSheets({
       existingTabs: ['All Purchases', 'Camping Index'],
-      // 29 cols (dropped Season Start/End — replaced by Tier-3 Season Opens/Close).
-      // Muted at index 27, Notes at index 28.
-      existingRows: [['F1', 'Old Name', '', '', 'USFS', '', '', 0, 0, 0, '', 0, '', '', '', false, '', '', false,
+      // 27 cols (dropped Amenities + Has Restrooms — couldn't be reliably
+      // populated from RIDB). Muted at 25, Notes at 26.
+      existingRows: [['F1', 'Old Name', '', '', 'USFS', '', '', 0, 0, 0, '', 0, '', '', '', '', false,
         '', '', '', '', '', '', '', '', true, 'my notes']],
     });
     await mirrorCampingIndex(sheets as never, 'sid', [sampleFacility]);
     expect(updated.length).toBeGreaterThan(0);
     const updatedRow = updated.find((u) => u.range.includes('A2'))!.values[0]!;
     expect(updatedRow[1]).toBe('Test CG');
-    expect(updatedRow[27]).toBe(true);              // Muted preserved (new index 27)
-    expect(updatedRow[28]).toBe('my notes');        // Notes preserved (new index 28)
+    expect(updatedRow[25]).toBe(true);              // Muted preserved (new index 25)
+    expect(updatedRow[26]).toBe('my notes');        // Notes preserved (new index 26)
   });
 
   test('writes computed Next Calendar Opens + Next Reminder Fires for rolling-release sites', async () => {
     const { sheets, appended } = mockSheets({ existingTabs: ['All Purchases', 'Camping Index'] });
     await mirrorCampingIndex(sheets as never, 'sid', [sampleFacility]);
     expect(appended).toHaveLength(1);
-    const nextOpens = appended[0]![25] as string;
-    const nextReminder = appended[0]![26] as string;
+    const nextOpens = appended[0]![23] as string;
+    const nextReminder = appended[0]![24] as string;
     expect(nextOpens).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(nextReminder).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(nextReminder < nextOpens).toBe(true);
@@ -112,23 +112,23 @@ describe('mirrorCampingIndex', () => {
     };
     const { sheets, appended } = mockSheets({ existingTabs: ['All Purchases', 'Camping Index'] });
     await mirrorCampingIndex(sheets as never, 'sid', [facilityWithBW]);
-    expect(appended[0]![19]).toBe('2026-05-15');   // Season Opens
-    expect(appended[0]![20]).toBe('2026-05-15');   // FCFS Start
-    expect(appended[0]![21]).toBe('2026-05-22');   // Reservable Start
-    expect(appended[0]![22]).toBe('2026-09-21');   // Season Close
-    expect(appended[0]![23]).toBe('2027-06-04');   // Next Season Opens
-    expect(appended[0]![24]).toMatch(/2026-05-16 15:00 MDT/); // Next Release Moment
+    expect(appended[0]![17]).toBe('2026-05-15');   // Season Opens
+    expect(appended[0]![18]).toBe('2026-05-15');   // FCFS Start
+    expect(appended[0]![19]).toBe('2026-05-22');   // Reservable Start
+    expect(appended[0]![20]).toBe('2026-09-21');   // Season Close
+    expect(appended[0]![21]).toBe('2027-06-04');   // Next Season Opens
+    expect(appended[0]![22]).toMatch(/2026-05-16 15:00 MDT/); // Next Release Moment
   });
 
   test('emits blanks for Tier-3 columns when bookingWindows is absent', async () => {
     const { sheets, appended } = mockSheets({ existingTabs: ['All Purchases', 'Camping Index'] });
     await mirrorCampingIndex(sheets as never, 'sid', [sampleFacility]);
+    expect(appended[0]![17]).toBe('');
+    expect(appended[0]![18]).toBe('');
     expect(appended[0]![19]).toBe('');
     expect(appended[0]![20]).toBe('');
     expect(appended[0]![21]).toBe('');
     expect(appended[0]![22]).toBe('');
-    expect(appended[0]![23]).toBe('');
-    expect(appended[0]![24]).toBe('');
   });
 
   test('writes constructed Site URL + Map URL for each facility', async () => {
@@ -151,13 +151,13 @@ describe('readMutedFacilityIds', () => {
   test('returns Facility IDs where Muted=TRUE', async () => {
     const { sheets } = mockSheets({
       existingTabs: ['All Purchases', 'Camping Index'],
-      // 29-col rows: Active=true at 18, Muted at 27, Notes at 28
+      // 27-col rows: Active=true at 16, Muted at 25, Notes at 26
       existingRows: [
-        ['F1', 'A', '', '', 'USFS', '', '', 0, 0, 0, '', 0, '', '', '', false, '', '', true,
+        ['F1', 'A', '', '', 'USFS', '', '', 0, 0, 0, '', 0, '', '', '', '', true,
           '', '', '', '', '', '', '', '', true, ''],
-        ['F2', 'B', '', '', 'USFS', '', '', 0, 0, 0, '', 0, '', '', '', false, '', '', true,
+        ['F2', 'B', '', '', 'USFS', '', '', 0, 0, 0, '', 0, '', '', '', '', true,
           '', '', '', '', '', '', '', '', false, ''],
-        ['F3', 'C', '', '', 'USFS', '', '', 0, 0, 0, '', 0, '', '', '', false, '', '', true,
+        ['F3', 'C', '', '', 'USFS', '', '', 0, 0, 0, '', 0, '', '', '', '', true,
           '', '', '', '', '', '', '', '', 'TRUE', ''],
       ],
     });

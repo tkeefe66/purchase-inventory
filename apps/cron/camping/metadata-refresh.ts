@@ -1,6 +1,6 @@
 import type { CampingIndex, Facility, BookingWindows } from '../../../lib/reccgov/types.js';
 import type { RecGovClient } from '../../../lib/reccgov/client.js';
-import { seasonForFacility, DEFAULT_LEAD_TIME_DAYS, deriveBookingWindows } from '../../../lib/reccgov/seasons.js';
+import { seasonForFacility, DEFAULT_LEAD_TIME_DAYS, deriveBookingWindows, deriveFeeUSD } from '../../../lib/reccgov/seasons.js';
 
 const TENT_TYPES = new Set([
   'TENT ONLY NONELECTRIC', 'TENT ONLY ELECTRIC',
@@ -48,6 +48,7 @@ export async function runMetadataRefresh(opts: RunMetadataRefreshOpts): Promise<
 
       let nextReleaseAtIso: string | null = null;
       let bookingWindows: BookingWindows | null = null;
+      let derivedFeeUSD: number | null = null;
       if (willRemainActive) {
         try {
           const releases = await opts.client.getCampgroundReleases(f.facilityId);
@@ -59,6 +60,7 @@ export async function runMetadataRefresh(opts: RunMetadataRefreshOpts): Promise<
         try {
           const rates = await opts.client.getCampgroundRates(f.facilityId);
           bookingWindows = deriveBookingWindows(rates.rates_list, todayIso);
+          derivedFeeUSD = deriveFeeUSD(rates.rates_list, todayIso);
         } catch (err) {
           console.warn(`[metadata-refresh] ${f.facilityId} /rates failed:`, err instanceof Error ? err.message : err);
         }
@@ -74,7 +76,9 @@ export async function runMetadataRefresh(opts: RunMetadataRefreshOpts): Promise<
         specialReleaseDate: meta.specialReleaseDate ?? f.specialReleaseDate,
         seasonStart: meta.seasonStart ?? f.seasonStart ?? seasonFallback.seasonStart,
         seasonEnd: meta.seasonEnd ?? f.seasonEnd ?? seasonFallback.seasonEnd,
-        feeUSD: meta.feeUSD ?? f.feeUSD ?? 0,
+        // Prefer the fee derived from /rates (real $ value per night). Fall
+        // back to whatever meta has, then existing, then 0.
+        feeUSD: derivedFeeUSD ?? meta.feeUSD ?? f.feeUSD ?? 0,
         reservationType,
         restrictions: (meta.restrictions as string[] | undefined) ?? f.restrictions,
         amenities,

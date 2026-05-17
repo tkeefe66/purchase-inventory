@@ -626,8 +626,8 @@ const CAMPING_INDEX_HEADER = [
   'Facility ID', 'Name', 'Site URL', 'Map URL',
   'Agency', 'Parent Unit', 'Region', 'Lat', 'Lng',
   'Lead Days', 'Special Release', 'Fee',
-  'Reservation Type', 'Use Type', 'Restrictions', 'Has Restrooms',
-  'Amenities', 'Tent-Eligible Sites', 'Active',
+  'Reservation Type', 'Use Type', 'Restrictions',
+  'Tent-Eligible Sites', 'Active',
   // Rec.gov booking-windows data (this season's actual dates, from /rates)
   'Season Opens', 'FCFS Start', 'Reservable Start', 'Season Close', 'Next Season Opens',
   'Next Release Moment',
@@ -705,8 +705,8 @@ function facilityRow(f: Facility, todayMt: string): (string | number | boolean)[
     f.agency, f.parentUnit, f.region ?? '',
     f.lat, f.lng, f.leadTimeDays, f.specialReleaseDate ?? '', f.feeUSD,
     f.reservationType, f.useType,
-    f.restrictions.join('; '), f.hasRestrooms,
-    f.amenities.join('; '), f.tentEligibleSites.length, f.active,
+    f.restrictions.join('; '),
+    f.tentEligibleSites.length, f.active,
     // Tier-3 booking windows (real Rec.gov data, empty when /rates unavailable)
     bw?.seasonOpenDate ?? '', bw?.fcfsStartDate ?? '', bw?.reservableStartDate ?? '',
     bw?.seasonCloseDate ?? '', bw?.nextSeasonStartDate ?? '',
@@ -895,7 +895,6 @@ export async function readCampingIndexFromSheet(
     const nextSeasonStart = cellStr(row, 'Next Season Opens');
     const hasBW = !!(seasonOpen || fcfsStart || reservableStart || seasonClose || nextSeasonStart);
     const restrictionsRaw = cellStr(row, 'Restrictions');
-    const amenitiesRaw = cellStr(row, 'Amenities');
     const f: Facility = {
       facilityId: id,
       name: cellStr(row, 'Name'),
@@ -915,8 +914,8 @@ export async function readCampingIndexFromSheet(
       tentEligibleSites: [] as string[],
       totalSites: cellNum(row, 'Tent-Eligible Sites'),
       restrictions: restrictionsRaw ? restrictionsRaw.split('; ').filter(Boolean) : [],
-      amenities: amenitiesRaw ? amenitiesRaw.split('; ').filter(Boolean) : [],
-      hasRestrooms: cellBool(row, 'Has Restrooms'),
+      amenities: [] as string[],
+      hasRestrooms: false,
       reservationUrl: '',
       lastMetadataRefresh: '',
       active: cellBool(row, 'Active'),

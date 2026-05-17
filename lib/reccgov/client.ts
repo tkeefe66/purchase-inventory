@@ -43,6 +43,9 @@ export interface RateSeason {
   season_end: string;
   season_type: string;     // "Walk In", "Peak", "Off-Peak", etc.
   season_description?: string;
+  // Per-site-type nightly price, keyed by "<SeasonType><CampsiteType>"
+  // (e.g. "PeakSTANDARD NONELECTRIC": 25). Values are dollars.
+  price_map?: Record<string, number>;
 }
 
 export interface RecGovClient {
