@@ -35,12 +35,19 @@ Rules:
 
 Return ONLY a JSON object matching the schema. No explanation.`;
 
+// Anthropic structured outputs require anyOf for nullable; the array-type
+// shorthand `type: [X, "null"]` errors when combined with enum.
 const SCHEMA = {
   type: 'object' as const,
   properties: {
-    hasRestrooms: { type: ['boolean', 'null'] as const },
-    restroomType: { type: ['string', 'null'] as const, enum: ['vault', 'flush', 'both', 'none', null] },
-    hasDrinkingWater: { type: ['boolean', 'null'] as const },
+    hasRestrooms: { anyOf: [{ type: 'boolean' }, { type: 'null' }] },
+    restroomType: {
+      anyOf: [
+        { type: 'string', enum: ['vault', 'flush', 'both', 'none'] },
+        { type: 'null' },
+      ],
+    },
+    hasDrinkingWater: { anyOf: [{ type: 'boolean' }, { type: 'null' }] },
   },
   required: ['hasRestrooms', 'restroomType', 'hasDrinkingWater'] as const,
   additionalProperties: false as const,
