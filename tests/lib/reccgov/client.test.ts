@@ -74,6 +74,31 @@ describe('RecGovClient.searchFacilities', () => {
   });
 });
 
+describe('RecGovClient.searchFacilitiesByRecArea', () => {
+  beforeEach(() => { vi.restoreAllMocks(); });
+
+  test('hits /recareas/<id>/facilities and returns parsed facilities', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({
+        RECDATA: [{
+          FacilityID: '231881',
+          FacilityName: 'Silver Bar Campground',
+          FacilityLatitude: 39.1, FacilityLongitude: -106.9,
+          FacilityTypeDescription: 'Campground',
+          FACILITYADDRESS: [{ AddressStateCode: 'CO' }],
+        }],
+      }), { status: 200 }),
+    );
+    const client = createRecGovClient({ apiKey: 'TEST' });
+    const out = await client.searchFacilitiesByRecArea({ recAreaId: 1055 });
+    expect(out).toHaveLength(1);
+    expect(out[0]!.facilityId).toBe('231881');
+    expect(out[0]!.name).toBe('Silver Bar Campground');
+    expect((spy.mock.calls[0]![0] as string)).toContain('/recareas/1055/facilities');
+    expect((spy.mock.calls[0]![0] as string)).toMatch(/full=true/);
+  });
+});
+
 describe('RecGovClient.getFacility', () => {
   beforeEach(() => { vi.restoreAllMocks(); });
   afterEach(() => { vi.restoreAllMocks(); });

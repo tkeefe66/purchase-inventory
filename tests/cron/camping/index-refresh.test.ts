@@ -71,7 +71,13 @@ describe('runIndexRefresh', () => {
       },
     ];
 
-    const client = { searchFacilities: vi.fn().mockResolvedValue(searchResults) };
+    // Return the test data on the first rec-area call, empty for subsequent
+    // ones — runIndexRefresh iterates over CURATED_REC_AREA_IDS, and the
+    // seen-set dedupes any cross-rec-area duplicates.
+    const searchFacilitiesByRecArea = vi.fn()
+      .mockResolvedValueOnce(searchResults)
+      .mockResolvedValue([]);
+    const client = { searchFacilitiesByRecArea };
     const mirror = vi.fn().mockResolvedValue(undefined);
 
     const result = await runIndexRefresh({
@@ -101,7 +107,7 @@ describe('runIndexRefresh', () => {
         makeFacility({ facilityId: 'A', name: 'Camp A', active: true }),
       ],
     };
-    const client = { searchFacilities: vi.fn().mockResolvedValue([]) };
+    const client = { searchFacilitiesByRecArea: vi.fn().mockResolvedValue([]) };
     const mirror = vi.fn().mockResolvedValue(undefined);
 
     await expect(
@@ -121,7 +127,13 @@ describe('runIndexRefresh', () => {
     const searchResults = [
       { facilityId: 'A', name: 'Camp A', parentUnit: 'Roosevelt National Forest', lat: 40, lng: -105, state: 'CO', useType: 'overnight' as const },
     ];
-    const client = { searchFacilities: vi.fn().mockResolvedValue(searchResults) };
+    // Return the test data on the first rec-area call, empty for subsequent
+    // ones — runIndexRefresh iterates over CURATED_REC_AREA_IDS, and the
+    // seen-set dedupes any cross-rec-area duplicates.
+    const searchFacilitiesByRecArea = vi.fn()
+      .mockResolvedValueOnce(searchResults)
+      .mockResolvedValue([]);
+    const client = { searchFacilitiesByRecArea };
     const mirror = vi.fn().mockResolvedValue(undefined);
 
     const result = await runIndexRefresh({

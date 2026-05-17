@@ -19,6 +19,12 @@ export interface FacilitySearchOpts {
   offset?: number;
 }
 
+export interface RecAreaSearchOpts {
+  recAreaId: number;
+  limit?: number;
+  offset?: number;
+}
+
 export interface ReleasesResponse {
   current_release: ReleaseBlock | null;
   next_release: ReleaseBlock | null;
@@ -41,6 +47,7 @@ export interface RateSeason {
 
 export interface RecGovClient {
   searchFacilities(opts: FacilitySearchOpts): Promise<Partial<Facility>[]>;
+  searchFacilitiesByRecArea(opts: RecAreaSearchOpts): Promise<Partial<Facility>[]>;
   getFacility(facilityId: string): Promise<Partial<Facility>>;
   getFacilityCampsites(facilityId: string): Promise<Array<{ campsiteId: string; campsiteType: string }>>;
   getCampgroundReleases(facilityId: string): Promise<ReleasesResponse>;
@@ -117,6 +124,20 @@ export function createRecGovClient(opts: RecGovClientOpts): RecGovClient {
         full: 'true',
       });
       if (!Array.isArray(data.RECDATA)) throw makeError('schema_error', 'RECDATA missing from /facilities response');
+      return (data.RECDATA as Array<Record<string, unknown>>).map(mapSearchRow);
+    },
+    async searchFacilitiesByRecArea(searchOpts) {
+      const data = await call<{ RECDATA?: unknown }>(`/recareas/${searchOpts.recAreaId}/facilities`, {
+        limit: searchOpts.limit ?? 50,
+        offset: searchOpts.offset ?? 0,
+        full: 'true',
+      });
+      if (!Array.isArray(data.RECDATA)) throw makeError('schema_error', `RECDATA missing from /recareas/${searchOpts.recAreaId}/facilities response`);
+      // Facilities returned by this endpoint don't include a RECAREA child
+      // (they're already scoped to the parent), so mapSearchRow's parent-unit
+      // lookup gets nothing. We re-parent here by RecAreaName lookup keyed on
+      // the rec area ID — done in the caller (index-refresh) where we have
+      // the rec area name available, not here.
       return (data.RECDATA as Array<Record<string, unknown>>).map(mapSearchRow);
     },
     async getFacility(facilityId) {
