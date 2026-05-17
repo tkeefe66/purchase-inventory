@@ -72,11 +72,13 @@ const CRON_LOG_HEADERS = [
 ];
 
 const CAMPING_INDEX_HEADERS = [
-  'Facility ID', 'Name', 'Site URL', 'Map URL',
+  'Facility ID', 'Name', 'Site URL', 'Map URL', 'Photo',
   'Agency', 'Parent Unit', 'Region', 'Lat', 'Lng',
   'Lead Days', 'Special Release', 'Fee',
   'Reservation Type', 'Use Type', 'Restrictions',
   'Tent-Eligible Sites', 'Active',
+  'Rating', '# Reviews', 'Cell Coverage', 'Accessible Sites', 'Max RV Length (ft)',
+  'Pets Allowed', 'Has Restrooms', 'Restroom Type', 'Drinking Water',
   'Season Opens', 'FCFS Start', 'Reservable Start', 'Season Close', 'Next Season Opens',
   'Next Release Moment',
   'Next Calendar Opens', 'Next Reminder Fires',

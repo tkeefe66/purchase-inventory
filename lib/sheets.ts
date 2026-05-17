@@ -623,11 +623,15 @@ function safeJson(s: string): Record<string, number> {
 
 const CAMPING_INDEX_TAB = 'Camping Index';
 const CAMPING_INDEX_HEADER = [
-  'Facility ID', 'Name', 'Site URL', 'Map URL',
+  'Facility ID', 'Name', 'Site URL', 'Map URL', 'Photo',
   'Agency', 'Parent Unit', 'Region', 'Lat', 'Lng',
   'Lead Days', 'Special Release', 'Fee',
   'Reservation Type', 'Use Type', 'Restrictions',
   'Tent-Eligible Sites', 'Active',
+  // Rich /api/search data
+  'Rating', '# Reviews', 'Cell Coverage', 'Accessible Sites', 'Max RV Length (ft)',
+  // Amenities (from per-campsite attributes + LLM-parsed prose)
+  'Pets Allowed', 'Has Restrooms', 'Restroom Type', 'Drinking Water',
   // Rec.gov booking-windows data (this season's actual dates, from /rates)
   'Season Opens', 'FCFS Start', 'Reservable Start', 'Season Close', 'Next Season Opens',
   'Next Release Moment',
@@ -695,19 +699,22 @@ function facilityRow(f: Facility, todayMt: string): (string | number | boolean)[
   const open = nextSeasonOpenDate(f, todayMt);
   const reminder = nextReminderDate(f, todayMt);
   const bw = f.bookingWindows ?? null;
-  // Site URL only emitted for active facilities. /camping/campgrounds/<id>
-  // 200s to a generic "something went wrong" homepage for non-campground
-  // facility IDs (trailheads, ranger districts, etc.), so emitting URLs for
-  // inactive rows just creates dead links.
   const siteUrl = f.active ? siteUrlFor(f.facilityId) : '';
+  const cellPct = (typeof f.cellCoverage === 'number') ? Math.round(f.cellCoverage * 100) + '%' : '';
+  const petsCell = f.petsAllowed === true ? 'TRUE' : f.petsAllowed === false ? 'FALSE' : '';
+  const waterCell = f.hasDrinkingWater === true ? 'TRUE' : f.hasDrinkingWater === false ? 'FALSE' : '';
   return [
-    f.facilityId, f.name, siteUrl, mapUrlFor(f.lat, f.lng),
+    f.facilityId, f.name, siteUrl, mapUrlFor(f.lat, f.lng), f.previewImageUrl ?? '',
     f.agency, f.parentUnit, f.region ?? '',
     f.lat, f.lng, f.leadTimeDays, f.specialReleaseDate ?? '', f.feeUSD,
     f.reservationType, f.useType,
     f.restrictions.join('; '),
     f.tentEligibleSites.length, f.active,
-    // Tier-3 booking windows (real Rec.gov data, empty when /rates unavailable)
+    // Rich /api/search data
+    f.rating ?? '', f.numReviews ?? '', cellPct, f.accessibleSitesCount ?? '', f.maxRvLength ?? '',
+    // Amenities
+    petsCell, f.hasRestrooms, f.restroomType ?? '', waterCell,
+    // Tier-3 booking windows
     bw?.seasonOpenDate ?? '', bw?.fcfsStartDate ?? '', bw?.reservableStartDate ?? '',
     bw?.seasonCloseDate ?? '', bw?.nextSeasonStartDate ?? '',
     fmtReleaseTimeMt(f.nextReleaseAtIso),

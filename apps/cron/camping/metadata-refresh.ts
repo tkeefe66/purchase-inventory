@@ -1,6 +1,8 @@
+import type Anthropic from '@anthropic-ai/sdk';
 import type { CampingIndex, Facility, BookingWindows } from '../../../lib/reccgov/types.js';
-import type { RecGovClient } from '../../../lib/reccgov/client.js';
+import type { RecGovClient, DetailedCampsite } from '../../../lib/reccgov/client.js';
 import { seasonForFacility, DEFAULT_LEAD_TIME_DAYS, deriveBookingWindows, deriveFeeUSD } from '../../../lib/reccgov/seasons.js';
+import { parseAmenities } from '../../../lib/reccgov/amenityParser.js';
 
 const TENT_TYPES = new Set([
   'TENT ONLY NONELECTRIC', 'TENT ONLY ELECTRIC',
@@ -12,6 +14,24 @@ const RESTROOM_RE = /toilet|restroom|bathroom/i;
 export interface RunMetadataRefreshOpts {
   existingIndex: CampingIndex;
   client: RecGovClient;
+  /** Anthropic client for LLM-parsing amenities from facility descriptions. Optional — tests can omit. */
+  anthropic?: Anthropic;
+}
+
+function aggregatePetsAllowed(campsites: readonly DetailedCampsite[]): boolean | null {
+  let anyYes = false;
+  let anySeen = false;
+  for (const c of campsites) {
+    for (const attr of c.attributes) {
+      if (attr.attribute_code === 'pets_allowed') {
+        anySeen = true;
+        if (attr.attribute_value.toLowerCase() === 'yes' || attr.attribute_value === 'true') {
+          anyYes = true;
+        }
+      }
+    }
+  }
+  return anySeen ? anyYes : null;
 }
 export interface MetadataRefreshResult {
   index: CampingIndex;
@@ -49,12 +69,22 @@ export async function runMetadataRefresh(opts: RunMetadataRefreshOpts): Promise<
       let nextReleaseAtIso: string | null = null;
       let bookingWindows: BookingWindows | null = null;
       let derivedFeeUSD: number | null = null;
+      let rating: number | null = null;
+      let numReviews: number | null = null;
+      let cellCoverage: number | null = null;
+      let accessibleSitesCount: number | null = null;
+      let maxRvLength: number | null = null;
+      let previewImageUrl: string | null = null;
+      let description = '';
+      let petsAllowed: boolean | null = null;
+      let restroomType: 'vault' | 'flush' | 'both' | 'none' | null = null;
+      let hasDrinkingWater: boolean | null = null;
+      let hasRestroomsLLM: boolean | null = null;
       if (willRemainActive) {
         try {
           const releases = await opts.client.getCampgroundReleases(f.facilityId);
           nextReleaseAtIso = releases.current_release?.release_time ?? null;
         } catch (err) {
-          // Not fatal — other fields still useful. Log and continue.
           console.warn(`[metadata-refresh] ${f.facilityId} /releases failed:`, err instanceof Error ? err.message : err);
         }
         try {
@@ -63,6 +93,36 @@ export async function runMetadataRefresh(opts: RunMetadataRefreshOpts): Promise<
           derivedFeeUSD = deriveFeeUSD(rates.rates_list, todayIso);
         } catch (err) {
           console.warn(`[metadata-refresh] ${f.facilityId} /rates failed:`, err instanceof Error ? err.message : err);
+        }
+        try {
+          const search = await opts.client.searchFacility(f.facilityId);
+          if (search) {
+            rating = search.average_rating ?? null;
+            numReviews = search.number_of_ratings ?? null;
+            cellCoverage = search.aggregate_cell_coverage ?? null;
+            accessibleSitesCount = search.accessible_campsites_count ?? null;
+            maxRvLength = search.campsite_max_vehicle_length ?? null;
+            previewImageUrl = search.preview_image_url ?? null;
+            description = search.description ?? '';
+          }
+        } catch (err) {
+          console.warn(`[metadata-refresh] ${f.facilityId} /api/search failed:`, err instanceof Error ? err.message : err);
+        }
+        try {
+          const detailed = await opts.client.getCampsitesDetailed(f.facilityId);
+          petsAllowed = aggregatePetsAllowed(detailed);
+        } catch (err) {
+          console.warn(`[metadata-refresh] ${f.facilityId} /campsites detailed failed:`, err instanceof Error ? err.message : err);
+        }
+        if (opts.anthropic && description) {
+          try {
+            const facts = await parseAmenities(description, opts.anthropic);
+            hasRestroomsLLM = facts.hasRestrooms;
+            restroomType = facts.restroomType;
+            hasDrinkingWater = facts.hasDrinkingWater;
+          } catch (err) {
+            console.warn(`[metadata-refresh] ${f.facilityId} amenity parse failed:`, err instanceof Error ? err.message : err);
+          }
         }
       }
 
@@ -82,13 +142,18 @@ export async function runMetadataRefresh(opts: RunMetadataRefreshOpts): Promise<
         reservationType,
         restrictions: (meta.restrictions as string[] | undefined) ?? f.restrictions,
         amenities,
-        hasRestrooms: amenities.some((a) => RESTROOM_RE.test(a)),
+        // hasRestrooms: prefer the LLM-parsed value (real data from prose).
+        // Falls back to the legacy regex over `amenities` (only useful when
+        // tests / fixtures inject amenity strings — RIDB itself returns []).
+        hasRestrooms: hasRestroomsLLM ?? amenities.some((a) => RESTROOM_RE.test(a)),
         reservationUrl: meta.reservationUrl ?? f.reservationUrl ?? '',
         tentEligibleSites: tentSites,
         totalSites,
         lastMetadataRefresh: nowIso,
         nextReleaseAtIso,
         bookingWindows,
+        rating, numReviews, cellCoverage, accessibleSitesCount, maxRvLength,
+        previewImageUrl, petsAllowed, restroomType, hasDrinkingWater,
       };
       if (f.useType === 'overnight' && updated.tentEligibleSites.length === 0 && updated.reservationType !== 'permit') {
         updated.active = false;

@@ -48,6 +48,25 @@ export interface RateSeason {
   price_map?: Record<string, number>;
 }
 
+export interface SearchFacilityResponse {
+  entity_id: string;
+  name: string;
+  description?: string;
+  average_rating?: number;
+  number_of_ratings?: number;
+  aggregate_cell_coverage?: number;
+  accessible_campsites_count?: number;
+  campsite_max_vehicle_length?: number;
+  preview_image_url?: string;
+  price_range?: { amount_min?: number; amount_max?: number };
+}
+
+export interface DetailedCampsite {
+  campsiteId: string;
+  campsiteType: string;
+  attributes: Array<{ attribute_code: string; attribute_value: string }>;
+}
+
 export interface RecGovClient {
   searchFacilities(opts: FacilitySearchOpts): Promise<Partial<Facility>[]>;
   searchFacilitiesByRecArea(opts: RecAreaSearchOpts): Promise<Partial<Facility>[]>;
@@ -55,6 +74,10 @@ export interface RecGovClient {
   getFacilityCampsites(facilityId: string): Promise<Array<{ campsiteId: string; campsiteType: string }>>;
   getCampgroundReleases(facilityId: string): Promise<ReleasesResponse>;
   getCampgroundRates(facilityId: string): Promise<RatesResponse>;
+  /** Hits Rec.gov's /api/search for rich facility data (rating, cell coverage, photo URL, description, etc.). */
+  searchFacility(facilityId: string): Promise<SearchFacilityResponse | null>;
+  /** Hits Rec.gov's per-campsite endpoint with attributes (Pets Allowed, etc.). */
+  getCampsitesDetailed(facilityId: string): Promise<DetailedCampsite[]>;
 }
 
 function makeError(code: RecGovError['code'], message: string, status?: number): RecGovError {
@@ -163,6 +186,26 @@ export function createRecGovClient(opts: RecGovClientOpts): RecGovClient {
     },
     async getCampgroundRates(facilityId) {
       return callPublic<RatesResponse>(`/campgrounds/${facilityId}/rates`);
+    },
+    async searchFacility(facilityId) {
+      // /api/search lives at recreation.gov/api/search, not at the /api/camps base.
+      const url = new URL('https://www.recreation.gov/api/search');
+      url.searchParams.set('fq', `entity_id:${facilityId}`);
+      const data = await runRequest<{ results?: SearchFacilityResponse[] }>(
+        url,
+        { Accept: 'application/json', 'User-Agent': 'outdoor-inventory/1.0' },
+        '/api/search',
+      );
+      return data.results?.[0] ?? null;
+    },
+    async getCampsitesDetailed(facilityId) {
+      const data = await callPublic<{ campsites?: Array<Record<string, unknown>> }>(`/campgrounds/${facilityId}/campsites`);
+      const campsites = data.campsites ?? [];
+      return campsites.map((c) => ({
+        campsiteId: String(c.campsite_id ?? ''),
+        campsiteType: String(c.campsite_type ?? ''),
+        attributes: (Array.isArray(c.attributes) ? c.attributes : []) as Array<{ attribute_code: string; attribute_value: string }>,
+      }));
     },
   };
 }

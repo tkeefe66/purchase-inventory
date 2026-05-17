@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import Anthropic from '@anthropic-ai/sdk';
 import { createRecGovClient } from '../lib/reccgov/client.js';
 import { createSheetsClient, mirrorCampingIndex } from '../lib/sheets.js';
 import { readCampingIndex, writeCampingIndex } from '../lib/campingState.js';
@@ -12,6 +13,7 @@ async function main(): Promise<void> {
     refreshToken: process.env.GOOGLE_REFRESH_TOKEN!,
   });
   const recgov = createRecGovClient({ apiKey: process.env.RECGOV_API_KEY! });
+  const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic() : undefined;
   const indexPath = process.env.CAMPING_INDEX_PATH ?? '/data/camping-index.json';
   const spreadsheetId = process.env.GOOGLE_SHEET_ID!;
 
@@ -22,8 +24,12 @@ async function main(): Promise<void> {
   console.log(`  +${r1.added} new, ${r1.totalActive} total active`);
 
   console.log('Phase 2: metadata-refresh (per-facility metadata + tent filter)...');
+  if (!anthropic) console.log('  (ANTHROPIC_API_KEY unset — skipping LLM amenity parsing)');
   idx = await readCampingIndex(indexPath);
-  const r2 = await runMetadataRefresh({ existingIndex: idx, client: recgov });
+  const r2 = await runMetadataRefresh({
+    existingIndex: idx, client: recgov,
+    ...(anthropic ? { anthropic } : {}),
+  });
   await writeCampingIndex(indexPath, r2.index);
   console.log(`  ${r2.refreshed} refreshed, ${r2.deactivated} deactivated, ${r2.failures} failures`);
 

@@ -54,6 +54,18 @@ export interface Facility {
    * failed.
    */
   bookingWindows?: BookingWindows | null;
+  // Rich facility data derived from Rec.gov's /api/search endpoint.
+  rating?: number | null;                // 0-5 average user rating
+  numReviews?: number | null;            // count of ratings
+  cellCoverage?: number | null;          // 0-1, fraction of sites with cell signal
+  accessibleSitesCount?: number | null;  // ADA-accessible campsite count
+  maxRvLength?: number | null;           // max vehicle length (ft) across campsites
+  previewImageUrl?: string | null;
+  // Aggregated from per-campsite attributes.
+  petsAllowed?: boolean | null;
+  // LLM-parsed from FacilityDescription prose (Haiku 4.5).
+  restroomType?: 'vault' | 'flush' | 'both' | 'none' | null;
+  hasDrinkingWater?: boolean | null;
 }
 
 export interface CampingIndex {
