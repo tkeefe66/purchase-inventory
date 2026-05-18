@@ -75,11 +75,16 @@ async function main(): Promise<void> {
   console.log(`Resolving ${toResolve.length} URLs via Haiku + web_search (concurrency=${CONCURRENCY})...`);
 
   // Concurrent worker pool — bounded by CONCURRENCY.
+  // Fail-fast: if the first 8 attempts all return null (which usually means
+  // billing/auth issue, not "no match"), abort. Saves burning ~5+ minutes
+  // when Anthropic credits haven't propagated yet.
   let done = 0;
   let resolved = 0;
+  let consecutiveFailures = 0;
+  let abortedEarly = false;
   const queue = [...toResolve];
   async function worker(): Promise<void> {
-    while (queue.length > 0) {
+    while (queue.length > 0 && !abortedEarly) {
       const spot = queue.shift();
       if (!spot) return;
       const domain = SOURCE_DOMAINS[spot.source];
@@ -91,13 +96,20 @@ async function main(): Promise<void> {
       if (url) {
         spot.sourceUrl = url;
         resolved++;
+        consecutiveFailures = 0;
+      } else {
+        consecutiveFailures++;
+        if (consecutiveFailures >= 8 && resolved === 0) {
+          console.warn(`Aborting: ${consecutiveFailures} consecutive failures with no successes — likely billing/auth issue, not bad data.`);
+          abortedEarly = true;
+        }
       }
       done++;
       if (done % 25 === 0) console.log(`  ${done}/${toResolve.length} (${resolved} resolved)`);
     }
   }
   await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
-  console.log(`Resolution done: ${resolved}/${toResolve.length} got canonical URLs (rest fall back to Google search)`);
+  console.log(`Resolution done: ${resolved}/${toResolve.length} got canonical URLs (rest fall back to Google search)${abortedEarly ? ' [ABORTED EARLY]' : ''}`);
 
   console.log(`Writing snapshot to ${snapshotPath}...`);
   try {
