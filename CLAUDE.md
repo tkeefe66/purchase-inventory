@@ -196,7 +196,7 @@ ledger/                     # current folder name: outdoor-inventory
 | Telegram | Bot token via @BotFather | Phase 1 (digests), Phase 2+ (conversational) |
 | **Anthropic web_search** (server tool) | Built-in to Anthropic API; no separate key | **Phase 2.5+** (outdoor agent grounds answers in current info) |
 | **Pirate Weather** (forecasts) + **Nominatim** (OSM geocoder) | `PIRATE_WEATHER_API_KEY` only; Nominatim is keyless | **Phase 3 ✅ shipped 2026-05-15** |
-| AllTrails | MCP connected to Tom's Claude.ai account; **may not be reachable from Railway-hosted bot** — fallback to OSM Overpass API. Covers hiking, MTB, trail running. | Phase 4 |
+| AllTrails | **Not reachable from API consumers** — confirmed 2026-05-17. AllTrails MCP is claude.ai-only; no public REST API; web is DataDome-protected. Phase 4 shipped with OSM Overpass instead (see DECISIONS.md). | Phase 4 ✅ shipped via OSM |
 | Recreation.gov | Free API key | Phase 5 |
 | iOverlander, BLM, USFS | Investigation needed | Phase 5 |
 

@@ -6,7 +6,7 @@ import { ConversationStore } from '../../lib/conversations.js';
 import { Stats } from '../../apps/bot/stats.js';
 import { callWithRetry } from '../../lib/anthropic-retry.js';
 import { AGENT_PRIMARY_MODEL, AGENT_FALLBACK_MODELS } from '../../lib/models.js';
-import { createTools, TOOL_SCHEMAS, SERVER_TOOLS, type ToolHandlers, type FindFreeCampsitesInput } from './tools.js';
+import { createTools, TOOL_SCHEMAS, SERVER_TOOLS, type ToolHandlers, type FindFreeCampsitesInput, type LookupTrailInput, type SearchTrailsNearbyInput } from './tools.js';
 import type { WeatherClient } from './integrations/weather.js';
 import { geocode } from './integrations/weather.js';
 
@@ -32,17 +32,23 @@ Telegram renders Markdown. When you reference a specific item from Tom's invento
 
 const REI_PREFERENCE = `When recommending purchases, prefer REI when both retailers carry an item — Tom is a co-op member and that's his default store. Mention the dividend or return-policy advantage in close calls.`;
 
-const TOOL_GUIDANCE = `You have four tools available:
+const TOOL_GUIDANCE = `You have these tools available:
 
 - web_search — use for anything time-sensitive: current prices, current trail/snow/surf/weather conditions in prose form, recent product releases, reviews from the past year, current park/trail status. Do NOT search for things in Tom's inventory (already in context) or for general outdoor knowledge (you already know). Capped at 3 searches per turn. When you do search, cite the source domain in your reply so Tom can verify (e.g., "per outdoorgearlab.com").
 
 - get_forecast(location, days) — call this when the user asks about weather or packing for a real upcoming trip. Pair it with the inventory you already have in context to give specific gear recommendations ("you have the Patagonia Houdini for the wind, but the forecast shows 0.6in of rain Thursday — bring the shell instead"). Don't call it for climatology questions or vague "what's it like there in spring" — only for specific forecasts in the next 7 days. Always include the destination + dates in your reply so Tom can verify. Prefer this over web_search for any weather question, since it returns structured numeric data.
 
+- lookup_trail(name, near_location?) — get OSM-tagged data for a specific named trail: length, surface, difficulty (SAC scale T1-T6 for hiking, mtb:scale 0-6 for MTB), suitable activities, and a map link. Use when the user names a trail ("what gear for the Manitou Incline?"). OSM has good coverage of named US trails but does NOT include elevation gain — for elevation, follow up with web_search. If multiple matches come back, pick the one whose centroid matches the user's region.
+
+- search_trails_nearby(location, radius_km?, activity?) — find trails within a radius of a place, optionally filtered by activity ('hiking' | 'mtb' | 'trail-running'). Use for "good MTB trails near Boulder" or "trail-run options under 10km near Denver". The result is sorted by distance; you typically only need to mention the top 3-5 in your reply. Always cite the OSM source URL when you recommend a specific trail.
+
+- find_free_campsites(location, radius_km?) — merges reservable-but-free Rec.gov campgrounds with dispersed/walk-up sites from USFS, BLM, and OSM. Tent-eligible only.
+
 - update_status(item_id, new_status) — when the user tells you they lost, sold, donated, retired, returned, or broke an item, or wants to mark it excluded. Possible new_status values: active, retired, returned, lost, broken, sold, donated, excluded. After calling this tool, confirm to the user what changed.
 
 - get_product_url(item_id) — usually NOT needed since each inventory row already includes its product URL. Use only as a fallback if a URL is missing from the row.
 
-Use tools sparingly: only call when needed.`;
+Use tools sparingly: only call when needed. When you combine multiple tools for a question (e.g., look up a trail, then get the forecast, then check the inventory), do that in parallel where possible — the tool runner handles concurrent calls fine.`;
 
 export function buildSystemPrompt(input: SystemPromptInput): SystemBlock[] {
   return [
@@ -205,6 +211,12 @@ export class OutdoorAgent {
     }
     if (name === 'find_free_campsites') {
       return this.tools.find_free_campsites(input as FindFreeCampsitesInput);
+    }
+    if (name === 'lookup_trail') {
+      return this.tools.lookup_trail(input as LookupTrailInput);
+    }
+    if (name === 'search_trails_nearby') {
+      return this.tools.search_trails_nearby(input as SearchTrailsNearbyInput);
     }
     return { ok: false, message: `Unknown tool: ${name}` };
   }

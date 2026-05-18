@@ -1190,6 +1190,42 @@ Strong key is checked **first**. Falls back to the existing full key (orderId + 
 
 ---
 
+## 2026-05-17 (later) — Phase 4 trails: OSM Overpass (AllTrails ruled out)
+
+**Context:** PLAN.md Task 4.1 said "First choice: AllTrails. Fallback: OSM Overpass." Investigated AllTrails reachability before writing code.
+
+**Findings:**
+- Anthropic's API supports remote MCP servers via `mcp_servers` + beta header `mcp-client-2025-11-20`. The plumbing works.
+- AllTrails' MCP server is only surfaced inside claude.ai / ChatGPT consumer apps. No public endpoint URL, no OAuth client registration, no developer/partner program for `mcp_servers` use. Their support page explicitly states "no API keys or accounts required" — the auth is brokered by the consumer app, not by API consumers.
+- AllTrails has no public REST API. Their web API is DataDome-protected against bots/scrapers.
+- The well-known third-party `srinath1510/alltrails-mcp-server` was deprecated 2026-01-25 at AllTrails' request — they actively police re-wrappers.
+
+**Decision:** Ship Phase 4 on OpenStreetMap via the Overpass API. Architecture is split across two infrastructure pieces:
+1. **Nominatim** (OSM's geocoder) for `lookupTrail(name)` — its indexed full-text search handles OSM's idiosyncratic naming (e.g. "Manitou Incline" is tagged in OSM as just "The Incline" with `highway=steps`, not `highway=path`).
+2. **Overpass** for `searchTrailsNearby(lat, lng, radius, activity?)` and for enriching Nominatim hits with full way geometry + tags.
+
+**Why OSM is good enough:** Western US trail coverage is solid for named trails. We get name, geometry, length (Haversine-sum), surface (`surface` tag), and difficulty (`sac_scale` for hiking, `mtb:scale` for MTB). Activity classification derives from tags. The major gap vs AllTrails is elevation gain — OSM doesn't carry it. The agent now uses `web_search` to fill that in when the user asks specifically.
+
+**Performance constraints learned (worth the effort to write down):**
+- Global Overpass regex scans on `name` time out at 30s. We bound every query geographically — either an `around:` clause or a CONUS bbox fallback (24/-125/50/-66).
+- Even with CONUS bbox + anchored prefix regex (`^Manitou Incline`), unindexed name scans time out. Nominatim's indexed search → Overpass-by-OSM-ID is the only reliable path for name lookups.
+- `searchTrailsNearby` had to dedupe by name (OSM segments long trails into 5-10 named ways) and filter under-0.5km segments (urban path noise — campus shortcuts, sidewalk segments, bridge spans).
+
+**Files added:**
+- `domains/outdoor/integrations/trails.ts` — adapter + Nominatim + Overpass wiring
+- `scripts/smoke-trails.ts` — `npm run smoke-trails` for live verification
+- Tests: 23 (geometry helpers, mappers, query builders, Nominatim path, quality filters)
+
+**Agent tools added (`domains/outdoor/tools.ts`):**
+- `lookup_trail(name, near_location?, radius_km?)`
+- `search_trails_nearby(location, radius_km?, activity?)`
+
+System prompt now instructs the agent to combine `lookup_trail` + `get_forecast` + the inventory in context for "what gear for [trail]?" questions, and to fall back to `web_search` for elevation gain since OSM doesn't have it.
+
+**If AllTrails ever exposes a partner API:** swap `lookupTrail` / `searchTrailsNearby` implementations — the `TrailInfo` shape stays the same and no caller needs to change.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale

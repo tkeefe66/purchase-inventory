@@ -51,7 +51,11 @@ describe('TOOL_SCHEMAS', () => {
     const names = TOOL_SCHEMAS.map((s) => s.name);
     expect(names).toContain('get_product_url');
     expect(names).toContain('update_status');
-    expect(TOOL_SCHEMAS).toHaveLength(4);
+    expect(names).toContain('get_forecast');
+    expect(names).toContain('find_free_campsites');
+    expect(names).toContain('lookup_trail');
+    expect(names).toContain('search_trails_nearby');
+    expect(TOOL_SCHEMAS).toHaveLength(6);
   });
 
   test('update_status schema constrains new_status to the valid enum', () => {

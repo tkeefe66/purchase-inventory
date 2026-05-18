@@ -577,24 +577,24 @@ If any fail, debug + iterate before declaring Phase 2.5 done.
 
 ---
 
-## Phase 4: Outdoor + AllTrails (or fallback)
+## Phase 4: Outdoor + Trails ✅ SHIPPED 2026-05-17 (OSM Overpass — AllTrails MCP not reachable from API consumers)
 
 **Outcome:** Agent answers trail-data questions across **hiking, mountain biking, and trail running** using AllTrails (or fallback) + inventory + weather.
 
 **Scope decision:** Tom explicitly chose AllTrails as the single trail-data source for all trail-based activities. **Trailforks (MTB-specific) is explicitly NOT being built** — AllTrails covers MTB trails, and any gaps are filled by Phase 2.5 web_search.
 
-### Task 4.1: Decide source
+### Task 4.1: Source decision — OSM Overpass (AllTrails not viable)
 
-**First choice:** AllTrails — Tom has it connected to his Claude.ai account as an MCP. The Telegram bot runs on Railway with its own Anthropic API key, separate from Tom's Claude.ai session. **Critical question to verify at start of Phase 4: can the Railway-deployed bot use the AllTrails MCP, or is the MCP session-bound to Tom's claude.ai account?**
+**Investigated 2026-05-17.** AllTrails MCP is **only reachable from claude.ai / ChatGPT consumer apps** — there's no public MCP endpoint or OAuth flow for arbitrary Anthropic API consumers. AllTrails also has no public REST API; their web API is DataDome-protected against scraping; even the well-known third-party `srinath1510/alltrails-mcp-server` was deprecated at AllTrails's request 2026-01-25.
 
-If AllTrails MCP is reachable from Railway → use it directly.
+**Anthropic's MCP connector** (beta, header `mcp-client-2025-11-20`) does support arbitrary remote MCP servers via OAuth bearer tokens — the API plumbing is there. The problem is AllTrails specifically doesn't expose their MCP for API-consumer use.
 
-**Fallback (if MCP not reachable):** OpenStreetMap via Overpass API.
-- Hiking trails: OSM `highway=path` + `sac_scale` tags
-- Mountain biking: OSM `cycleway` / `mtb:scale` tags
-- Trail running: same hiking trail set, filtered by surface/grade
-
-OSM is free, well-maintained for popular areas, weaker for obscure ones. Acceptable v1 fallback.
+**Shipped:** OpenStreetMap via the Overpass API.
+- All trails: `lookupTrail` uses **Nominatim** (indexed full-text search) for name → OSM way ID, then Overpass to enrich with full geometry + tags. This handles OSM's idiosyncratic naming (e.g. Manitou Incline is tagged "The Incline" with `highway=steps`).
+- Search by location: `searchTrailsNearby` queries Overpass with `around:` clauses, dedupes multi-segment ways by name, filters out urban path noise (anything under 0.5 km), supports activity filters (`hiking` | `mtb` | `trail-running`).
+- Difficulty surfaced from `sac_scale` (hiking T1-T6) or `mtb:scale` (0-6).
+- Surface from `surface` tag.
+- **No elevation gain** — OSM doesn't carry it. Agent falls back to `web_search` when the user asks about elevation specifically.
 
 ### Task 4.2: Trail client
 
