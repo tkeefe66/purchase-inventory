@@ -59,7 +59,7 @@ export async function resolveAgencyUrl(
     );
   } catch (err) {
     console.warn(
-      `[url-resolver] Haiku call failed for ${opts.name}: ${err instanceof Error ? err.message : err}`,
+      `[url-resolver] Sonnet call failed for ${opts.name}: ${err instanceof Error ? err.message : err}`,
     );
     return null;
   }
