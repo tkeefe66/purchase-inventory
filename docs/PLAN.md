@@ -678,7 +678,7 @@ Run manually against current inventory (after enough historical data is loaded).
 
 ---
 
-## Phase 6: Web UI (read-only dashboard)
+## Phase 6: Web UI (read-only dashboard) ✅ SHIPPED 2026-05-17
 
 **Outcome:** Browser-accessible dashboard showing all purchases across all domains, filterable.
 

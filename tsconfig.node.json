@@ -1,10 +1,9 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "esnext",
-    "moduleResolution": "bundler",
-    "lib": ["dom", "dom.iterable", "ES2023"],
-    "jsx": "preserve",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
@@ -16,14 +15,23 @@
     "isolatedModules": true,
     "allowJs": false,
     "noEmit": true,
-    "incremental": true,
+    "outDir": "dist",
+    "rootDir": ".",
     "baseUrl": ".",
     "paths": {
       "@lib/*": ["lib/*"],
-      "@domains/*": ["domains/*"]
-    },
-    "plugins": [{ "name": "next" }]
+      "@domains/*": ["domains/*"],
+      "@apps/*": ["apps/*"]
+    }
   },
-  "include": ["next-env.d.ts", "app/**/*.ts", "app/**/*.tsx", "middleware.ts", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "include": [
+    "apps/**/*.ts",
+    "lib/**/*.ts",
+    "domains/**/*.ts",
+    "scripts/**/*.ts",
+    "tests/**/*.ts",
+    "vitest.config.ts",
+    "eslint.config.js"
+  ],
+  "exclude": ["node_modules", "dist"]
 }
