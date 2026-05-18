@@ -31,9 +31,16 @@ import type { DispersedSource, DispersedSpot } from '../lib/dispersed/types.js';
  */
 
 const CONCURRENCY = 8;
-// Sonnet 4.6 tokens (~$0.003) + 1-2 web_search ($0.01-0.02) per call.
-const COST_PER_RESOLUTION_USD = 0.022;
+// Sonnet 4.6 tokens + 1-2 web_search ($0.01-0.02). web_search results echo
+// back as input tokens (~15-20k per call), so real-world cost is ~$0.04-0.05.
+const COST_PER_RESOLUTION_USD = 0.045;
 const CACHE_WRITE_EVERY = 10;
+// Fail-fast on prolonged systemic failure (e.g., billing/auth issues that
+// somehow surface as silent null returns rather than thrown errors). Set
+// generously — BLM dispersed sites legitimately return NONE in clusters
+// because many tiny FCFS spots have no canonical agency page. 8 was too
+// eager and aborted on the first BLM-heavy queue head.
+const FAIL_FAST_CONSECUTIVE_NULLS = 30;
 
 const SOURCE_DOMAINS: Record<DispersedSource, string> = {
   USFS: 'fs.usda.gov',
@@ -166,12 +173,22 @@ async function main(): Promise<void> {
 
   console.log(`Resolving ${toResolve.length} URLs (concurrency=${CONCURRENCY})...`);
 
-  let done = 0;
+  // Shuffle so easy USFS hits and harder BLM lookups interleave. Without
+  // this, a queue with all BLM at the front can hit FAIL_FAST_CONSECUTIVE_NULLS
+  // before any USFS success — fail-fast then trips on what's actually just
+  // a hard-case cluster, not a systemic failure.
+  const queue = [...toResolve];
+  for (let i = queue.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [queue[i], queue[j]] = [queue[j]!, queue[i]!];
+  }
+
+  let attempted = 0;
   let resolved = 0;
+  let nullResolved = 0;
   let consecutiveFailures = 0;
   let abortedEarly = false;
   let writesSinceLastFlush = 0;
-  const queue = [...toResolve];
 
   async function flushCache(): Promise<void> {
     try {
@@ -199,35 +216,38 @@ async function main(): Promise<void> {
         consecutiveFailures = 0;
       } else {
         recordResolution(cache, spot.source, spot.id, null, recordedAt);
+        nullResolved++;
         consecutiveFailures++;
-        // Fail-fast: 8 consecutive failures with zero successes usually means
-        // billing/auth issue, not bad data. Saves burning ~5+ minutes when
-        // Anthropic credits haven't propagated yet.
-        if (consecutiveFailures >= 8 && resolved === 0) {
+        // Fail-fast: a long streak of consecutive nulls with zero successes
+        // suggests systemic failure (auth/billing/web_search outage) rather
+        // than hard data. With the queue shuffled, hitting this threshold
+        // with no successes is very unlikely to be just a hard-case cluster.
+        if (consecutiveFailures >= FAIL_FAST_CONSECUTIVE_NULLS && resolved === 0) {
           console.warn(
-            `Aborting: ${consecutiveFailures} consecutive failures with no successes — likely billing/auth issue, not bad data.`,
+            `Aborting: ${consecutiveFailures} consecutive null responses with no successes — check Anthropic console (credits / web_search availability).`,
           );
           abortedEarly = true;
         }
       }
-      done++;
+      attempted++;
       writesSinceLastFlush++;
       if (writesSinceLastFlush >= CACHE_WRITE_EVERY) {
         writesSinceLastFlush = 0;
         await flushCache();
       }
-      if (done % 25 === 0) {
-        console.log(`  ${done}/${toResolve.length} (${resolved} resolved)`);
+      if (attempted % 25 === 0) {
+        console.log(`  ${attempted}/${toResolve.length} (${resolved} resolved, ${nullResolved} cached as no-match)`);
       }
     }
   }
 
   await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
   await flushCache();
+  const notAttempted = toResolve.length - attempted;
   console.log(
-    `Resolution done: ${resolved}/${toResolve.length} canonical, ${
-      toResolve.length - resolved
-    } tried-null (cached for ${30} days)${abortedEarly ? ' [ABORTED EARLY]' : ''}`,
+    `Resolution done: ${attempted} attempted (${resolved} canonical, ${nullResolved} cached as no-match for 30 days)` +
+      (notAttempted > 0 ? `, ${notAttempted} not attempted` : '') +
+      (abortedEarly ? ' [ABORTED EARLY]' : ''),
   );
 
   console.log(`\nWriting snapshot to ${snapshotPath}...`);
