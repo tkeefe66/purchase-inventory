@@ -1,6 +1,7 @@
 import { WESTERN_US_BBOX } from './types.js';
 import type { DispersedSpot } from './types.js';
 import { buildAgencySearchUrl } from './search-url.js';
+import { stripHtml } from './text.js';
 
 /**
  * US Forest Service "Recreation Area Activities" ArcGIS feature layer.
@@ -93,7 +94,9 @@ export function mapUsfsFeature(feat: ArcgisFeature): DispersedSpot | null {
   }
   const id = a.recareaid !== undefined ? String(a.recareaid) : '';
   if (!id) return null;
-  const description = (a.recareadescription ?? '').trim();
+  // USFS returns the description as raw HTML — strip to plain text before
+  // the regex restroom check + before sending to the sheet.
+  const description = stripHtml(a.recareadescription ?? '');
   const hasRestrooms = RESTROOM_RE.test(description);
   const name = (a.recareaname ?? '').trim() || `USFS Rec Area ${id}`;
   const agency = (a.forestname ?? '').trim() || 'USFS';

@@ -1,6 +1,7 @@
 import { WESTERN_US_BBOX } from './types.js';
 import type { DispersedSpot } from './types.js';
 import { buildAgencySearchUrl } from './search-url.js';
+import { stripHtml } from './text.js';
 
 /**
  * Bureau of Land Management "BLM National Recreation Site Points" — Layer 4
@@ -79,7 +80,9 @@ export function mapBlmFeature(feat: ArcgisFeature): DispersedSpot | null {
   }
   const id = a.OBJECTID !== undefined ? String(a.OBJECTID) : '';
   if (!id) return null;
-  const description = (a.DESCRIPTION ?? '').trim();
+  // BLM's DESCRIPTION is usually null but occasionally has HTML; strip
+  // defensively so the sheet never shows tag soup.
+  const description = stripHtml(a.DESCRIPTION ?? '');
   // BLM dispersed sites are by definition primitive; rare to have restrooms,
   // but flag when description mentions one.
   const hasRestrooms = RESTROOM_RE.test(description);
