@@ -1,35 +1,91 @@
 import 'dotenv/config';
 import Anthropic from '@anthropic-ai/sdk';
+import { createInterface } from 'node:readline/promises';
 import { runDispersedRefresh } from '../apps/cron/camping/dispersed-refresh.js';
 import { createSheetsClient, mirrorDispersedSites } from '../lib/sheets.js';
 import { readDispersedSnapshot, writeDispersedSnapshot } from '../lib/dispersed/cache.js';
 import { resolveAgencyUrl } from '../lib/dispersed/url-resolver.js';
-import type { DispersedSpot, DispersedSource } from '../lib/dispersed/types.js';
+import {
+  lookupCachedUrl,
+  readUrlCache,
+  recordResolution,
+  writeUrlCache,
+  type UrlCache,
+} from '../lib/dispersed/url-cache.js';
+import type { DispersedSource, DispersedSpot } from '../lib/dispersed/types.js';
 
 /**
- * One-shot seed of USFS + BLM dispersed-camping sites with URL enrichment.
+ * Seed / refresh the dispersed-camping URL catalog.
  *
- * For each spot, resolve a canonical agency URL via Haiku + web_search.
- * Cache by (source, id) using the existing on-disk snapshot — only spots
- * with no cached resolution (or whose cached URL is still a Google search
- * fallback) hit the LLM on each run.
+ * For each USFS + BLM spot, resolve a canonical agency URL via Sonnet 4.6 +
+ * web_search and persist the result to `dispersed-url-cache.json`. Re-runs
+ * only spend Anthropic credits on cache-misses, so quarterly refreshes are
+ * near-free after the initial seed.
+ *
+ * Run cadence: quarterly (every 4 months) per Tom. Weekly cron only fetches
+ * source lists (no Anthropic) — net-new spots get Google-fallback URLs until
+ * the next seed run picks them up.
+ *
+ * Flags:
+ *   --yes / -y   Skip the interactive cost-confirmation prompt (for CI).
  */
 
 const CONCURRENCY = 8;
+// Sonnet 4.6 tokens (~$0.003) + 1-2 web_search ($0.01-0.02) per call.
+const COST_PER_RESOLUTION_USD = 0.022;
+const CACHE_WRITE_EVERY = 10;
 
 const SOURCE_DOMAINS: Record<DispersedSource, string> = {
   USFS: 'fs.usda.gov',
   BLM: 'blm.gov',
-  OSM: 'openstreetmap.org',  // OSM spots ship with usable URLs; not resolved.
+  OSM: 'openstreetmap.org', // OSM spots ship with usable URLs; not resolved.
 };
 
-function isResolved(url: string, domain: string): boolean {
+function isCanonicalSnapshotUrl(url: string, domain: string): boolean {
   if (!url) return false;
   if (url.includes('google.com/search')) return false;
   return url.toLowerCase().includes(domain.toLowerCase());
 }
 
+async function confirm(message: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await rl.question(`${message} [y/N] `);
+    return answer.trim().toLowerCase().startsWith('y');
+  } finally {
+    rl.close();
+  }
+}
+
+/**
+ * One-time migration: if the cache is empty (first run after this change) but
+ * the prior snapshot already has canonical URLs from earlier `seed-dispersed`
+ * runs, seed the cache from those so we don't re-pay to resolve them.
+ */
+async function bootstrapFromSnapshot(
+  cache: UrlCache,
+  snapshotPath: string,
+): Promise<number> {
+  if (cache.size > 0) return 0;
+  const prior = await readDispersedSnapshot(snapshotPath);
+  if (!prior) return 0;
+  const seedTime = prior.refreshedAt ? new Date(prior.refreshedAt) : new Date();
+  let seeded = 0;
+  for (const s of prior.spots) {
+    const domain = SOURCE_DOMAINS[s.source];
+    if (!domain) continue;
+    if (isCanonicalSnapshotUrl(s.sourceUrl, domain)) {
+      recordResolution(cache, s.source, s.id, s.sourceUrl, seedTime);
+      seeded++;
+    }
+  }
+  return seeded;
+}
+
 async function main(): Promise<void> {
+  const args = process.argv.slice(2);
+  const autoYes = args.includes('--yes') || args.includes('-y');
+
   const sheets = createSheetsClient({
     clientId: process.env.GOOGLE_CLIENT_ID!,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
@@ -37,6 +93,7 @@ async function main(): Promise<void> {
   });
   const spreadsheetId = process.env.GOOGLE_SHEET_ID!;
   const snapshotPath = process.env.DISPERSED_SNAPSHOT_PATH ?? './local-data/dispersed-snapshot.json';
+  const cachePath = process.env.DISPERSED_URL_CACHE_PATH ?? './local-data/dispersed-url-cache.json';
   const anthropic = new Anthropic();
 
   console.log(`Pulling dispersed sites (sources: ${process.env.DISPERSED_SOURCES ?? 'USFS,BLM (default)'})...`);
@@ -51,38 +108,79 @@ async function main(): Promise<void> {
     for (const f of res.failures) console.warn(`  - ${f.source}: ${f.error}`);
   }
 
-  // Build a (source|id) → resolvedUrl cache from the prior snapshot.
-  const cache = new Map<string, string>();
-  const prior = await readDispersedSnapshot(snapshotPath);
-  if (prior) {
-    for (const s of prior.spots) {
-      const domain = SOURCE_DOMAINS[s.source];
-      if (isResolved(s.sourceUrl, domain)) cache.set(`${s.source}|${s.id}`, s.sourceUrl);
-    }
-    console.log(`Cache hit pool from prior snapshot: ${cache.size} URLs`);
+  console.log(`Loading URL cache from ${cachePath}...`);
+  const cache = await readUrlCache(cachePath);
+  console.log(`  ${cache.size} cached resolutions on disk`);
+  const seeded = await bootstrapFromSnapshot(cache, snapshotPath);
+  if (seeded > 0) {
+    console.log(`  bootstrapped ${seeded} URLs from prior snapshot (one-time)`);
+    await writeUrlCache(cachePath, cache);
   }
 
-  // Apply cached URLs, queue the rest.
+  // Apply cached URLs; queue everything else.
+  const now = new Date();
   const toResolve: DispersedSpot[] = [];
+  let appliedFromCache = 0;
+  let skippedTriedNull = 0;
   for (const spot of res.snapshot.spots) {
-    const cached = cache.get(`${spot.source}|${spot.id}`);
-    if (cached) {
-      spot.sourceUrl = cached;
-    } else if (SOURCE_DOMAINS[spot.source]) {
+    if (!SOURCE_DOMAINS[spot.source]) continue;
+    const lookup = lookupCachedUrl(cache, spot.source, spot.id, now);
+    if (lookup.hit) {
+      if (lookup.url) {
+        spot.sourceUrl = lookup.url;
+        appliedFromCache++;
+      } else {
+        // Recently tried and got NONE — leave the Google-fallback URL the
+        // adapter set, and skip re-resolution for the TTL window.
+        skippedTriedNull++;
+      }
+    } else {
       toResolve.push(spot);
     }
   }
-  console.log(`Resolving ${toResolve.length} URLs via Haiku + web_search (concurrency=${CONCURRENCY})...`);
+  console.log(`Cache stats: ${appliedFromCache} canonical applied, ${skippedTriedNull} tried-null skipped, ${toResolve.length} to resolve.`);
 
-  // Concurrent worker pool — bounded by CONCURRENCY.
-  // Fail-fast: if the first 8 attempts all return null (which usually means
-  // billing/auth issue, not "no match"), abort. Saves burning ~5+ minutes
-  // when Anthropic credits haven't propagated yet.
+  const estCost = (toResolve.length * COST_PER_RESOLUTION_USD).toFixed(2);
+  console.log(
+    `\nWill resolve ${toResolve.length} URLs via Sonnet+web_search ` +
+      `(~$${COST_PER_RESOLUTION_USD.toFixed(3)}/each, ~$${estCost} total).`,
+  );
+
+  if (toResolve.length > 0 && !autoYes) {
+    const ok = await confirm('Continue?');
+    if (!ok) {
+      console.log('Aborted by user. Writing snapshot with cached/fallback URLs only.');
+      await writeDispersedSnapshot(snapshotPath, res.snapshot);
+      await mirrorDispersedSites(sheets, spreadsheetId, res.snapshot.spots);
+      return;
+    }
+  }
+
+  if (toResolve.length === 0) {
+    console.log('Nothing to resolve — writing snapshot from cache.');
+    await writeDispersedSnapshot(snapshotPath, res.snapshot);
+    await mirrorDispersedSites(sheets, spreadsheetId, res.snapshot.spots);
+    console.log('Done.');
+    return;
+  }
+
+  console.log(`Resolving ${toResolve.length} URLs (concurrency=${CONCURRENCY})...`);
+
   let done = 0;
   let resolved = 0;
   let consecutiveFailures = 0;
   let abortedEarly = false;
+  let writesSinceLastFlush = 0;
   const queue = [...toResolve];
+
+  async function flushCache(): Promise<void> {
+    try {
+      await writeUrlCache(cachePath, cache);
+    } catch (err) {
+      console.warn(`  cache write failed: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
   async function worker(): Promise<void> {
     while (queue.length > 0 && !abortedEarly) {
       const spot = queue.shift();
@@ -93,30 +191,55 @@ async function main(): Promise<void> {
         agency: spot.agency,
         domain,
       });
+      const recordedAt = new Date();
       if (url) {
         spot.sourceUrl = url;
+        recordResolution(cache, spot.source, spot.id, url, recordedAt);
         resolved++;
         consecutiveFailures = 0;
       } else {
+        recordResolution(cache, spot.source, spot.id, null, recordedAt);
         consecutiveFailures++;
+        // Fail-fast: 8 consecutive failures with zero successes usually means
+        // billing/auth issue, not bad data. Saves burning ~5+ minutes when
+        // Anthropic credits haven't propagated yet.
         if (consecutiveFailures >= 8 && resolved === 0) {
-          console.warn(`Aborting: ${consecutiveFailures} consecutive failures with no successes — likely billing/auth issue, not bad data.`);
+          console.warn(
+            `Aborting: ${consecutiveFailures} consecutive failures with no successes — likely billing/auth issue, not bad data.`,
+          );
           abortedEarly = true;
         }
       }
       done++;
-      if (done % 25 === 0) console.log(`  ${done}/${toResolve.length} (${resolved} resolved)`);
+      writesSinceLastFlush++;
+      if (writesSinceLastFlush >= CACHE_WRITE_EVERY) {
+        writesSinceLastFlush = 0;
+        await flushCache();
+      }
+      if (done % 25 === 0) {
+        console.log(`  ${done}/${toResolve.length} (${resolved} resolved)`);
+      }
     }
   }
-  await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
-  console.log(`Resolution done: ${resolved}/${toResolve.length} got canonical URLs (rest fall back to Google search)${abortedEarly ? ' [ABORTED EARLY]' : ''}`);
 
-  console.log(`Writing snapshot to ${snapshotPath}...`);
+  await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
+  await flushCache();
+  console.log(
+    `Resolution done: ${resolved}/${toResolve.length} canonical, ${
+      toResolve.length - resolved
+    } tried-null (cached for ${30} days)${abortedEarly ? ' [ABORTED EARLY]' : ''}`,
+  );
+
+  console.log(`\nWriting snapshot to ${snapshotPath}...`);
   try {
     await writeDispersedSnapshot(snapshotPath, res.snapshot);
     console.log('  ✓ wrote');
   } catch (err) {
-    console.warn(`  ✗ JSON write failed (sheet mirror will still proceed): ${err instanceof Error ? err.message : err}`);
+    console.warn(
+      `  ✗ JSON write failed (sheet mirror will still proceed): ${
+        err instanceof Error ? err.message : err
+      }`,
+    );
   }
 
   console.log('Mirroring to sheet...');
@@ -124,4 +247,7 @@ async function main(): Promise<void> {
   console.log('Done.');
 }
 
-main().catch((err: unknown) => { console.error(err); process.exit(1); });
+main().catch((err: unknown) => {
+  console.error(err);
+  process.exit(1);
+});

@@ -628,6 +628,8 @@ See `docs/superpowers/specs/2026-05-15-phase-5-camping-design.md` and `docs/supe
 
 USFS+BLM+OSM are merged into `/data/dispersed-snapshot.json` weekly (Sunday 5am MT) and mirrored to the "Dispersed Sites" sheet tab. iOverlander was the original plan but was dropped 2026-05-17 — its bulk-download URL is now gated behind login + paid subscription, and its ToS forbids redistribution.
 
+**URL enrichment cadence (added 2026-05-18):** Canonical agency URLs are resolved via `scripts/seed-dispersed.ts` (Sonnet 4.6 + `web_search`). The script is NOT part of the cron — Tom reruns it every ~4 months. Persistent cache at `DISPERSED_URL_CACHE_PATH`, confirm prompt with cost estimate (`--yes` to bypass), one-time bootstrap from snapshot, 30-day `tried-null` TTL. See DECISIONS.md 2026-05-18 for the post-incident write-up.
+
 ---
 
 ## Phase 5.5: Gear age / maintenance nudges ✅ SHIPPED 2026-05-17

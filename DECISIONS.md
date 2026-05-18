@@ -1279,6 +1279,39 @@ System prompt now instructs the agent to combine `lookup_trail` + `get_forecast`
 
 ---
 
+## 2026-05-18 — Persistent URL cache for `seed-dispersed.ts` (post-incident)
+
+**Context:** The 2026-05-17 USFS+BLM dispersed-pivot involved repeated iterations on `scripts/seed-dispersed.ts` (commits `a73d2b1` → `c74c166` plus another run at 2026-05-18 05:51 MT). Each run hit the URL resolver against ~793 sites via Sonnet 4.6 + `web_search`. The old in-script cache only retained snapshot entries whose URL was already on the agency domain — failed runs left no cache, so each subsequent iteration re-resolved everything from scratch. Estimated Anthropic spend over the 24h window: $40–90.
+
+The `c74c166` "fail-fast on 8 consecutive failures" guard helped, but only kicks in on systemic failure (auth/billing) — it doesn't prevent paying again on partial-success retries.
+
+**Decision:**
+
+1. **Move the URL-resolution cache out of the snapshot file into its own persistent file** at `DISPERSED_URL_CACHE_PATH` (default `/data/dispersed-url-cache.json` in prod, `./local-data/dispersed-url-cache.json` in dev).
+2. **Cache entry shape:** `{ "<source>|<id>": { url: string | null, resolvedAt: ISO, status: "canonical" | "tried-null" } }`. Canonical results kept forever; `tried-null` results honored for 30 days, then eligible for retry (handles transient API blips without permanent lockout).
+3. **Atomic writes** (temp file + `rename`) and **incremental flushes** every 10 resolutions — a killed run preserves all progress.
+4. **One-time bootstrap from the existing snapshot's canonical URLs** on first run after this change — so the ~700 URLs already resolved during the pivot don't re-pay.
+5. **Confirm prompt at the start of `seed-dispersed`** with cost estimate: `"Will resolve N URLs (~$0.022/each, ~$X total). Continue? [y/N]"`. Bypass via `--yes` / `-y` flag for CI/automation.
+
+**Cadence (locked):** Tom reruns `npm run seed-dispersed` every ~4 months to enrich net-new USFS/BLM additions. After the initial bootstrap, quarterly runs should resolve <50 net-new sites (≪ $1 typical).
+
+**Why not auto-resolve inside the cron:**
+- The weekly Sunday-5am dispersed-refresh stays free (HTTP-only fetches from USFS+BLM). Auto-resolving in cron would reintroduce continuous Anthropic spend.
+- Couples a fast/free pipeline to a slow/expensive one — partial Sonnet failures would block the snapshot write.
+- Failure modes are awkward to alert on inside a cron tick.
+- Manual quarterly runs scale better for an at-most-50-new-sites/quarter signal.
+
+**Files:**
+- New: `lib/dispersed/url-cache.ts` (cache module — 4 exported functions, 1 constant)
+- New: `tests/lib/dispersed/url-cache.test.ts` (11 tests: roundtrip, TTL boundaries, atomic write, malformed JSON)
+- Rewritten: `scripts/seed-dispersed.ts` (bootstrap + confirm prompt + cache integration; fail-fast guard preserved)
+- Updated: `.env.example` (new `DISPERSED_URL_CACHE_PATH` row)
+- Updated: `CLAUDE.md` (new row + new DO NOT bullet)
+
+**Forward-looking risk:** the hourly email-ingest CRON also calls Sonnet+web_search via `lib/parsers/rei-product-lookup.ts` on REI in-store eReceipts (added 2026-05-17, commit `fe34e54`). This is bounded by actual REI eReceipt volume (rare — maybe 1-2/week), but worth re-examining if a future cron tick spikes spend.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale
