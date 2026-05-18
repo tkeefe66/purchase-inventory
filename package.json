@@ -38,6 +38,7 @@
     "smoke-camping": "tsx scripts/smoke-camping.ts",
     "backfill-camping-source": "tsx scripts/backfill-source.ts",
     "seed-dispersed": "tsx scripts/seed-dispersed.ts",
+    "maintenance-dry": "tsx scripts/maintenance-dry.ts",
     "bot": "tsx apps/bot/index.ts"
   },
   "dependencies": {

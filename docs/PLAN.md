@@ -630,11 +630,19 @@ USFS+BLM+OSM are merged into `/data/dispersed-snapshot.json` weekly (Sunday 5am 
 
 ---
 
-## Phase 5.5: Gear age / maintenance nudges
+## Phase 5.5: Gear age / maintenance nudges ✅ SHIPPED 2026-05-17
 
 **Outcome:** A monthly cron scans the inventory and surfaces items hitting age or maintenance thresholds via Telegram. Helps Tom catch "your boots are 4 years old, time to think about resoling" or "you haven't logged a use of your shell in a while — still in rotation?" patterns.
 
 This is a proactive feature that only makes sense in a custom build — Claude Projects can't run scheduled background analysis on your sheet.
+
+**What shipped:**
+- 5 maintenance rules (boots / sleeping bags / climbing rope / skis / helmets). DWR rule was dropped during review — too noisy. Rules match on **both** subCategory and itemName since Tom's sheet uses high-level subcategories like "Footwear" / "Sleep System" / "Protection" with the specific gear type in the item name.
+- Monthly cron tick: 9 AM Mountain on the 1st of every month, piggybacking on the existing email-ingest hourly cron (no new Railway service).
+- Compact-table Telegram message format, capped at 10 items, oldest-first.
+- "Maintenance Acked" sheet tab — appending a row silences an item for 12 months.
+- `/ack-maintenance <6-char id> [notes]` bot command.
+- `npm run maintenance-dry` script for inspecting what the cron WOULD send without actually sending.
 
 ### Task 5.5.1: Maintenance rules
 

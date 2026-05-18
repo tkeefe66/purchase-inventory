@@ -1,4 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk';
+import { appendMaintenanceAck } from '../../lib/sheets.js';
 import type { SheetsClient, UpdateStatusInput } from '../../lib/sheets.js';
 import type { MasterRow, Status } from '../../lib/types.js';
 import type { InventoryCache } from './inventoryCache.js';
@@ -54,6 +55,7 @@ export async function dispatchCommand(chatId: string, text: string, deps: Handle
   if (name === 'refresh') return handleRefresh(deps);
   if (name === 'scan') return handleScan(deps);
   if (name === 'help') return handleHelp(deps);
+  if (name === 'ack-maintenance') return handleAckMaintenance(args, deps);
   if (
     name === 'watch' || name === 'unwatch' || name === 'watchlist' || name === 'regions'
     || name === 'plan-trip' || name === 'trips' || name === 'cancel-trip' || name === 'campsites'
@@ -144,6 +146,24 @@ async function handleCancel(chatId: string, deps: HandlerDeps): Promise<string> 
   return `Cancelled.`;
 }
 
+async function handleAckMaintenance(args: string, deps: HandlerDeps): Promise<string> {
+  if (!args) return `Usage: /ack-maintenance <6-char item id> [notes]`;
+  const tokens = args.trim().split(/\s+/);
+  const id = tokens[0] ?? '';
+  if (!ID_RE.test(id)) return `Invalid item id "${id}". Expected 6 lowercase chars/digits (see ids in the monthly nudge message).`;
+  const notes = tokens.slice(1).join(' ');
+  // Look up the item in the cache for a nicer confirmation message.
+  const snapshot = deps.cache.getSnapshot();
+  const item = getById(snapshot, id);
+  await appendMaintenanceAck(deps.sheets, deps.spreadsheetId, {
+    itemId: id,
+    ackedAt: new Date().toISOString(),
+    notes: notes || 'via /ack-maintenance',
+  });
+  const label = item ? `${item.brand} ${item.itemName}` : id;
+  return `Acked ${label} — silenced from maintenance nudges for 12 months.`;
+}
+
 function handleStats(deps: HandlerDeps): string {
   const activeOutdoor = filterToActiveOutdoor(deps.cache.getSnapshot()).length;
   const compactText = deps.cache.getCompactView().text;
@@ -175,6 +195,7 @@ function handleHelp(deps: HandlerDeps): string {
     `/scan — force the bot to scan your email for new purchases right now (don't wait for the 6am/6pm cron)`,
     `/stats — agent + cache statistics`,
     `/refresh — force-reload inventory from the sheet`,
+    `/ack-maintenance <6-char id> [notes] — silence an item from the monthly maintenance nudge for 12 months`,
     `/help — this message`,
     ``,
     `*Camping*`,

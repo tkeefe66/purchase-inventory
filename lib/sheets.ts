@@ -953,6 +953,83 @@ export async function readCampingIndexFromSheet(
 }
 
 // ---------------------------------------------------------------------------
+// Maintenance Acked tab — Phase 5.5 ack store for monthly gear nudges
+// ---------------------------------------------------------------------------
+//
+// Schema: one row per ack. Tom can also add rows by hand from the sheet UI.
+//   A  Item ID         — stable 6-char hash from domains/outdoor/types.ts
+//   B  Acked At        — ISO timestamp the ack was recorded
+//   C  Notes           — optional free-form ("acked via /ack-maintenance", etc.)
+//
+// Filter semantics: an item is suppressed from this month's nudge iff it has
+// at least one ack row with `Acked At` within the last 12 months. Ack
+// silences ALL reasons on that item (decided 2026-05-17 — one row per item,
+// not per (item, reason)).
+
+const MAINTENANCE_ACKED_TAB = 'Maintenance Acked';
+const MAINTENANCE_ACKED_HEADER = ['Item ID', 'Acked At', 'Notes'] as const;
+
+async function ensureMaintenanceAckedTab(sheets: SheetsClient, spreadsheetId: string): Promise<void> {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId });
+  const exists = (meta.data.sheets ?? []).some((s) => s.properties?.title === MAINTENANCE_ACKED_TAB);
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: { requests: [{ addSheet: { properties: { title: MAINTENANCE_ACKED_TAB } } }] },
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `'${MAINTENANCE_ACKED_TAB}'!A1`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [Array.from(MAINTENANCE_ACKED_HEADER)] },
+    });
+  }
+}
+
+/**
+ * Read all maintenance acks newer than the given cutoff. Returns the set of
+ * Item IDs to suppress from this month's nudge. Items can have multiple
+ * historical ack rows — we only need to know whether any one is recent.
+ */
+export async function readActiveMaintenanceAcks(
+  sheets: SheetsClient,
+  spreadsheetId: string,
+  cutoffIso: string,
+): Promise<Set<string>> {
+  await ensureMaintenanceAckedTab(sheets, spreadsheetId);
+  const resp = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `'${MAINTENANCE_ACKED_TAB}'!A:C`,
+  });
+  const rows = (resp.data.values ?? []) as (string | number | boolean)[][];
+  if (rows.length < 2) return new Set();
+  const out = new Set<string>();
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i]!;
+    const id = String(r[0] ?? '').trim();
+    const ackedAt = String(r[1] ?? '').trim();
+    if (!id || !ackedAt) continue;
+    if (ackedAt >= cutoffIso) out.add(id);
+  }
+  return out;
+}
+
+export async function appendMaintenanceAck(
+  sheets: SheetsClient,
+  spreadsheetId: string,
+  ack: { itemId: string; ackedAt: string; notes: string },
+): Promise<void> {
+  await ensureMaintenanceAckedTab(sheets, spreadsheetId);
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: `'${MAINTENANCE_ACKED_TAB}'!A:C`,
+    valueInputOption: 'RAW',
+    insertDataOption: 'INSERT_ROWS',
+    requestBody: { values: [[ack.itemId, ack.ackedAt, ack.notes]] },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Dispersed Sites tab — USFS + BLM + OSM walk-up / dispersed-camping mirror
 // ---------------------------------------------------------------------------
 //

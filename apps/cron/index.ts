@@ -4,8 +4,10 @@ import { runPipeline, type PipelineOptions } from './pipeline.js';
 import { createGmailClient } from '../../lib/gmail.js';
 import { sendMessage } from '../../lib/telegram.js';
 import { runAudit, formatAuditDigest } from './audit.js';
-import { appendCronLogRow, readCronLogToday, pruneCronLog, createSheetsClient } from '../../lib/sheets.js';
+import { appendCronLogRow, readCronLogToday, pruneCronLog, createSheetsClient, readMasterRows } from '../../lib/sheets.js';
 import { formatDailySummary, formatErrorAlert, shouldSendDailyDigestAt } from './digest.js';
+import { runMaintenanceNudge } from './maintenance-nudge.js';
+import { shouldRunMaintenanceNudge } from './maintenance-schedule.js';
 
 interface CliFlags {
   dryRun: boolean;
@@ -185,6 +187,33 @@ async function main(): Promise<void> {
       } catch (err) {
         console.warn('[cron] daily-digest send failed:', err instanceof Error ? err.message : err);
       }
+    }
+  }
+
+  // Monthly gear-maintenance nudge (Phase 5.5). Piggybacks on the hourly
+  // cron — fires only on the 1st of the month at 9 AM Mountain.
+  if (!flags.dryRun && shouldRunMaintenanceNudge(new Date())) {
+    try {
+      console.log('\n=== Running monthly gear-maintenance nudge ===');
+      const sheets = createSheetsClient({
+        clientId: env.clientId, clientSecret: env.clientSecret, refreshToken: env.refreshToken,
+      });
+      const rows = await readMasterRows(sheets, env.spreadsheetId);
+      const nudge = await runMaintenanceNudge({
+        sheets, spreadsheetId: env.spreadsheetId, rows, now: new Date(),
+      });
+      console.log(`Findings: ${nudge.rawFindings.length} total, ${nudge.surfaced.length} surfaced, ${nudge.suppressedItemIds.length} suppressed by ack`);
+      if (nudge.message && env.telegramBotToken && env.telegramChatId) {
+        await sendMessage(
+          { botToken: env.telegramBotToken },
+          { chat_id: env.telegramChatId, text: nudge.message, disable_notification: false },
+        );
+        console.log('✓ Maintenance nudge sent');
+      } else if (!nudge.message) {
+        console.log('✓ No gear needs attention this month — no message sent');
+      }
+    } catch (err) {
+      console.warn('[cron] maintenance-nudge failed (non-fatal):', err instanceof Error ? err.message : err);
     }
   }
 
