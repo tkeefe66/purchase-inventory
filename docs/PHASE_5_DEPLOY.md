@@ -1,6 +1,14 @@
-# Phase 5 Deploy Checklist
+# Phase 5 Deploy Checklist — HISTORICAL (Phase 5 shipped 2026-05-15)
 
-> Step-by-step to take Phase 5 from "shipped on `main`" to "running in production." Follow in order. Most of this is manual ops outside Claude's reach.
+> ⚠️ **This is the original Phase 5 deploy checklist used 2026-05-15. Several parts are now stale.** Phase 5 has since been extended (iOverlander dropped, USFS+BLM dispersed sources added, Source column added to Camping Index). Newer phases (5.5, 6) have their own deploy notes in DECISIONS.md. Keep this file for the historical record but **do not follow it for new setup** — use `.env.example` and the current Railway service configs as the source of truth instead.
+>
+> **Notable post-write-time changes (2026-05-17 / 2026-05-18):**
+> - `IOVERLANDER_CACHE_PATH` env var removed; replaced by `DISPERSED_SNAPSHOT_PATH` + `DISPERSED_SOURCES` (default `USFS,BLM`)
+> - `lib/iOverlander/cache.ts` deleted
+> - "Camping Index" tab now has 38 columns (was 21) — added Source, Map URL, ratings, ADA sites, cell bars, restrictions, booking windows, etc.
+> - New "Dispersed Sites" sheet tab; new "Maintenance Acked" sheet tab
+> - Phase 5.5 (maintenance nudges) shipped 2026-05-17
+> - Phase 6 web service (`railway.web.json`) shipped 2026-05-18
 
 **Code state at write-time:** all on `main`, tests 441 passing / 1 skipped, typecheck clean.
 

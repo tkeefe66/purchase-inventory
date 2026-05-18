@@ -678,21 +678,21 @@ Run manually against current inventory (after enough historical data is loaded).
 
 ---
 
-## Phase 6: Web UI (read-only dashboard) ✅ SHIPPED 2026-05-17
+## Phase 6: Web UI (read-only dashboard) ✅ SHIPPED 2026-05-18
 
-**Outcome:** Browser-accessible dashboard showing all purchases across all domains, filterable.
+**Outcome:** Browser-accessible dashboard at https://web-production-93cbd.up.railway.app showing all purchases across all domains, filterable.
 
-### Task 6.1: Next.js scaffold
+**What shipped:**
 
-**Files:** `apps/web/`, `next.config.js`
-
-Separate Railway service. Server-side data fetch from Sheets via `lib/sheets.ts`.
-
-### Task 6.2: Dashboard pages
-
-- `/` — table of all active items, filter by domain/category/brand/year/source/status
-- `/spending` — total spend chart by year, by domain, by category (Recharts)
-- `/needs-review` — read-only view of Needs Review tab
+- **Next.js 14 App Router** at repo root `/app/` (not `apps/web/` — co-located with `apps/cron`, `apps/bot` for shared `lib/` imports). Two tsconfigs (`tsconfig.json` bundler + `tsconfig.node.json` NodeNext) coexist; `npm run typecheck` runs both.
+- **Three pages:**
+  - `/` — filterable items table. Search box + Domain/Status/Type/Year dropdowns. Sortable columns, status pill colors, click-through to productUrl.
+  - `/spending` — 4 Recharts: total by year (bar), by domain (pie), top 10 categories (horizontal bar), top 10 brands (horizontal bar). Excludes returned + excluded rows.
+  - `/needs-review` — Needs Review sheet-tab viewer; unresolved-only by default, toggle to see resolved.
+- **HTTP Basic Auth** via Edge middleware (`middleware.ts`). Env vars: `WEB_USER`, `WEB_PASSWORD`. Falls open in dev if both unset.
+- **Server Components** fetch sheet data directly via `app/lib/data.ts` (no client-side credential exposure).
+- **Deployed** as Railway "Web" service in the Purchase-Inventory project, config at `/railway.web.json`. Build: `npm install && npm run web:build`. Start: `npm run web:start` (PORT injected by Railway).
+- **Webpack extension alias** rewrites NodeNext `.js` import suffixes from `lib/` to `.ts` so server components can import from `lib/sheets.ts` without modification.
 
 ### Task 6.3: Auth
 

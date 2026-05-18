@@ -1226,6 +1226,59 @@ System prompt now instructs the agent to combine `lookup_trail` + `get_forecast`
 
 ---
 
+## 2026-05-17 (later) — Phase 5.5 shipped: gear-maintenance nudges
+
+**Context:** The 2026-05-01 entry locked Phase 5.5's plan. This entry locks the actual shipped behavior + the decisions made during implementation.
+
+**Rule scope locked (DWR dropped):**
+1. 🥾 Hiking boots — 3y resole-due, 5y replace-recommended
+2. ⛺ Sleeping bags / quilts — 8y loft-check, 10y replace
+3. 🧗 Climbing rope — 5y hard retire (UV degradation, even unused)
+4. ⛷️ Skis / snowboard — 5y tune-recommended
+5. 🪖 Helmets (bike / climbing / ski) — 5y replace (foam degrades)
+
+**Why DWR shells got dropped:** would fire on every shell after 18 months and Tom doesn't actually re-DWR his shells in practice. Noise without action.
+
+**Matcher design:** rules check **both `subCategory` AND `itemName`** because Tom's sheet uses high-level subcategories ("Footwear", "Sleep System", "Protection") rather than gear-specific ones. Without the dual check, only 0/93 candidate items would have fired against the real inventory. Excludes false positives (sleeping pads/pillows from the bag rule, ski boots from the hiking-boot rule, ski helmets from the ski rule).
+
+**Schedule:** 1st of every month at 9 AM Mountain. Single-hour window prevents the hourly cron from re-sending. Piggybacks on the existing email-ingest cron service — no new Railway service.
+
+**Ack model:** "Maintenance Acked" sheet tab. Appending a row silences an item for 12 months. `(itemId, recent ack)` filter, ack timestamp must be within last 365 days. Per-reason granularity rejected in favor of per-item (simpler UX). New `/ack-maintenance <6-char-id> [notes]` bot command writes the ack row programmatically; manual rows also accepted.
+
+**Message format:** compact table (chosen over "friendly + explanatory" and "compact table" options). Cap at 10 items, oldest first, with item IDs at the bottom for ack reference.
+
+**Files added:** `domains/outdoor/maintenance.ts`, `apps/cron/maintenance-nudge.ts`, `apps/cron/maintenance-schedule.ts`, `scripts/maintenance-dry.ts`. New `lib/sheets.ts` helpers: `readActiveMaintenanceAcks`, `appendMaintenanceAck`. 24 unit tests for rules + 8 for orchestrator + 4 for schedule + 5 for sheet helpers = 41 new tests.
+
+**Acceptance run:** dry-run against the real 449-row sheet shows 0 findings now, which is correct — the 2018 Forbidden Road sleep bag (currently 7.8y) will fire in August 2026 when it crosses the 8y threshold. All rules correctly classify the 98 candidate outdoor-gear rows and produce no false positives.
+
+---
+
+## 2026-05-18 — Phase 6 shipped: read-only web dashboard
+
+**Context:** Phase 6 in PLAN.md called for a Next.js read-only dashboard. Shipped 2026-05-18 at https://web-production-93cbd.up.railway.app.
+
+**Architecture decisions:**
+
+- **Next.js 14 App Router** (not Pages Router). Tom's first time using Next.js — App Router is the current default and what new docs / tutorials assume.
+- **Root-level `app/` directory** (not `apps/web/`). Coexists with `apps/cron`, `apps/bot`. Lets the Next.js server components import `lib/sheets.ts` directly via relative paths without npm workspace plumbing. The alternative — a separate workspace with its own `package.json` — was rejected because it would duplicate the googleapis dep tree and complicate the cross-package imports.
+- **Two tsconfigs.** `tsconfig.json` is the Next.js bundler-mode config (JSX, DOM lib, target `app/` + `middleware.ts`). `tsconfig.node.json` is the existing NodeNext config for cron/bot/scripts/tests. `npm run typecheck` runs both. `tsconfig.build.json` extends `tsconfig.node.json`. Without this split, the cron/bot code (which uses `.js`-suffixed NodeNext imports) and the Next.js code (which uses bundler resolution) can't coexist under one config.
+- **Webpack extension alias** (`config.resolve.extensionAlias = { '.js': ['.ts', '.tsx', '.js'] }`) in `next.config.js` lets the Next.js bundler resolve the NodeNext-style `.js` import suffixes used in `lib/sheets.ts` without requiring code rewrites.
+- **HTTP Basic Auth via Edge middleware** (not URL token or Railway-private). Chosen over URL-secret because it's cleaner UX (browser caches the credentials for the session, never appears in URL bars). Uses `btoa` not `Buffer` since Edge runtime has no Node globals.
+- **Server Components** fetch the sheet directly. No client-side API exposure of Google credentials. Each page sets `export const dynamic = 'force-dynamic'` so it re-fetches per request.
+
+**Pages:**
+- `/` — filterable items table, ~600 rows fit in client memory; client-side filter/sort. Search + Domain/Status/Type/Year dropdowns, sortable columns, status pill colors.
+- `/spending` — 4 Recharts (total by year bar, by domain pie, top 10 categories horizontal bar, top 10 brands horizontal bar). Excludes returned + excluded rows from totals.
+- `/needs-review` — Needs Review sheet-tab viewer; unresolved-only by default.
+
+**Deploy:** new Railway service "Web" in Purchase-Inventory project. Config-as-code path: `/railway.web.json`. **Initial deploy failed** because Config-as-code path wasn't set (Railway used Nixpacks autodetect → ran the cron's `npm run build` instead of `npm run web:build`). Fixed by manually setting the config path in the dashboard. Also discovered a brittle `-p $PORT` flag in the start command — replaced with `npm run web:start` (Next.js reads `PORT` env directly), since `next start -p` errors out when `$PORT` evaluates to empty.
+
+**Env vars added:** `WEB_USER`, `WEB_PASSWORD`. Auth falls open if either is unset (dev convenience).
+
+**Out of scope:** editing (deferred per PLAN). Telegram-only workflow remains the primary write path.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale
