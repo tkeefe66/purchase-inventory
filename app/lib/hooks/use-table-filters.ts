@@ -51,8 +51,9 @@ function matchDate(rowDate: string, f: NonNullable<FilterState['date']>): boolea
   const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(rowDate);
   if (!ymd) return false;
   const y = Number(ymd[1]); const m = Number(ymd[2]); const d = Number(ymd[3]);
-  const today = new Date();
-  const toIso = (dt: Date) => dt.toISOString().slice(0, 10);
+  const now = new Date();
+  const todayIso = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
+  const toIso = (dt: Date) => `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
 
   switch (f.kind) {
     case 'year':
@@ -62,8 +63,8 @@ function matchDate(rowDate: string, f: NonNullable<FilterState['date']>): boolea
     case 'range':
       return rowDate >= f.start && rowDate <= f.end;
     case 'preset': {
-      const start = presetStart(f.value, today);
-      return rowDate >= toIso(start) && rowDate <= toIso(today);
+      const start = presetStart(f.value, now);
+      return rowDate >= toIso(start) && rowDate <= todayIso;
     }
   }
 }
