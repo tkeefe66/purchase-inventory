@@ -17,6 +17,7 @@ import { parseReiEmail, parseReiReceiptEmail } from '../../lib/parsers/rei.js';
 import { enrichReiReceiptItems } from '../../lib/parsers/rei-receipt-enrich.js';
 import type { ParsedOrder } from '../../lib/parsers/types.js';
 import { extractProductId } from '../../lib/productId.js';
+import { resolveImage } from '../../lib/integrations/resolve-image.js';
 import { routeItem } from '../../lib/router.js';
 import {
   appendRows,
@@ -290,6 +291,15 @@ async function processOrderOrShipmentMessage(
         { parsedOrder: order, parsedItem: item, emailDate },
         classify,
       );
+      const imagePath = await resolveImage({
+        itemId: `${order.orderId}|${item.productUrl || item.itemName}`,
+        brand: row.brand,
+        itemName: row.itemName,
+        productUrl: row.productUrl,
+        parsedImageUrl: item.imageUrl,
+        anthropic,
+      });
+      row.image = imagePath;
       rows.push(row);
     }
   }
