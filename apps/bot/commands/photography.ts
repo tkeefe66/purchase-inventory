@@ -19,6 +19,8 @@ import type {
   ProgressRow,
   ProgressStatus,
 } from '../../../lib/photographySheets.js';
+import type { ExpandedAssignment } from '../../../domains/photography/expander.js';
+import { randomUUID } from 'node:crypto';
 
 // ---------------------------------------------------------------------------
 // Dependencies — sheet I/O injected by the bot wiring layer.
@@ -31,10 +33,14 @@ export interface PhotographyDeps {
     patch: Partial<Omit<ProgressRow, 'rowIndex' | 'topicId'>>,
   ) => Promise<void>;
   getActiveAssignment: () => Promise<AssignmentRow | null>;
+  appendAssignment: (row: Omit<AssignmentRow, 'rowIndex'>) => Promise<number>;
   updateAssignment: (
     rowIndex: number,
     patch: Partial<Omit<AssignmentRow, 'rowIndex'>>,
   ) => Promise<void>;
+  /** Claude-powered expanders for /start and /learn. */
+  expandAssignment: (topic: Topic) => Promise<ExpandedAssignment>;
+  expandLesson: (topic: Topic) => Promise<string>;
   /** ISO timestamp of "now" — injectable for tests. */
   now: () => string;
 }
@@ -238,24 +244,37 @@ export function formatPlan(plan: readonly Topic[], durationLabel: string): strin
   return lines.join('\n');
 }
 
-export function formatLearn(topic: Topic | null): string {
+export function formatLearn(topic: Topic | null, lessonText: string | null): string {
   if (!topic) {
     return 'No such topic. Use `/skills` or `/track <branch>` to browse.';
   }
   const label = BRANCH_LABELS[topic.branch];
+  const body = lessonText ?? topic.theorySeed;
   return [
     `📖 *${topic.name}*`,
     `_${label.emoji} ${label.name}, Tier ${topic.tier}_`,
     '',
-    topic.description,
-    '',
-    '*Theory*',
-    topic.theorySeed,
-    '',
-    '_(Claude-expanded lessons coming soon — this is the seed text the lesson is built from.)_',
-    '',
-    `Ready to try this? \`/start ${topic.id}\``,
+    body,
   ].join('\n');
+}
+
+export function formatStart(topic: Topic, expanded: ExpandedAssignment): string {
+  const label = BRANCH_LABELS[topic.branch];
+  const lines: string[] = [];
+  lines.push(`📚 *Started:* ${topic.name}`);
+  lines.push(`_${label.emoji} ${label.name}, Tier ${topic.tier}_`);
+  lines.push('');
+  lines.push(expanded.assignmentText);
+  lines.push('');
+  lines.push('*Rubric:*');
+  for (const r of expanded.rubric) {
+    const core = r.is_core ? ' *(core)*' : '';
+    lines.push(`  • ${r.criterion}${core}`);
+    if (r.description) lines.push(`    _${r.description}_`);
+  }
+  lines.push('');
+  lines.push('Submit a photo as a Document when ready. `/active` to re-read, `/skip` to move on.');
+  return lines.join('\n');
 }
 
 /**
@@ -365,8 +384,68 @@ export async function handleLearn(args: string, deps: PhotographyDeps): Promise<
   if (!id) return 'Usage: `/learn <topic-id>`. Browse topic ids with `/skills` or `/track <branch>`.';
   const topic = getTopicById(id);
   if (!topic) return `No topic "${id}". Use \`/skills\` to browse.`;
+  let lesson: string | null;
+  try {
+    lesson = await deps.expandLesson(topic);
+  } catch (err) {
+    console.error(`[photography] expandLesson failed for ${id}:`, err instanceof Error ? err.message : err);
+    return `Couldn't generate the lesson right now. The seed text is below — try again in a minute.\n\n${formatLearn(topic, null)}`;
+  }
   await deps.upsertProgress(topic.id, { theoryLastReadAt: deps.now() });
-  return formatLearn(topic);
+  return formatLearn(topic, lesson);
+}
+
+export async function handleStart(args: string, deps: PhotographyDeps): Promise<string> {
+  const id = args.trim();
+  if (!id) return 'Usage: `/start <topic-id>`. Use `/next` or `/skills` to find a topic.';
+  const topic = getTopicById(id);
+  if (!topic) return `No topic "${id}". Use \`/skills\` to browse.`;
+
+  // Enforce the "one active assignment at a time" invariant.
+  const existing = await deps.getActiveAssignment();
+  if (existing) {
+    const existingTopic = getTopicById(existing.topicId);
+    const name = existingTopic?.name ?? existing.topicId;
+    return `You already have an active assignment: *${name}*. Use \`/active\` to re-read, \`/skip\` to move on, or submit a photo to grade it.`;
+  }
+
+  // Generate the assignment text + rubric via Claude.
+  let expanded: ExpandedAssignment;
+  try {
+    expanded = await deps.expandAssignment(topic);
+  } catch (err) {
+    console.error(`[photography] expandAssignment failed for ${id}:`, err instanceof Error ? err.message : err);
+    return `Couldn't generate the assignment right now. Try again in a minute, or use \`/learn ${id}\` to read the theory first.`;
+  }
+
+  const now = deps.now();
+  await deps.appendAssignment({
+    id: randomUUID(),
+    dateIssued: now,
+    dateSubmitted: '',
+    dateGraded: '',
+    topicId: topic.id,
+    assignmentText: expanded.assignmentText,
+    rubricJson: JSON.stringify(expanded.rubric),
+    status: 'active',
+    submittedPhotoTelegramFileId: '',
+    camera: '',
+    lens: '',
+    settingsExtracted: '',
+    aiVerdict: '',
+    aiCritique: '',
+    perCriterionJson: '',
+    retryCount: 0,
+    userNotes: '',
+    skippedReason: '',
+  });
+
+  await deps.upsertProgress(topic.id, {
+    status: 'in-progress',
+    lastActivityAt: now,
+  });
+
+  return formatStart(topic, expanded);
 }
 
 // ---------------------------------------------------------------------------
@@ -385,6 +464,7 @@ export async function handlePhotographyCommand(
     case 'skip':    return handleSkip(deps);
     case 'plan':    return handlePlan(cmd.args, deps);
     case 'learn':   return handleLearn(cmd.args, deps);
+    case 'start':   return handleStart(cmd.args, deps);
     default:        return null;
   }
 }

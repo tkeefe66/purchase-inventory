@@ -81,7 +81,13 @@ function makeDeps(rows: MasterRow[], overrides: Partial<HandlerDeps> = {}): {
       readProgress: vi.fn(async () => []) as unknown as HandlerDeps['photography']['readProgress'],
       upsertProgress: vi.fn(async () => undefined) as unknown as HandlerDeps['photography']['upsertProgress'],
       getActiveAssignment: vi.fn(async () => null) as unknown as HandlerDeps['photography']['getActiveAssignment'],
+      appendAssignment: vi.fn(async () => 99) as unknown as HandlerDeps['photography']['appendAssignment'],
       updateAssignment: vi.fn(async () => undefined) as unknown as HandlerDeps['photography']['updateAssignment'],
+      expandAssignment: vi.fn(async () => ({
+        assignmentText: 'stub assignment',
+        rubric: [{ criterion: 'c', description: '', is_core: true }],
+      })) as unknown as HandlerDeps['photography']['expandAssignment'],
+      expandLesson: vi.fn(async () => 'stub lesson') as unknown as HandlerDeps['photography']['expandLesson'],
       now: () => '2026-05-19T15:00:00Z',
     },
     ...overrides,

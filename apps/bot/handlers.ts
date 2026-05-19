@@ -79,7 +79,8 @@ export async function dispatchCommand(chatId: string, text: string, deps: Handle
   if (name === 'who') return handleWho(chatId, deps);
   if (
     name === 'skills' || name === 'track' || name === 'next'
-    || name === 'active' || name === 'skip' || name === 'plan' || name === 'learn'
+    || name === 'active' || name === 'skip' || name === 'plan'
+    || name === 'learn' || name === 'start'
   ) {
     return handlePhotographyCommand({ name, args }, deps.photography);
   }

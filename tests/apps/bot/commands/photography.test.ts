@@ -8,6 +8,7 @@ import {
   formatSkip,
   formatPlan,
   formatLearn,
+  formatStart,
   parseDurationToTopicCount,
   type PhotographyDeps,
 } from '../../../../apps/bot/commands/photography.js';
@@ -22,7 +23,17 @@ function makeDeps(overrides: Partial<PhotographyDeps> = {}): PhotographyDeps {
     readProgress: vi.fn(async () => []),
     upsertProgress: vi.fn(async () => undefined),
     getActiveAssignment: vi.fn(async () => null),
+    appendAssignment: vi.fn(async () => 42),
     updateAssignment: vi.fn(async () => undefined),
+    expandAssignment: vi.fn(async () => ({
+      assignmentText: 'Expanded assignment body — take three frames at golden hour.',
+      rubric: [
+        { criterion: 'frames visibly shot at golden hour', description: '', is_core: true },
+        { criterion: 'three-layer composition', description: '', is_core: true },
+        { criterion: 'EXIF preserved', description: '', is_core: false },
+      ],
+    })),
+    expandLesson: vi.fn(async () => 'Expanded lesson body explaining the topic in 300 words.'),
     now: () => NOW,
     ...overrides,
   };
@@ -194,18 +205,40 @@ describe('formatters', () => {
     expect(formatPlan([], '2-Week')).toMatch(/Nothing to plan/);
   });
 
-  test('formatLearn shows description + theorySeed + start hint', () => {
+  test('formatLearn with expanded text shows the expanded body', () => {
     const topic = getTopicById('operating-camera.exposure-triangle');
-    const out = formatLearn(topic);
+    const out = formatLearn(topic, 'Three controls determine exposure on the a6700: aperture, shutter, ISO. ...');
     expect(out).toContain('Exposure Triangle');
-    expect(out).toContain('How aperture, shutter speed, and ISO combine');
-    expect(out).toContain('Theory');
-    expect(out).toContain('Three controls determine exposure');
-    expect(out).toContain('/start operating-camera.exposure-triangle');
+    expect(out).toContain('Three controls determine exposure on the a6700');
   });
 
-  test('formatLearn on null returns helpful error', () => {
-    expect(formatLearn(null)).toMatch(/No such topic/);
+  test('formatLearn falls back to seed text when expanded is null', () => {
+    const topic = getTopicById('operating-camera.exposure-triangle');
+    const out = formatLearn(topic, null);
+    // Seed text starts with "Three controls determine exposure: ..."
+    expect(out).toContain('Three controls determine exposure');
+  });
+
+  test('formatLearn on null topic returns helpful error', () => {
+    expect(formatLearn(null, null)).toMatch(/No such topic/);
+  });
+
+  test('formatStart renders assignment text + rubric with core markers', () => {
+    const topic = getTopicById('operating-camera.exposure-triangle')!;
+    const out = formatStart(topic, {
+      assignmentText: 'Take three frames demonstrating each corner of the exposure triangle.',
+      rubric: [
+        { criterion: 'three visibly different stylistic choices', description: 'one per corner', is_core: true },
+        { criterion: 'exposure correct across all three', description: '', is_core: true },
+        { criterion: 'caption explains the trade-off for each', description: '', is_core: false },
+      ],
+    });
+    expect(out).toContain('Started');
+    expect(out).toContain('Take three frames');
+    expect(out).toContain('three visibly different stylistic choices');
+    expect(out).toContain('(core)');
+    expect(out).toContain('one per corner'); // description renders too
+    expect(out).toContain('Submit a photo');
   });
 });
 
@@ -284,17 +317,32 @@ describe('handlePhotographyCommand', () => {
     expect(out).toContain('Week 2');
   });
 
-  test('/learn <id> writes theoryLastReadAt + returns formatted theory', async () => {
+  test('/learn <id> calls expandLesson + writes theoryLastReadAt + returns expanded lesson', async () => {
     const upsertProgress = vi.fn(async () => undefined);
-    const deps = makeDeps({ upsertProgress });
+    const expandLesson = vi.fn(async () => 'A polished 300-word lesson about exposure triangle on the a6700.');
+    const deps = makeDeps({ upsertProgress, expandLesson });
     const out = await handlePhotographyCommand(
       { name: 'learn', args: 'operating-camera.exposure-triangle' }, deps,
     );
     expect(out).toContain('Exposure Triangle');
+    expect(out).toContain('polished 300-word lesson');
+    expect(expandLesson).toHaveBeenCalledTimes(1);
     expect(upsertProgress).toHaveBeenCalledWith(
       'operating-camera.exposure-triangle',
       expect.objectContaining({ theoryLastReadAt: NOW }),
     );
+  });
+
+  test('/learn falls back to seed text when expandLesson throws', async () => {
+    const upsertProgress = vi.fn(async () => undefined);
+    const expandLesson = vi.fn(async () => { throw new Error('anthropic timeout'); });
+    const deps = makeDeps({ upsertProgress, expandLesson });
+    const out = await handlePhotographyCommand(
+      { name: 'learn', args: 'operating-camera.exposure-triangle' }, deps,
+    );
+    expect(out).toMatch(/Couldn't generate/);
+    expect(out).toContain('Three controls determine exposure'); // seed verbatim
+    expect(upsertProgress).not.toHaveBeenCalled(); // don't mark as read on failure
   });
 
   test('/learn with no arg returns usage help', async () => {
@@ -309,5 +357,79 @@ describe('handlePhotographyCommand', () => {
 
   test('returns null for unknown command', async () => {
     expect(await handlePhotographyCommand({ name: 'unknown', args: '' }, makeDeps())).toBeNull();
+  });
+});
+
+// ─── /start integration ───────────────────────────────────────────────────
+describe('handlePhotographyCommand: /start', () => {
+  test('/start <id> expands assignment, appends row, upserts progress=in-progress', async () => {
+    const appendAssignment = vi.fn(async () => 42);
+    const upsertProgress = vi.fn(async () => undefined);
+    const expandAssignment = vi.fn(async () => ({
+      assignmentText: 'Take three frames demonstrating exposure trade-offs.',
+      rubric: [
+        { criterion: 'three different stylistic choices', description: '', is_core: true },
+        { criterion: 'exposure correct across all three', description: '', is_core: false },
+      ],
+    }));
+    const deps = makeDeps({ appendAssignment, upsertProgress, expandAssignment });
+    const out = await handlePhotographyCommand(
+      { name: 'start', args: 'operating-camera.exposure-triangle' }, deps,
+    );
+    expect(expandAssignment).toHaveBeenCalledTimes(1);
+    expect(appendAssignment).toHaveBeenCalledTimes(1);
+    const call = appendAssignment.mock.calls[0] as unknown as [Omit<AssignmentRow, 'rowIndex'>];
+    const row = call[0];
+    expect(row.topicId).toBe('operating-camera.exposure-triangle');
+    expect(row.status).toBe('active');
+    expect(row.assignmentText).toBe('Take three frames demonstrating exposure trade-offs.');
+    expect(JSON.parse(row.rubricJson)).toHaveLength(2);
+    expect(row.dateIssued).toBe(NOW);
+    expect(upsertProgress).toHaveBeenCalledWith(
+      'operating-camera.exposure-triangle',
+      expect.objectContaining({ status: 'in-progress', lastActivityAt: NOW }),
+    );
+    expect(out).toContain('Started');
+    expect(out).toContain('Take three frames');
+  });
+
+  test('/start refuses when another assignment is active', async () => {
+    const deps = makeDeps({
+      getActiveAssignment: vi.fn(async () => activeRow('operating-camera.aperture-priority')),
+      appendAssignment: vi.fn(async () => 99),
+    });
+    const out = await handlePhotographyCommand(
+      { name: 'start', args: 'operating-camera.exposure-triangle' }, deps,
+    );
+    expect(out).toMatch(/already have an active assignment/i);
+    expect(deps.appendAssignment).not.toHaveBeenCalled();
+    expect(deps.expandAssignment).not.toHaveBeenCalled();
+  });
+
+  test('/start with no arg returns usage help', async () => {
+    const deps = makeDeps();
+    const out = await handlePhotographyCommand({ name: 'start', args: '' }, deps);
+    expect(out).toMatch(/Usage: `\/start/);
+    expect(deps.expandAssignment).not.toHaveBeenCalled();
+  });
+
+  test('/start with unknown topic returns helpful error', async () => {
+    const deps = makeDeps();
+    const out = await handlePhotographyCommand({ name: 'start', args: 'does.not.exist' }, deps);
+    expect(out).toMatch(/No topic/);
+    expect(deps.expandAssignment).not.toHaveBeenCalled();
+  });
+
+  test('/start falls through when expander throws — no sheet writes happen', async () => {
+    const appendAssignment = vi.fn(async () => 42);
+    const upsertProgress = vi.fn(async () => undefined);
+    const expandAssignment = vi.fn(async () => { throw new Error('anthropic 529'); });
+    const deps = makeDeps({ appendAssignment, upsertProgress, expandAssignment });
+    const out = await handlePhotographyCommand(
+      { name: 'start', args: 'operating-camera.exposure-triangle' }, deps,
+    );
+    expect(out).toMatch(/Couldn't generate the assignment/);
+    expect(appendAssignment).not.toHaveBeenCalled();
+    expect(upsertProgress).not.toHaveBeenCalled();
   });
 });

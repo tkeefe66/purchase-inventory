@@ -35,8 +35,15 @@ import {
   readProgress as readPhotographyProgress,
   upsertProgress as upsertPhotographyProgress,
   getActiveAssignment as getPhotographyActiveAssignment,
+  appendAssignment as appendPhotographyAssignment,
   updateAssignment as updatePhotographyAssignment,
 } from '../../lib/photographySheets.js';
+import {
+  expandAssignment as expandPhotographyAssignment,
+  expandLesson as expandPhotographyLesson,
+} from '../../domains/photography/expander.js';
+import { filterToActivePhotography } from '../../domains/photography/inventory.js';
+import { serializeCompact as serializePhotographyCompact } from '../../domains/photography/serialize.js';
 
 const CACHE_REFRESH_MS = 15 * 60 * 1000;
 const POLL_TIMEOUT_S = 25;
@@ -208,8 +215,29 @@ async function main(): Promise<void> {
       upsertProgress: (topicId, patch) =>
         upsertPhotographyProgress(sheets, env.spreadsheetId, topicId, patch),
       getActiveAssignment: () => getPhotographyActiveAssignment(sheets, env.spreadsheetId),
+      appendAssignment: (row) => appendPhotographyAssignment(sheets, env.spreadsheetId, row),
       updateAssignment: (rowIndex, patch) =>
         updatePhotographyAssignment(sheets, env.spreadsheetId, rowIndex, patch),
+      expandAssignment: (topic) =>
+        expandPhotographyAssignment(
+          {
+            anthropic,
+            inventoryText: serializePhotographyCompact(
+              filterToActivePhotography(cache.getSnapshot()),
+            ).text,
+          },
+          topic,
+        ),
+      expandLesson: (topic) =>
+        expandPhotographyLesson(
+          {
+            anthropic,
+            inventoryText: serializePhotographyCompact(
+              filterToActivePhotography(cache.getSnapshot()),
+            ).text,
+          },
+          topic,
+        ),
       now: () => new Date().toISOString(),
     },
   };
