@@ -22,3 +22,6 @@ tests/fixtures/amazon/*.html
 # Local snapshots written by smoke / seed scripts when DISPERSED_SNAPSHOT_PATH
 # or CAMPING_INDEX_PATH defaults are used outside Railway (/data isn't mounted).
 local-data/
+
+# Brainstorm visual companion mockups (per-session, not for repo)
+.superpowers/
