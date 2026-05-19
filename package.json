@@ -44,7 +44,8 @@
     "smoke-url-resolver": "tsx scripts/smoke-url-resolver.ts",
     "maintenance-dry": "tsx scripts/maintenance-dry.ts",
     "smoke-trails": "tsx scripts/smoke-trails.ts",
-    "bot": "tsx apps/bot/index.ts"
+    "bot": "tsx apps/bot/index.ts",
+    "reclassify-photography": "tsx scripts/reclassify-photography.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.92.0",
