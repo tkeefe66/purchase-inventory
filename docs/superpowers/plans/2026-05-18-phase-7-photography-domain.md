@@ -1,5 +1,7 @@
 # Phase 7 — Photography domain — Implementation Plan
 
+> **Status: SHIPPED 2026-05-19.** All sections of this plan have landed on `main`. The final shape diverged from this plan in a few places — notably 4-branch tier structure instead of 16 flat tracks, compressed Photo (not Document) as the first-class submission flow, and 58 topics shipped instead of "~75". See `DECISIONS.md` 2026-05-19 entries and `docs/PLAN.md` Phase 7 section for the authoritative summary.
+>
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship the Photography domain as the second domain agent in the inventory platform — a stateful photography coach with a ~75-topic skill-tree, binary-verdict assignment grading via Claude vision, pull-only Telegram interaction, and a read-only Skills page in the web UI.

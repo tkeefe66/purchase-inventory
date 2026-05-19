@@ -1,7 +1,7 @@
 # Design — Phase 7: Photography domain (Outdoor's second-domain successor)
 
 **Date:** 2026-05-18
-**Status:** approved (pending spec review)
+**Status:** SHIPPED 2026-05-19. This spec is preserved as the original design intent. The actual shipped shape diverged in a few places — see `DECISIONS.md` 2026-05-19 entries for what changed and why (notably: 4-branch tier structure instead of 16 flat tracks, compressed Photo as first-class submission flow not Document/File, 58 topics not "~75").
 **Author:** Tom + Claude (brainstorming)
 
 ---

@@ -89,9 +89,9 @@ ledger/                              # current name: outdoor-inventory; rename o
 │   │       ├── weather.ts           # Phase 3
 │   │       ├── alltrails.ts         # Phase 4 (uses MCP if available, fallback to OSM)
 │   │       └── freecamping.ts       # Phase 5
-│   ├── kitchen/                     # Phase 7+ — stub only in earlier phases
+│   ├── kitchen/                     # Phase 7+ — stub only
 │   │   └── README.md                # "Not implemented yet — see PLAN.md Phase 7"
-│   ├── photography/                 # Phase 7+ — stub only
+│   ├── photography/                 # Phase 7 ✅ shipped 2026-05-19
 │   │   └── README.md
 │   └── other/                       # Catchall for unrouted items
 │       └── README.md
@@ -705,11 +705,29 @@ Railway service for `apps/web/`, separate from cron and bot.
 
 ---
 
-## Phase 7+ (deferred — DO NOT BUILD without explicit go-ahead)
+## Phase 7 — Photography ✅ SHIPPED 2026-05-19
 
-### 7a. Second domain (Kitchen or Photography)
+The second-domain build. Photography is a full curriculum + grading + agent platform, not just a router target. See **DECISIONS.md 2026-05-19** ("Phase 7 shipped") for the full scope. Highlights:
 
-When ready, Tom picks the next domain. Pattern:
+- **58 topics** in a 4-branch tier-organised skill tree (NOT the spec's 16 flat tracks — see DECISIONS.md):
+  - `operating-camera` (23 topics, 4 tiers): camera fundamentals, exposure, focus, motion, gear mastery
+  - `seeing` (11 topics, 3 tiers): composition fundamentals + 5 genre recipes
+  - `editing` (12 topics, 4 tiers): Lightroom Classic workflow
+  - `printing` (12 topics, 4 tiers): Epson ET-8550 workflow
+- **8 slash commands**: `/skills` `/track` `/next` `/active` `/skip` `/plan` `/learn` `/start`
+- **Claude expander** (`domains/photography/expander.ts`) — Sonnet 4.6 + OSM trail tools; generates time-agnostic assignments + rubrics from topic seeds
+- **Opus 4.7 vision grading** (`domains/photography/grading.ts`) — graded against per-assignment rubric stored on the row; pass / did_not_pass verdict + per-criterion + critique
+- **Photography agent** (`domains/photography/agent.ts`) — free-form Q&A, photography tools (get_sun_times, list_topics, get_active_assignment, get_topic_theory) + shared tools (weather, trails, web_search)
+- **Onboarding** — 3-question intake for fresh users (manual-mode confidence / start preference / cadence), agent-driven via system prompt
+- **Web UI**: `/photography` Skills grid (collapsible branches), `/photography/[topicId]` topic detail, `/photography/assignments` history
+- **Sheet tabs**: `Photography Assignments` + `Photography Progress`
+- **Submission flow**: compressed Photo is the first-class default (reversal of original Document-only spec — see DECISIONS.md)
+
+### Phase 7+ (deferred — DO NOT BUILD without explicit go-ahead)
+
+### 7a. Third domain (Kitchen)
+
+When ready, Tom picks the next domain. Pattern is now well-established by Photography:
 1. Create `domains/<name>/` with classifier, agent, integrations
 2. Update `lib/router.ts` to include the new domain
 3. Update `apps/bot/router.ts` to dispatch by domain
@@ -717,7 +735,7 @@ When ready, Tom picks the next domain. Pattern:
 5. Decide on integrations
 6. Ship
 
-The architecture makes this a 1-2 week effort per domain after the first.
+Photography took ~1 day of focused work after the architecture was in place. Kitchen should be similar or simpler (no curriculum, no grading).
 
 ### 7b. Other deferred features
 
