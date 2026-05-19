@@ -178,7 +178,7 @@ describe('formatters', () => {
     expect(out).toContain('Take three exposure-triangle frames');
     expect(out).toContain('correct exposure across all three');
     expect(out).toContain('(core)');
-    expect(out).toContain('Submit a photo');
+    expect(out).toContain('Send a photo');
   });
 
   test('formatActive on null returns "no active" message', () => {
@@ -248,7 +248,7 @@ describe('formatters', () => {
     expect(out).toContain('three visibly different stylistic choices');
     expect(out).toContain('(core)');
     expect(out).toContain('one per corner'); // description renders too
-    expect(out).toContain('Submit a photo');
+    expect(out).toContain('Send a photo');
   });
 });
 
@@ -296,7 +296,7 @@ describe('handlePhotographyCommand', () => {
     });
     const out = await handlePhotographyCommand({ name: 'active', args: '' }, deps);
     expect(out).toContain('Exposure Triangle');
-    expect(out).toContain('Submit a photo');
+    expect(out).toContain('Send a photo');
   });
 
   test('/skip flips an active assignment to skipped and mirrors to progress', async () => {
@@ -573,13 +573,18 @@ describe('handleSubmission', () => {
     expect(gradePhoto).not.toHaveBeenCalled();
   });
 
-  test('compressed Photo path appends "send as Document next time" note', async () => {
+  test('compressed Photo grades cleanly without any "send as Document" nag', async () => {
+    // Compressed Photo is the NORMAL flow — most users send straight from
+    // iPhone Photos. We should never preach about Document/File. Verdict
+    // comes through unchanged.
     const deps = makeDeps({
       getActiveAssignment: vi.fn(async () => activeRow('operating-camera.exposure-triangle')),
       readProgress: vi.fn(async () => []),
     });
     const out = await handleSubmission(makeSubmission({ compressed: true }), deps);
-    expect(out).toMatch(/Send as Document\/File next time/);
+    expect(out).not.toMatch(/Send as Document/i);
+    expect(out).not.toMatch(/EXIF stripped/i);
+    expect(out).toContain('PASS');
   });
 
   test('grader failure leaves assignment in "submitted" status (no verdict overwrite)', async () => {

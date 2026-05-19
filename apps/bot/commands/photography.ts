@@ -239,7 +239,7 @@ export function formatActive(assignment: AssignmentRow | null): string {
     }
   }
   lines.push('');
-  lines.push('Submit a photo as a Document to grade. `/skip` to move on.');
+  lines.push('Send a photo to grade. `/skip` to move on.');
   return lines.join('\n');
 }
 
@@ -302,7 +302,7 @@ export function formatStart(topic: Topic, expanded: ExpandedAssignment): string 
     if (r.description) lines.push(`    _${r.description}_`);
   }
   lines.push('');
-  lines.push('Submit a photo as a Document when ready. `/active` to re-read, `/skip` to move on.');
+  lines.push('Send a photo when ready. `/active` to re-read, `/skip` to move on.');
   return lines.join('\n');
 }
 
@@ -630,17 +630,11 @@ export async function handleSubmission(
     theoryLastReadAt: nextEntry.theoryLastReadAt,
   });
 
-  // Build the user-facing reply. Prepend EXIF / gear notes when relevant.
+  // Build the user-facing reply. Prepend gear notes only when EXIF clearly
+  // says the wrong camera — sending compressed (EXIF-stripped) photos is the
+  // normal flow, NOT something to nag about. If the assignment needs specific
+  // settings, the assignment text asks Tom to include them in the caption.
   const noteLines: string[] = [];
-  if (input.compressed) {
-    noteLines.push(
-      '_Note: photo was sent compressed (EXIF stripped). Send as Document/File next time so I can grade your settings too._',
-    );
-  } else if (!hasUsableExif(exif) && !input.caption.trim()) {
-    noteLines.push(
-      '_Note: no EXIF found in this file. Include settings in your caption next time (e.g. "a6700 / Sigma 18-50 / f/8 / 1/250 / ISO 200")._',
-    );
-  }
   const gearCheck = isLikelyTomsA6700(exif);
   if (gearCheck === false) {
     noteLines.push(
