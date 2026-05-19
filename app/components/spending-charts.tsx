@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import type { MasterRow } from '../../lib/types.js';
 
-const DOMAIN_COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#a3e635'];
+const PALETTE = ['#a78bfa', '#f472b6', '#fbbf24', '#34d399', '#60a5fa', '#fb923c', '#c4b5fd', '#fda4af'];
 
 export function SpendingCharts({ rows }: { rows: MasterRow[] }) {
   const byYear = useMemo(() => aggregateBy(rows, (r) => r.year), [rows]);
@@ -15,15 +15,21 @@ export function SpendingCharts({ rows }: { rows: MasterRow[] }) {
   const byBrand = useMemo(() => aggregateBy(rows, (r) => r.brand || 'Unknown').slice(0, 10), [rows]);
 
   return (
-    <div className="grid gap-6 md:grid-cols-2">
+    <div className="grid gap-4 md:grid-cols-2">
       <ChartCard title="Total spend by year">
         <ResponsiveContainer width="100%" height={260}>
           <BarChart data={byYear}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-            <XAxis dataKey="name" stroke="#a1a1aa" tick={{ fontSize: 12 }} />
-            <YAxis stroke="#a1a1aa" tick={{ fontSize: 12 }} tickFormatter={fmtUsdShort} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#211e3a" />
+            <XAxis dataKey="name" stroke="#a09cb8" tick={{ fontSize: 12 }} />
+            <YAxis stroke="#a09cb8" tick={{ fontSize: 12 }} tickFormatter={fmtUsdShort} />
             <Tooltip {...tooltipStyle} formatter={(v: number) => fmtUsd(v)} />
-            <Bar dataKey="value" fill="#10b981" />
+            <Bar dataKey="value" fill="url(#barGradient)" radius={[6, 6, 0, 0]} />
+            <defs>
+              <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#f472b6" />
+                <stop offset="100%" stopColor="#a78bfa" />
+              </linearGradient>
+            </defs>
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -32,10 +38,10 @@ export function SpendingCharts({ rows }: { rows: MasterRow[] }) {
         <ResponsiveContainer width="100%" height={260}>
           <PieChart>
             <Pie data={byDomain} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={90} paddingAngle={2}>
-              {byDomain.map((_, i) => <Cell key={i} fill={DOMAIN_COLORS[i % DOMAIN_COLORS.length]} />)}
+              {byDomain.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
             </Pie>
             <Tooltip {...tooltipStyle} formatter={(v: number) => fmtUsd(v)} />
-            <Legend wrapperStyle={{ fontSize: 12, color: '#a1a1aa' }} />
+            <Legend wrapperStyle={{ fontSize: 12, color: '#a09cb8' }} />
           </PieChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -43,11 +49,11 @@ export function SpendingCharts({ rows }: { rows: MasterRow[] }) {
       <ChartCard title="Top 10 categories">
         <ResponsiveContainer width="100%" height={Math.max(220, byCategory.length * 28)}>
           <BarChart data={byCategory} layout="vertical" margin={{ left: 30 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-            <XAxis type="number" stroke="#a1a1aa" tick={{ fontSize: 12 }} tickFormatter={fmtUsdShort} />
-            <YAxis type="category" dataKey="name" stroke="#a1a1aa" tick={{ fontSize: 12 }} width={110} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#211e3a" />
+            <XAxis type="number" stroke="#a09cb8" tick={{ fontSize: 12 }} tickFormatter={fmtUsdShort} />
+            <YAxis type="category" dataKey="name" stroke="#a09cb8" tick={{ fontSize: 12 }} width={110} />
             <Tooltip {...tooltipStyle} formatter={(v: number) => fmtUsd(v)} />
-            <Bar dataKey="value" fill="#3b82f6" />
+            <Bar dataKey="value" fill="#a78bfa" radius={[0, 6, 6, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -55,11 +61,11 @@ export function SpendingCharts({ rows }: { rows: MasterRow[] }) {
       <ChartCard title="Top 10 brands">
         <ResponsiveContainer width="100%" height={Math.max(220, byBrand.length * 28)}>
           <BarChart data={byBrand} layout="vertical" margin={{ left: 30 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-            <XAxis type="number" stroke="#a1a1aa" tick={{ fontSize: 12 }} tickFormatter={fmtUsdShort} />
-            <YAxis type="category" dataKey="name" stroke="#a1a1aa" tick={{ fontSize: 12 }} width={110} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#211e3a" />
+            <XAxis type="number" stroke="#a09cb8" tick={{ fontSize: 12 }} tickFormatter={fmtUsdShort} />
+            <YAxis type="category" dataKey="name" stroke="#a09cb8" tick={{ fontSize: 12 }} width={110} />
             <Tooltip {...tooltipStyle} formatter={(v: number) => fmtUsd(v)} />
-            <Bar dataKey="value" fill="#f59e0b" />
+            <Bar dataKey="value" fill="#f472b6" radius={[0, 6, 6, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -69,8 +75,8 @@ export function SpendingCharts({ rows }: { rows: MasterRow[] }) {
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-      <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-zinc-300">{title}</h2>
+    <div className="rounded-card border border-border-subtle bg-bg-surface p-4 shadow-card">
+      <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted">{title}</h2>
       {children}
     </div>
   );
@@ -88,16 +94,11 @@ function aggregateBy(rows: MasterRow[], keyFn: (r: MasterRow) => string): { name
     .sort((a, b) => b.value - a.value);
 }
 
-function fmtUsd(v: number): string {
-  return `$${v.toFixed(2)}`;
-}
-function fmtUsdShort(v: number): string {
-  if (v >= 1000) return `$${(v / 1000).toFixed(1)}k`;
-  return `$${v}`;
-}
+function fmtUsd(v: number): string { return `$${v.toFixed(2)}`; }
+function fmtUsdShort(v: number): string { if (v >= 1000) return `$${(v / 1000).toFixed(1)}k`; return `$${v}`; }
 
 const tooltipStyle = {
-  contentStyle: { backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: 6, fontSize: 12 },
-  labelStyle: { color: '#e4e4e7' },
-  itemStyle: { color: '#e4e4e7' },
+  contentStyle: { backgroundColor: '#16142a', border: '1px solid #211e3a', borderRadius: 8, fontSize: 12 },
+  labelStyle: { color: '#fafafa' },
+  itemStyle: { color: '#e2e0eb' },
 };
