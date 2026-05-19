@@ -1,9 +1,10 @@
 import { describe, test, expect, vi } from 'vitest';
-import { PhotographyAgent, buildSystemPrompt } from '../../../domains/photography/agent.js';
+import { PhotographyAgent, buildSystemPrompt, buildProgressSummary } from '../../../domains/photography/agent.js';
 import { InventoryCache } from '../../../apps/bot/inventoryCache.js';
 import { ConversationStore } from '../../../lib/conversations.js';
 import { Stats } from '../../../apps/bot/stats.js';
 import type { MasterRow } from '../../../lib/types.js';
+import type { ProgressRow } from '../../../lib/photographySheets.js';
 
 const FIXTURE_A6700: MasterRow = {
   year: '2024',
@@ -24,28 +25,31 @@ const FIXTURE_A6700: MasterRow = {
 
 // ─── buildSystemPrompt ────────────────────────────────────────────────────
 
+const EMPTY_SUMMARY = 'Curriculum state: 0 completed, 0 in progress, 58 not started — FRESH USER, run intake';
+
 describe('buildSystemPrompt', () => {
-  test('produces 4 blocks in stable order', () => {
-    const blocks = buildSystemPrompt({ compactViewText: 'fake inventory' });
-    expect(blocks).toHaveLength(4);
+  test('produces 5 blocks in stable order', () => {
+    const blocks = buildSystemPrompt({ compactViewText: 'fake inventory', progressSummary: EMPTY_SUMMARY });
+    expect(blocks).toHaveLength(5);
     expect(blocks[0]!.text).toContain('photography tutor');
     expect(blocks[1]!.text).toContain('fake inventory');
+    expect(blocks[1]!.text).toContain('Curriculum state');
     expect(blocks[2]!.text).toContain('NO free-form photo critique');
     expect(blocks[3]!.text).toContain('get_sun_times');
+    expect(blocks[4]!.text).toContain('Onboarding');
   });
 
-  test('marks the inventory block with cache_control: ephemeral', () => {
-    const blocks = buildSystemPrompt({ compactViewText: 'x' });
+  test('marks the inventory+progress block with cache_control: ephemeral', () => {
+    const blocks = buildSystemPrompt({ compactViewText: 'x', progressSummary: EMPTY_SUMMARY });
     expect(blocks[1]!.cache_control).toEqual({ type: 'ephemeral' });
-    // Other blocks: no cache control (persona / guardrails / tool guide are
-    // stable across calls; full system gets static-cached above the ephemeral mark)
     expect(blocks[0]!.cache_control).toBeUndefined();
     expect(blocks[2]!.cache_control).toBeUndefined();
     expect(blocks[3]!.cache_control).toBeUndefined();
+    expect(blocks[4]!.cache_control).toBeUndefined();
   });
 
   test('persona explicitly references Tom\'s gear', () => {
-    const blocks = buildSystemPrompt({ compactViewText: '' });
+    const blocks = buildSystemPrompt({ compactViewText: '', progressSummary: '' });
     const persona = blocks[0]!.text;
     expect(persona).toContain('a6700');
     expect(persona).toContain('Sigma 18-50');
@@ -55,11 +59,72 @@ describe('buildSystemPrompt', () => {
   });
 
   test('scope block forbids free-form critique + autonomous topic completion', () => {
-    const blocks = buildSystemPrompt({ compactViewText: '' });
+    const blocks = buildSystemPrompt({ compactViewText: '', progressSummary: '' });
     const scope = blocks[2]!.text;
     expect(scope).toMatch(/no free-form photo critique/i);
     expect(scope).toMatch(/no autonomous topic completion/i);
     expect(scope).toMatch(/no assignment generation/i);
+  });
+
+  test('onboarding block defines a 3-question intake and the routing logic', () => {
+    const blocks = buildSystemPrompt({ compactViewText: '', progressSummary: '' });
+    const onboarding = blocks[4]!.text;
+    expect(onboarding).toMatch(/3-question intake/i);
+    expect(onboarding).toMatch(/confidence with manual mode/i);
+    expect(onboarding).toMatch(/none \/ shaky \/ decent \/ strong/);
+    expect(onboarding).toMatch(/realistic shooting cadence/i);
+    // Routing logic
+    expect(onboarding).toMatch(/strong.*\/start operating-camera\.manual-mode/);
+    expect(onboarding).toMatch(/exposure-triangle/);
+    expect(onboarding).toMatch(/aperture-priority/);
+    // One-shot rule
+    expect(onboarding).toMatch(/never re-run.*intake/i);
+  });
+});
+
+// ─── buildProgressSummary ─────────────────────────────────────────────────
+
+const PROGRESS_FRESH: ProgressRow[] = [];
+function progRow(topicId: string, status: ProgressRow['status']): ProgressRow {
+  return {
+    rowIndex: 1, topicId, status,
+    lastActivityAt: '2026-05-19T15:00:00Z',
+    assignmentsPassed: status === 'completed' ? 1 : 0,
+    assignmentsFailed: 0,
+    theoryLastReadAt: '',
+  };
+}
+
+describe('buildProgressSummary', () => {
+  test('flags FRESH USER when nothing completed/in-progress and no active', () => {
+    const summary = buildProgressSummary(PROGRESS_FRESH, null);
+    expect(summary).toContain('FRESH USER');
+    expect(summary).toContain('0 completed');
+    expect(summary).toContain('0 in progress');
+  });
+
+  test('does NOT flag FRESH USER when there is an active assignment', () => {
+    const summary = buildProgressSummary(PROGRESS_FRESH, 'operating-camera.exposure-triangle');
+    expect(summary).not.toContain('FRESH USER');
+    expect(summary).toContain('active assignment: operating-camera.exposure-triangle');
+  });
+
+  test('does NOT flag FRESH USER once any topic is completed', () => {
+    const summary = buildProgressSummary(
+      [progRow('operating-camera.exposure-triangle', 'completed')],
+      null,
+    );
+    expect(summary).not.toContain('FRESH USER');
+    expect(summary).toContain('1 completed');
+  });
+
+  test('does NOT flag FRESH USER once any topic is in-progress', () => {
+    const summary = buildProgressSummary(
+      [progRow('operating-camera.exposure-triangle', 'in-progress')],
+      null,
+    );
+    expect(summary).not.toContain('FRESH USER');
+    expect(summary).toContain('1 in progress');
   });
 });
 
@@ -225,5 +290,49 @@ describe('PhotographyAgent.handleMessage', () => {
     const inventoryBlock = call.system[1]!.text;
     expect(inventoryBlock).toContain('Sigma 18-50');
     expect(inventoryBlock).not.toContain('Patagonia Houdini');
+    // The same block also carries the curriculum progress summary
+    expect(inventoryBlock).toContain('Curriculum state');
+  });
+
+  test('embeds FRESH USER tag when progress + active are both empty', async () => {
+    const anthropic = makeFakeAnthropic([
+      {
+        content: [{ type: 'text', text: 'Welcome — intake time.' }],
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 1, output_tokens: 1 },
+      },
+    ]);
+    const { agent, cache } = makeAgent(anthropic);
+    await cache.refresh();
+    await agent.handleMessage('chat-1', 'hi');
+    const call = (anthropic.messages.create as ReturnType<typeof vi.fn>).mock.calls[0]![0] as { system: Array<{ text: string }> };
+    const inventoryBlock = call.system[1]!.text;
+    expect(inventoryBlock).toContain('FRESH USER');
+  });
+
+  test('does NOT embed FRESH USER when an active assignment exists', async () => {
+    const anthropic = makeFakeAnthropic([
+      {
+        content: [{ type: 'text', text: 'ok' }],
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 1, output_tokens: 1 },
+      },
+    ]);
+    const { agent, cache } = makeAgent(anthropic, {
+      getActiveAssignment: vi.fn(async () => ({
+        rowIndex: 5, id: 'asgn-1', dateIssued: '', dateSubmitted: '', dateGraded: '',
+        topicId: 'operating-camera.aperture-priority', assignmentText: '', rubricJson: '[]',
+        status: 'active' as const,
+        submittedPhotoTelegramFileId: '', camera: '', lens: '', settingsExtracted: '',
+        aiVerdict: '' as const, aiCritique: '', perCriterionJson: '', retryCount: 0,
+        userNotes: '', skippedReason: '',
+      })),
+    });
+    await cache.refresh();
+    await agent.handleMessage('chat-1', 'hi');
+    const call = (anthropic.messages.create as ReturnType<typeof vi.fn>).mock.calls[0]![0] as { system: Array<{ text: string }> };
+    const inventoryBlock = call.system[1]!.text;
+    expect(inventoryBlock).not.toContain('FRESH USER');
+    expect(inventoryBlock).toContain('active assignment: operating-camera.aperture-priority');
   });
 });

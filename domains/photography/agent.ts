@@ -32,12 +32,18 @@ import {
 } from './tools.js';
 import { filterToActivePhotography } from './inventory.js';
 import { serializeCompact } from './serialize.js';
+import { ALL_TOPICS } from './skillTree.js';
+import { computeStatuses, type ProgressEntry } from './curriculum.js';
+import type { ProgressRow } from '../../lib/photographySheets.js';
 
 // ─── System prompt ────────────────────────────────────────────────────────
 
 export interface SystemPromptInput {
   /** Compact view of Tom\'s active photography inventory, embedded into the prompt. */
   compactViewText: string;
+  /** One-line curriculum state summary, e.g.
+   *  "Curriculum state: 0 completed, 0 in progress, 58 available — FRESH USER, run intake." */
+  progressSummary: string;
 }
 
 export interface SystemBlock {
@@ -89,17 +95,73 @@ const TOOL_GUIDANCE = `You have these tools:
 
 Use tools sparingly. Combine multiple in parallel when relevant (e.g., forecast + sun-times + trails for "where should I shoot Saturday morning?"). Don\'t call list_topics every turn — only when the question is genuinely about curriculum navigation.`;
 
+const ONBOARDING_RULES = `**Onboarding (FRESH USER intake):**
+
+The curriculum state above includes a "FRESH USER" tag when Tom has zero completed AND zero in-progress topics AND no active assignment — meaning he\'s never used the photography domain before. When that tag is present AND the conversation history is empty (this is his first photography message), run a 3-question intake BEFORE doing anything else (no tool calls, no recommendations — just ask):
+
+  1. "Welcome to photography mode. Quick intake — three questions. (1/3) How would you describe your confidence with manual mode today? Options: none / shaky / decent / strong."
+  2. (After his answer) "(2/3) Anything specific you want to start with, or want me to pick the most logical first step?"
+  3. (After his answer) "(3/3) What\'s a realistic shooting cadence? Options: every weekend / opportunistic / ramping up / not sure yet."
+
+Then, based on his answers, propose ONE concrete next step using slash commands (do NOT call any tools to "kick off" — Tom always confirms via slash command):
+
+  - confidence = strong → "Skip the basics; verify with: \`/start operating-camera.manual-mode\` (shoot Manual at f/8 / 1/250 / ISO 200 in mixed light)."
+  - confidence = none or shaky → "Start with theory: \`/learn operating-camera.exposure-triangle\`. Then \`/start operating-camera.exposure-triangle\` for the first assignment."
+  - confidence = decent → "Skip the very basics: \`/start operating-camera.aperture-priority\` is the right entry."
+  - If Tom named a specific topic → use \`list_topics\` to verify it exists; if prereqs are unmet, propose the most-foundational prereq instead.
+  - Cadence answer informs your closing line ("ramping up → plan for 2-3 sessions a week; opportunistic → one a week is fine; weekend → one focused session each Saturday").
+
+Onboarding is one-shot. After Tom takes his first action (any \`/start\` or \`/learn\`), the FRESH USER tag clears and normal flow resumes. NEVER re-run the intake once he\'s started anything.
+
+If a FRESH USER asks a substantive question instead of saying "hi" (e.g., "what should I learn first?"), skip the formal three questions and just propose the entry point — they\'re effectively answering question 2 with their question.`;
+
 export function buildSystemPrompt(input: SystemPromptInput): SystemBlock[] {
   return [
     { type: 'text', text: PERSONA },
     {
       type: 'text',
-      text: `Tom\'s active photography inventory:\n${input.compactViewText}`,
+      text: `Tom\'s active photography inventory:\n${input.compactViewText}\n\n${input.progressSummary}`,
       cache_control: { type: 'ephemeral' },
     },
     { type: 'text', text: SCOPE_GUARDRAILS },
     { type: 'text', text: TOOL_GUIDANCE },
+    { type: 'text', text: ONBOARDING_RULES },
   ];
+}
+
+/**
+ * Build the one-line progress summary embedded into the agent\'s system prompt.
+ * Includes a "FRESH USER" tag when Tom has zero completed AND zero in-progress
+ * topics AND no active assignment — used by the onboarding logic above.
+ */
+export function buildProgressSummary(
+  progress: readonly ProgressRow[],
+  activeTopicId: string | null,
+): string {
+  const entries = new Map<string, ProgressEntry>();
+  for (const r of progress) {
+    entries.set(r.topicId, {
+      topicId: r.topicId,
+      status: r.status,
+      lastActivityAt: r.lastActivityAt,
+      assignmentsPassed: r.assignmentsPassed,
+      assignmentsFailed: r.assignmentsFailed,
+      theoryLastReadAt: r.theoryLastReadAt,
+    });
+  }
+  const statuses = computeStatuses(entries);
+  let completed = 0, inProg = 0;
+  for (const t of ALL_TOPICS) {
+    const s = statuses.get(t.id);
+    if (s === 'completed') completed += 1;
+    else if (s === 'in-progress') inProg += 1;
+  }
+  const fresh = completed === 0 && inProg === 0 && activeTopicId === null;
+  const tag = fresh ? ' — FRESH USER, run intake' : '';
+  const activePart = activeTopicId
+    ? ` · active assignment: ${activeTopicId}`
+    : '';
+  return `Curriculum state: ${completed} completed, ${inProg} in progress, ${ALL_TOPICS.length - completed - inProg} not started${activePart}${tag}`;
 }
 
 // ─── Agent class ──────────────────────────────────────────────────────────
@@ -128,7 +190,15 @@ export class PhotographyAgent {
     const compactViewText = serializeCompact(
       filterToActivePhotography(this.opts.cache.getSnapshot()),
     ).text;
-    const system = buildSystemPrompt({ compactViewText });
+    // Pull progress + active in parallel so the system prompt has fresh
+    // curriculum state for onboarding decisions. Failures are non-fatal —
+    // we degrade to "unknown state" rather than blocking the agent reply.
+    const [progressRows, activeRow] = await Promise.all([
+      this.opts.toolDeps.readProgress().catch(() => [] as ProgressRow[]),
+      this.opts.toolDeps.getActiveAssignment().catch(() => null),
+    ]);
+    const progressSummary = buildProgressSummary(progressRows, activeRow?.topicId ?? null);
+    const system = buildSystemPrompt({ compactViewText, progressSummary });
     const history = this.opts.conversations.get(chatId);
     const messages: AnthropicMessage[] = [
       ...history.map((m) => ({ role: m.role, content: m.content })),
