@@ -1,5 +1,6 @@
 'use client';
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import type { MasterRow, Status } from '../../lib/types.js';
 import { StatusPill } from './status-pill.js';
 
@@ -116,20 +117,84 @@ function PanelBody({ row, onClose }: { row: MasterRow; onClose: () => void }) {
 }
 
 function ImageBlock({ row }: { row: MasterRow }) {
-  if (!row.image) {
-    return (
-      <div className="aspect-[4/3] w-full bg-bg-base flex items-center justify-center border-b border-border-subtle">
-        <span className="text-text-muted text-[12px] italic">No image</span>
-      </div>
-    );
+  const router = useRouter();
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const itemId = `${row.orderId}|${row.productUrl || row.itemName}`;
+
+  async function handleFile(file: File) {
+    setUploading(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append('image', file);
+      const resp = await fetch(`/api/items/${encodeURIComponent(itemId)}/image`, {
+        method: 'POST',
+        body: fd,
+      });
+      if (!resp.ok) {
+        const j = (await resp.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error ?? `HTTP ${resp.status}`);
+      }
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'upload failed');
+    } finally {
+      setUploading(false);
+    }
   }
+
   return (
-    <div className="aspect-[4/3] w-full overflow-hidden border-b border-border-subtle bg-bg-base">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={row.image}
-        alt={row.itemName}
-        className="h-full w-full object-cover"
+    <div
+      className="relative aspect-[4/3] w-full overflow-hidden border-b border-border-subtle bg-bg-base group"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        const f = e.dataTransfer.files?.[0];
+        if (f) void handleFile(f);
+      }}
+    >
+      {row.image ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={row.image} alt={row.itemName} className="h-full w-full object-cover" />
+      ) : (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className="flex h-full w-full items-center justify-center border-2 border-dashed border-border-subtle text-[12px] text-text-muted hover:text-text-primary"
+        >
+          + Add image
+        </button>
+      )}
+      {row.image && (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className="absolute right-2 top-2 rounded-input bg-bg-surface/80 px-2 py-1 text-[11px] text-text-secondary opacity-0 transition group-hover:opacity-100"
+        >
+          Replace
+        </button>
+      )}
+      {uploading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-[12px] text-white">
+          Uploading…
+        </div>
+      )}
+      {error && (
+        <div className="absolute bottom-2 left-2 right-2 rounded-input bg-red-900/80 px-2 py-1 text-[11px] text-white">
+          {error}
+        </div>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void handleFile(f);
+        }}
       />
     </div>
   );
