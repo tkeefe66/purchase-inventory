@@ -65,11 +65,6 @@ function parseDate(s: string): { y: number; m: number; d: number } | null {
   return { y, m: mo, d };
 }
 
-function inYear(s: string, year: number): boolean {
-  const d = parseDate(s);
-  return d !== null && d.y === year;
-}
-
 function sameYearMonth(s: string, year: number, month: number): boolean {
   const d = parseDate(s);
   return d !== null && d.y === year && d.m === month;
