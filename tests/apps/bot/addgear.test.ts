@@ -41,7 +41,7 @@ function makeDeps(overrides: Partial<AddgearDeps> = {}): AddgearDeps {
       brand: 'Patagonia',
       reasoning: 'classified',
     })),
-    listExistingRows: vi.fn((): readonly { brand: string; itemName: string }[] => []),
+    listExistingRows: vi.fn((): readonly { brand: string; itemName: string; image: string; orderId: string; productUrl: string }[] => []),
     // Default: lookup returns no candidates → user lands in awaiting-product-pick.
     // Tests that focus on downstream states (date / price / confirm) should use
     // startAddgearSkippingPick() to walk past the pick step.
@@ -162,7 +162,7 @@ describe('startAddgear — missing price triggers prompt after date', () => {
 describe('startAddgear — fuzzy dedup match', () => {
   test('warns when a similar row exists', async () => {
     const deps = makeDeps({
-      listExistingRows: () => [{ brand: 'Patagonia', itemName: 'Houdini Jacket' }],
+      listExistingRows: () => [{ brand: 'Patagonia', itemName: 'Houdini Jacket', image: '', orderId: '', productUrl: '' }],
     });
     const reply = await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
     expect(reply).toMatch(/similar to existing rows/i);
@@ -173,7 +173,7 @@ describe('startAddgear — fuzzy dedup match', () => {
 
   test('user replies "add anyway" and flow advances to confirm', async () => {
     const deps = makeDeps({
-      listExistingRows: () => [{ brand: 'Patagonia', itemName: 'Houdini Jacket' }],
+      listExistingRows: () => [{ brand: 'Patagonia', itemName: 'Houdini Jacket', image: '', orderId: '', productUrl: '' }],
     });
     await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
     const reply = await continueAddgear('chat-1', 'add anyway', deps);

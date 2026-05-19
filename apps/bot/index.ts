@@ -5,6 +5,7 @@ import {
   createSheetsClient,
   readMasterRows,
   updateRowStatus,
+  updateRowFields,
   appendMasterRow,
   buildVocab,
   readMutedFacilityIds,
@@ -13,7 +14,7 @@ import {
   readCampingTripsFromSheet,
   writeCampingTripsToSheet,
 } from '../../lib/sheets.js';
-import { sendMessage, getUpdates, getFile, downloadFile, type TelegramConfig } from '../../lib/telegram.js';
+import { sendMessage, sendPhoto, getUpdates, getFile, downloadFile, type TelegramConfig } from '../../lib/telegram.js';
 import { InventoryCache } from './inventoryCache.js';
 import { Stats } from './stats.js';
 import { ConversationStore } from '../../lib/conversations.js';
@@ -151,8 +152,25 @@ async function main(): Promise<void> {
       fetchProductName: (url, brand) => fetchProductName(url, brand),
       fetchProductInfo: (url) => fetchProductInfo(anthropic, url),
       listExistingRows: () =>
-        cache.getSnapshot().map((r) => ({ brand: r.brand, itemName: r.itemName })),
+        cache.getSnapshot().map((r) => ({
+          brand: r.brand,
+          itemName: r.itemName,
+          image: r.image,
+          orderId: r.orderId,
+          productUrl: r.productUrl,
+        })),
       imageStorageRoot: DEFAULT_STORAGE_ROOT,
+      updateImageOnExisting: async (rowIndex: number, imagePath: string) => {
+        await updateRowFields(sheets, env.spreadsheetId, [{ rowIndex, fields: { image: imagePath } }]);
+        await cache.forceRefresh();
+      },
+      sendConfirmPhoto: async (chatId: string, bytes, mediaType, caption) => {
+        try {
+          await sendPhoto(telegramCfg, { chat_id: chatId, caption, parse_mode: 'Markdown' }, bytes, mediaType);
+        } catch (err) {
+          console.warn('[addgear] sendConfirmPhoto failed:', err instanceof Error ? err.message : err);
+        }
+      },
     },
     camping: {
       // All persistent camping state lives in the sheet (Camping Index +
@@ -228,6 +246,10 @@ async function main(): Promise<void> {
         } else {
           continue;
         }
+
+        // Empty reply signals a side-channel send (e.g. sendConfirmPhoto already
+        // sent the message as a photo). Skip the plain-text sendMessage.
+        if (!reply) continue;
 
         try {
           await sendMessage(telegramCfg, {

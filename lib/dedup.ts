@@ -174,11 +174,17 @@ export interface FuzzyMatch {
   brand: string;
   itemName: string;
   score: number;
+  image: string;
+  orderId: string;
+  productUrl: string;
 }
 
 export interface FuzzyCandidateRow {
   brand: string;
   itemName: string;
+  image: string;
+  orderId: string;
+  productUrl: string;
 }
 
 function tokenize(s: string): Set<string> {
@@ -206,7 +212,15 @@ export function fuzzyMatchExisting(
     const candidate = tokenize(`${row.brand} ${row.itemName}`);
     const score = jaccard(target, candidate);
     if (score >= 0.5) {
-      scored.push({ rowIndex: idx, brand: row.brand, itemName: row.itemName, score });
+      scored.push({
+        rowIndex: idx,
+        brand: row.brand,
+        itemName: row.itemName,
+        score,
+        image: row.image,
+        orderId: row.orderId,
+        productUrl: row.productUrl,
+      });
     }
   });
   scored.sort((a, b) => b.score - a.score);

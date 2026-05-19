@@ -23,6 +23,15 @@ export interface AddgearDeps {
   fetchProductInfo: (url: string) => Promise<UrlProductInfo | null>;
   listExistingRows: () => readonly FuzzyCandidateRow[];
   imageStorageRoot?: string;
+  /** Update the `Image` column of an existing row (rowIndex is 1-based sheet row). */
+  updateImageOnExisting?: (rowIndex: number, imagePath: string) => Promise<void>;
+  /**
+   * Send the confirm preview as a photo (caption = the preview text).
+   * When provided, `parkForConfirm` calls this instead of returning the text,
+   * and returns '' to suppress the fallback sendMessage.
+   * `chatId` is the recipient so this dep can be shared across chats.
+   */
+  sendConfirmPhoto?: (chatId: string, bytes: Buffer, mediaType: SupportedMediaType, caption: string) => Promise<void>;
 }
 
 interface CaptionHints {
@@ -283,11 +292,26 @@ function previewRow(row: MasterRow): string {
  * awaiting-confirm. Pre-parking means /confirm works immediately as the
  * preview promises — handleConfirm's existing pop+write path takes over
  * without any second step on the user's side.
+ *
+ * When `imageBytes` and `deps.sendConfirmPhoto` are both present, sends the
+ * preview as a photo caption (better UX) and returns '' to suppress the
+ * fallback plain-text sendMessage in the bot loop.
  */
-function parkForConfirm(chatId: string, row: MasterRow, deps: AddgearDeps): string {
+function parkForConfirm(
+  chatId: string,
+  row: MasterRow,
+  deps: AddgearDeps,
+  imageBytes?: Buffer,
+  imageMediaType?: SupportedMediaType,
+): string {
   deps.addgearState.set(chatId, { kind: 'awaiting-confirm', row });
   deps.pendingActions.set(chatId, { type: 'log-append', row });
-  return previewRow(row);
+  const text = previewRow(row);
+  if (imageBytes && imageMediaType && deps.sendConfirmPhoto) {
+    void deps.sendConfirmPhoto(chatId, imageBytes, imageMediaType, text);
+    return '';
+  }
+  return text;
 }
 
 /**
@@ -470,20 +494,21 @@ async function advanceFlow(chatId: string, draft: PartialDraft, deps: AddgearDep
   const candidates = fuzzyMatchExisting(draft.brand, draft.itemName, deps.listExistingRows());
   if (candidates.length > 0) {
     deps.addgearState.set(chatId, { kind: 'awaiting-dedup', draft, candidates });
-    const lines = candidates.map(
-      (c, i) => `  ${i + 1}. row ${c.rowIndex + 2}: ${c.brand} ${c.itemName} (score ${c.score.toFixed(2)})`,
-    );
+    const lines = candidates.map((c, i) => {
+      const action = c.image ? 'Replace (has image)' : 'Attach (no image yet)';
+      return `  ${i + 1}. row ${c.rowIndex + 2}: ${c.brand} ${c.itemName} — ${action}`;
+    });
     return [
       `Looks similar to existing rows:`,
       ...lines,
-      `Reply 'add anyway' to log this as new, or /cancel.`,
+      `Reply 1, 2, etc. to Attach/Replace, or 'add anyway' to log new, or /cancel.`,
     ].join('\n');
   }
 
   const hash = makeHash([draft.brand, draft.itemName, draft.color, draft.size, String(Date.now())]);
   const orderId = makeOrderId(deps.today(), hash);
   const row = await rowFromDraft(draft, deps.today(), orderId, deps.imageStorageRoot);
-  return parkForConfirm(chatId, row, deps);
+  return parkForConfirm(chatId, row, deps, draft.imageBytes, draft.imageMediaType);
 }
 
 export async function continueAddgear(
@@ -576,15 +601,51 @@ export async function continueAddgear(
   }
 
   if (step.kind === 'awaiting-dedup') {
+    // Numeric pick: attach or replace image on an existing row.
+    const numPick = reply.match(/^([1-9])$/);
+    if (numPick) {
+      const idx = Number(numPick[1]) - 1;
+      const candidate = step.candidates[idx];
+      if (!candidate) {
+        return `Pick 1–${step.candidates.length}, 'add anyway' to log new, or /cancel.`;
+      }
+      if (!step.draft.imageBytes || !step.draft.imageMediaType) {
+        return `No photo attached — can't ${candidate.image ? 'replace' : 'attach'} an image. Reply 'add anyway' to log as a new row, or /cancel.`;
+      }
+      const itemId = `${candidate.orderId}|${candidate.productUrl || candidate.itemName}`;
+      let saved: ImageStorageResult;
+      try {
+        saved = await saveItemImage(itemId, step.draft.imageBytes, step.draft.imageMediaType, deps.imageStorageRoot);
+      } catch (err) {
+        console.warn('[addgear] saveItemImage failed:', err instanceof Error ? err.message : err);
+        saved = { ok: false, error: 'fetch_failed' };
+      }
+      if (!saved.ok) {
+        return `Failed to save image (${saved.error}). Try again or reply 'add anyway' to log as new.`;
+      }
+      if (deps.updateImageOnExisting) {
+        try {
+          await deps.updateImageOnExisting(candidate.rowIndex + 2, saved.path);
+        } catch (err) {
+          console.warn('[addgear] updateImageOnExisting failed:', err instanceof Error ? err.message : err);
+          return `Image saved locally but sheet update failed. Try again or reply 'add anyway' to log as new.`;
+        }
+      }
+      deps.addgearState.clear(chatId);
+      deps.pendingActions.clear(chatId);
+      const verb = candidate.image ? 'replaced on' : 'attached to';
+      return `Image ${verb} *${candidate.brand} ${candidate.itemName}*.`;
+    }
+
     if (/^add anyway$/i.test(reply)) {
       const hash = makeHash([
         step.draft.brand, step.draft.itemName, step.draft.color, step.draft.size, String(Date.now()),
       ]);
       const orderId = makeOrderId(deps.today(), hash);
       const row = await rowFromDraft(step.draft, deps.today(), orderId, deps.imageStorageRoot);
-      return parkForConfirm(chatId, row, deps);
+      return parkForConfirm(chatId, row, deps, step.draft.imageBytes, step.draft.imageMediaType);
     }
-    return `Reply 'add anyway' to log this as new, or /cancel.`;
+    return `Reply 1, 2, etc. to Attach/Replace, or 'add anyway' to log new, or /cancel.`;
   }
 
   if (step.kind === 'awaiting-confirm') {

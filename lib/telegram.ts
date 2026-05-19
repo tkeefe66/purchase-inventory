@@ -51,6 +51,41 @@ export async function sendMessage(
   }
 }
 
+export interface TelegramSendPhotoOptions {
+  chat_id: number | string;
+  caption?: string;
+  parse_mode?: 'MarkdownV2' | 'HTML' | 'Markdown';
+  disable_notification?: boolean;
+}
+
+/**
+ * Send a photo to a Telegram chat using the sendPhoto API. The image bytes
+ * are sent as multipart/form-data; `caption` is shown below the photo.
+ */
+export async function sendPhoto(
+  cfg: TelegramConfig,
+  opts: TelegramSendPhotoOptions,
+  photoBytes: Buffer,
+  mediaType: string,
+): Promise<void> {
+  const form = new FormData();
+  form.append('chat_id', String(opts.chat_id));
+  form.append('photo', new Blob([photoBytes], { type: mediaType }), 'photo');
+  if (opts.caption !== undefined) form.append('caption', opts.caption);
+  if (opts.parse_mode !== undefined) form.append('parse_mode', opts.parse_mode);
+  if (opts.disable_notification !== undefined) {
+    form.append('disable_notification', String(opts.disable_notification));
+  }
+  const resp = await fetch(`${TELEGRAM_API_BASE}/bot${cfg.botToken}/sendPhoto`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!resp.ok) {
+    const body = await resp.text();
+    throw new Error(`Telegram sendPhoto failed (HTTP ${resp.status}): ${body}`);
+  }
+}
+
 export interface GetUpdatesOptions {
   offset?: number;
   timeout?: number;
