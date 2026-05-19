@@ -114,6 +114,32 @@ describe('skillTree — integrity', () => {
   });
 });
 
+describe('skillTree — Seeing branch (Branch 2)', () => {
+  test('has 11 topics in seeing branch', () => {
+    expect(listByBranch('seeing')).toHaveLength(11);
+  });
+
+  test('Tier counts match the outline (3/3/5 across seeing)', () => {
+    expect(listByTier('seeing', 1)).toHaveLength(3);
+    expect(listByTier('seeing', 2)).toHaveLength(3);
+    expect(listByTier('seeing', 3)).toHaveLength(5);
+  });
+
+  test('all Tier 1 seeing topics are rootless (parallel entry points)', () => {
+    for (const t of listByTier('seeing', 1)) {
+      expect(t.prereqs).toEqual([]);
+    }
+  });
+
+  test('Tier 3 genre recipes have at least 2 prereqs each', () => {
+    const recipes = listByTier('seeing', 3);
+    expect(recipes).toHaveLength(5);
+    for (const r of recipes) {
+      expect(r.prereqs.length).toBeGreaterThanOrEqual(2);
+    }
+  });
+});
+
 describe('getTopicById + listByBranch + listByTier', () => {
   test('getTopicById returns the topic by exact id', () => {
     const t = getTopicById('operating-camera.exposure-triangle');
@@ -123,7 +149,7 @@ describe('getTopicById + listByBranch + listByTier', () => {
     expect(getTopicById('does.not.exist')).toBeNull();
   });
   test('listByBranch returns empty for branches not yet authored', () => {
-    const unwritten: BranchId[] = ['seeing', 'editing', 'printing'];
+    const unwritten: BranchId[] = ['editing', 'printing'];
     for (const b of unwritten) expect(listByBranch(b)).toEqual([]);
   });
 });
