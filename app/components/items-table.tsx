@@ -210,7 +210,7 @@ export function ItemsTable({ rows }: { rows: MasterRow[] }) {
 
 function renderCell(id: ColumnId, r: MasterRow): React.ReactNode {
   switch (id) {
-    case 'date': return <span className="text-text-secondary">{shortDate(r.date)}</span>;
+    case 'date': return <span className="text-text-secondary">{monthYear(r.date)}</span>;
     case 'price': return <span className="tabular-nums text-text-primary">${r.price.toFixed(2)}</span>;
     case 'qty': return <span className="tabular-nums text-text-secondary">{r.qty}</span>;
     case 'status': return <StatusPill status={r.status as Status} />;
@@ -284,6 +284,13 @@ function shortDate(iso: string): string {
   if (!m) return iso;
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   return `${months[Number(m[2]) - 1]} ${Number(m[3])}`;
+}
+
+function monthYear(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return iso;
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${months[Number(m[2]) - 1]} ${m[1]}`;
 }
 
 function activeFilterChips(state: ReturnType<typeof useTableFilters>['state'], setState: ReturnType<typeof useTableFilters>['setState']) {
