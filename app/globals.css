@@ -16,3 +16,43 @@ html, body {
 /* Hide scrollbars on mobile horizontal scroll-snap rows */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Markdown rendering for topic seeds + lessons.
+   Targets the output of `marked.parse` rendered inside .markdown-body. */
+.markdown-body p { margin: 0.5em 0; }
+.markdown-body p:first-child { margin-top: 0; }
+.markdown-body p:last-child { margin-bottom: 0; }
+.markdown-body strong { color: #fafafa; font-weight: 600; }
+.markdown-body em { color: #e2e0eb; font-style: italic; }
+.markdown-body code {
+  background: #0f0d1a;
+  color: #fafafa;
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+  font-size: 0.85em;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+.markdown-body ul, .markdown-body ol {
+  margin: 0.5em 0;
+  padding-left: 1.4em;
+}
+.markdown-body ul { list-style: disc; }
+.markdown-body ol { list-style: decimal; }
+.markdown-body li { margin: 0.25em 0; padding-left: 0.2em; }
+.markdown-body li::marker { color: #a09cb8; }
+.markdown-body h1, .markdown-body h2, .markdown-body h3 {
+  color: #fafafa;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0.8em 0 0.3em;
+}
+.markdown-body h1 { font-size: 1.15em; }
+.markdown-body h2 { font-size: 1.05em; }
+.markdown-body h3 { font-size: 1em; }
+.markdown-body a { color: #c4b5fd; text-decoration: underline; }
+.markdown-body blockquote {
+  border-left: 2px solid #211e3a;
+  padding-left: 0.8em;
+  margin: 0.5em 0;
+  color: #a09cb8;
+}

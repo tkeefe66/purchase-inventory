@@ -45,7 +45,8 @@
     "maintenance-dry": "tsx scripts/maintenance-dry.ts",
     "smoke-trails": "tsx scripts/smoke-trails.ts",
     "bot": "tsx apps/bot/index.ts",
-    "backfill-images": "tsx scripts/backfill-images.ts"
+    "backfill-images": "tsx scripts/backfill-images.ts",
+    "reclassify-photography": "tsx scripts/reclassify-photography.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.92.0",
@@ -55,7 +56,9 @@
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
     "dotenv": "^16.4.5",
+    "exifr": "^7.1.3",
     "googleapis": "^144.0.0",
+    "marked": "^18.0.4",
     "next": "^14.2.18",
     "node-telegram-bot-api": "^0.66.0",
     "proper-lockfile": "^4.1.2",

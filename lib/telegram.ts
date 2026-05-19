@@ -18,6 +18,15 @@ export interface TelegramPhotoSize {
   file_size?: number;
 }
 
+export interface TelegramDocument {
+  file_id: string;
+  file_unique_id: string;
+  file_name?: string;
+  mime_type?: string;
+  file_size?: number;
+  thumbnail?: TelegramPhotoSize;
+}
+
 export interface TelegramUpdateMessage {
   message_id: number;
   from?: { id: number; first_name?: string; username?: string };
@@ -26,6 +35,7 @@ export interface TelegramUpdateMessage {
   text?: string;
   caption?: string;
   photo?: TelegramPhotoSize[];
+  document?: TelegramDocument;
 }
 
 export interface TelegramUpdate {

@@ -2,12 +2,12 @@ import type { SheetsClient } from '../../lib/sheets.js';
 import { STATUS_VALUES, type MasterRow, type Status } from '../../lib/types.js';
 import type { InventoryCache } from '../../apps/bot/inventoryCache.js';
 import { itemId } from './types.js';
-import type { WeatherClient, ForecastErrorKind, ForecastResult } from './integrations/weather.js';
-import { ForecastError } from './integrations/weather.js';
+import type { WeatherClient, ForecastErrorKind, ForecastResult } from '../../lib/integrations/weather.js';
+import { ForecastError } from '../../lib/integrations/weather.js';
 import { searchFreeCampsites } from './integrations/freecamping.js';
 import { readCampingIndex } from '../../lib/campingState.js';
 import { readDispersedSnapshot } from '../../lib/dispersed/cache.js';
-import { lookupTrail, searchTrailsNearby, type TrailInfo, type TrailActivity } from './integrations/trails.js';
+import { lookupTrail, searchTrailsNearby, type TrailInfo, type TrailActivity } from '../../lib/integrations/trails.js';
 
 export interface ToolDeps {
   cache: InventoryCache;

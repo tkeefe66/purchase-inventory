@@ -1,10 +1,14 @@
-import { describe, test, expect, vi } from 'vitest';
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { dispatchCommand, type HandlerDeps } from '../../../apps/bot/handlers.js';
 import { InventoryCache } from '../../../apps/bot/inventoryCache.js';
 import { Stats } from '../../../apps/bot/stats.js';
 import { PendingActionStore } from '../../../lib/pendingActions.js';
 import { AddgearStateStore } from '../../../lib/addgearState.js';
-import { itemId } from '../../../domains/outdoor/types.js';
+import { StickyModeStore } from '../../../lib/stickyMode.js';
+import { itemId } from '../../../lib/itemId.js';
 import type { MasterRow, Status } from '../../../lib/types.js';
 import {
   FIXTURE_THERMAREST,
@@ -14,15 +18,30 @@ import {
 
 const TODAY = '2026-05-14';
 
+let tmpDir: string;
+beforeEach(async () => {
+  tmpDir = await mkdtemp(join(tmpdir(), 'handlers-test-'));
+});
+afterEach(async () => {
+  await rm(tmpDir, { recursive: true, force: true });
+});
+
 function makeDeps(rows: MasterRow[], overrides: Partial<HandlerDeps> = {}): {
   deps: HandlerDeps;
   cache: InventoryCache;
   updateCalls: { rowIndex: number; newStatus: Status }[];
   appendCalls: MasterRow[];
+  stickyMode: StickyModeStore;
 } {
   const updateCalls: { rowIndex: number; newStatus: Status }[] = [];
   const appendCalls: MasterRow[] = [];
   const cache = new InventoryCache(async () => rows);
+  const stickyMode = new StickyModeStore({ path: join(tmpDir, 'sticky.json') });
+  // Synchronous-ish initialization: load() is async, so we kick it off and
+  // assume the caller's test awaits something before calling .get(). All
+  // existing tests await dispatchCommand, which happens after `load()` would
+  // have resolved on the microtask queue.
+  void stickyMode.load();
   const deps: HandlerDeps = {
     cache,
     stats: new Stats(),
@@ -55,9 +74,31 @@ function makeDeps(rows: MasterRow[], overrides: Partial<HandlerDeps> = {}): {
       setMuted: vi.fn(async () => undefined),
       pendingActions: new PendingActionStore({ ttlMs: 60_000 }),
     },
+    stickyMode,
+    handleOutdoorAgentMessage: vi.fn(async (_c, t) => `outdoor: ${t}`) as unknown as HandlerDeps['handleOutdoorAgentMessage'],
+    handlePhotographyAgentMessage: vi.fn(async (_c, t) => `photography: ${t}`) as unknown as HandlerDeps['handlePhotographyAgentMessage'],
+    photography: {
+      readProgress: vi.fn(async () => []) as unknown as HandlerDeps['photography']['readProgress'],
+      upsertProgress: vi.fn(async () => undefined) as unknown as HandlerDeps['photography']['upsertProgress'],
+      getActiveAssignment: vi.fn(async () => null) as unknown as HandlerDeps['photography']['getActiveAssignment'],
+      appendAssignment: vi.fn(async () => 99) as unknown as HandlerDeps['photography']['appendAssignment'],
+      updateAssignment: vi.fn(async () => undefined) as unknown as HandlerDeps['photography']['updateAssignment'],
+      expandAssignment: vi.fn(async () => ({
+        assignmentText: 'stub assignment',
+        rubric: [{ criterion: 'c', description: '', is_core: true }],
+      })) as unknown as HandlerDeps['photography']['expandAssignment'],
+      expandLesson: vi.fn(async () => 'stub lesson') as unknown as HandlerDeps['photography']['expandLesson'],
+      gradePhoto: vi.fn(async () => ({
+        verdict: 'pass',
+        perCriterion: [{ criterion: 'x', result: 'pass', reason: '' }],
+        overallCritique: '',
+        suggestedNextStep: '',
+      })) as unknown as HandlerDeps['photography']['gradePhoto'],
+      now: () => '2026-05-19T15:00:00Z',
+    },
     ...overrides,
   };
-  return { deps, cache, updateCalls, appendCalls };
+  return { deps, cache, updateCalls, appendCalls, stickyMode };
 }
 
 describe('dispatchCommand: non-slash + unknown', () => {
@@ -275,3 +316,51 @@ describe('dispatchCommand: /help', () => {
     expect(out).toContain(`https://docs.google.com/spreadsheets/d/${deps.spreadsheetId}/edit`);
   });
 });
+
+describe('dispatchCommand: /photo /outdoor /who', () => {
+  test('/photo alone flips sticky to photography', async () => {
+    const { deps, stickyMode } = makeDeps([]);
+    const out = await dispatchCommand('chat-1', '/photo', deps);
+    expect(out).toMatch(/photography/i);
+    expect(stickyMode.get('chat-1')).toBe('photography');
+  });
+
+  test('/outdoor alone flips sticky to outdoor', async () => {
+    const { deps, stickyMode } = makeDeps([]);
+    await stickyMode.set('chat-1', 'photography');
+    const out = await dispatchCommand('chat-1', '/outdoor', deps);
+    expect(out).toMatch(/outdoor/i);
+    expect(stickyMode.get('chat-1')).toBe('outdoor');
+  });
+
+  test('/photo <body> routes to photography without changing sticky', async () => {
+    const { deps, stickyMode } = makeDeps([]);
+    const out = await dispatchCommand('chat-1', '/photo what aperture for landscape', deps);
+    expect(out).toBe('photography: what aperture for landscape');
+    expect(stickyMode.get('chat-1')).toBe('outdoor');
+    expect(deps.handlePhotographyAgentMessage).toHaveBeenCalledWith('chat-1', 'what aperture for landscape');
+  });
+
+  test('/outdoor <body> routes to outdoor without changing sticky', async () => {
+    const { deps, stickyMode } = makeDeps([]);
+    await stickyMode.set('chat-1', 'photography');
+    const out = await dispatchCommand('chat-1', '/outdoor what tent do I own', deps);
+    expect(out).toBe('outdoor: what tent do I own');
+    expect(stickyMode.get('chat-1')).toBe('photography');
+    expect(deps.handleOutdoorAgentMessage).toHaveBeenCalledWith('chat-1', 'what tent do I own');
+  });
+
+  test('/who returns current sticky mode (outdoor default)', async () => {
+    const { deps } = makeDeps([]);
+    const out = await dispatchCommand('chat-1', '/who', deps);
+    expect(out).toMatch(/Outdoor/i);
+  });
+
+  test('/who reflects a set mode', async () => {
+    const { deps, stickyMode } = makeDeps([]);
+    await stickyMode.set('chat-1', 'photography');
+    const out = await dispatchCommand('chat-1', '/who', deps);
+    expect(out).toMatch(/Photography/i);
+  });
+});
+

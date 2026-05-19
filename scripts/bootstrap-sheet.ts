@@ -90,6 +90,55 @@ const CAMPING_TRIPS_HEADERS = [
   '7-Day Fired At', 'Release-Moment Fired At', 'Cancelled At',
 ];
 
+const PHOTOGRAPHY_ASSIGNMENTS_HEADERS = [
+  'id',
+  'date_issued',
+  'date_submitted',
+  'date_graded',
+  'topic_id',
+  'assignment_text',
+  'rubric_json',
+  'status',
+  'submitted_photo_telegram_file_id',
+  'camera',
+  'lens',
+  'settings_extracted',
+  'ai_verdict',
+  'ai_critique',
+  'per_criterion_json',
+  'retry_count',
+  'user_notes',
+  'skipped_reason',
+];
+
+const PHOTOGRAPHY_ASSIGNMENTS_STATUS_ENUM = [
+  'proposed',
+  'active',
+  'submitted',
+  'passed',
+  'did_not_pass',
+  'skipped',
+];
+
+const PHOTOGRAPHY_ASSIGNMENTS_VERDICT_ENUM = ['pass', 'did_not_pass', ''];
+
+const PHOTOGRAPHY_PROGRESS_HEADERS = [
+  'topic_id',
+  'status',
+  'last_activity_at',
+  'assignments_passed',
+  'assignments_failed',
+  'theory_last_read_at',
+];
+
+const PHOTOGRAPHY_PROGRESS_STATUS_ENUM = [
+  'locked',
+  'available',
+  'in-progress',
+  'completed',
+  'skipped',
+];
+
 async function main(): Promise<void> {
   const { clientId, clientSecret, refreshToken, spreadsheetId } = readEnv();
 
@@ -329,6 +378,56 @@ async function main(): Promise<void> {
       },
     });
   }
+
+  // Photography Assignments tab — one row per assignment issued to Tom.
+  const photographyAssignmentsExists = allTabs.some(
+    (s) => s.properties?.title === 'Photography Assignments',
+  );
+  let photographyAssignmentsWillBeCreated = false;
+  if (photographyAssignmentsExists) {
+    console.log('Plan: "Photography Assignments" tab (already exists — skip)');
+  } else {
+    console.log(
+      `Plan: create "Photography Assignments" tab with ${PHOTOGRAPHY_ASSIGNMENTS_HEADERS.length} headers`,
+    );
+    photographyAssignmentsWillBeCreated = true;
+    requests.push({
+      addSheet: {
+        properties: {
+          title: 'Photography Assignments',
+          gridProperties: {
+            rowCount: 1000,
+            columnCount: PHOTOGRAPHY_ASSIGNMENTS_HEADERS.length,
+          },
+        },
+      },
+    });
+  }
+
+  // Photography Progress tab — one row per curriculum topic, tracks completion state.
+  const photographyProgressExists = allTabs.some(
+    (s) => s.properties?.title === 'Photography Progress',
+  );
+  let photographyProgressWillBeCreated = false;
+  if (photographyProgressExists) {
+    console.log('Plan: "Photography Progress" tab (already exists — skip)');
+  } else {
+    console.log(
+      `Plan: create "Photography Progress" tab with ${PHOTOGRAPHY_PROGRESS_HEADERS.length} headers`,
+    );
+    photographyProgressWillBeCreated = true;
+    requests.push({
+      addSheet: {
+        properties: {
+          title: 'Photography Progress',
+          gridProperties: {
+            rowCount: 200,
+            columnCount: PHOTOGRAPHY_PROGRESS_HEADERS.length,
+          },
+        },
+      },
+    });
+  }
   console.log();
 
   console.log('Applying batch update...');
@@ -376,6 +475,126 @@ async function main(): Promise<void> {
       requestBody: { values: [CAMPING_TRIPS_HEADERS] },
     });
     console.log('✓ "Camping Trips" headers written');
+  }
+
+  if (photographyAssignmentsWillBeCreated) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `'Photography Assignments'!A1:${colLetter(PHOTOGRAPHY_ASSIGNMENTS_HEADERS.length - 1)}1`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [PHOTOGRAPHY_ASSIGNMENTS_HEADERS] },
+    });
+    console.log('✓ "Photography Assignments" headers written');
+
+    // Re-fetch the sheet to get the new tab's sheetId for data validation.
+    const newMeta = await sheets.spreadsheets.get({ spreadsheetId });
+    const assignmentsTab = (newMeta.data.sheets ?? []).find(
+      (s) => s.properties?.title === 'Photography Assignments',
+    );
+    const assignmentsSheetId = assignmentsTab?.properties?.sheetId;
+    if (assignmentsSheetId != null) {
+      const assignmentsHeaderMap = buildHeaderMap(PHOTOGRAPHY_ASSIGNMENTS_HEADERS);
+      const statusColIdx = assignmentsHeaderMap.get('status');
+      const verdictColIdx = assignmentsHeaderMap.get('ai_verdict');
+      const validationRequests: sheets_v4.Schema$Request[] = [];
+      if (statusColIdx !== undefined) {
+        validationRequests.push({
+          setDataValidation: {
+            range: {
+              sheetId: assignmentsSheetId,
+              startRowIndex: 1,
+              startColumnIndex: statusColIdx,
+              endColumnIndex: statusColIdx + 1,
+            },
+            rule: {
+              condition: {
+                type: 'ONE_OF_LIST',
+                values: PHOTOGRAPHY_ASSIGNMENTS_STATUS_ENUM.map((v) => ({ userEnteredValue: v })),
+              },
+              strict: true,
+              showCustomUi: true,
+            },
+          },
+        });
+      }
+      if (verdictColIdx !== undefined) {
+        validationRequests.push({
+          setDataValidation: {
+            range: {
+              sheetId: assignmentsSheetId,
+              startRowIndex: 1,
+              startColumnIndex: verdictColIdx,
+              endColumnIndex: verdictColIdx + 1,
+            },
+            rule: {
+              condition: {
+                type: 'ONE_OF_LIST',
+                values: PHOTOGRAPHY_ASSIGNMENTS_VERDICT_ENUM.map((v) => ({ userEnteredValue: v })),
+              },
+              strict: false,
+              showCustomUi: true,
+            },
+          },
+        });
+      }
+      if (validationRequests.length > 0) {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId,
+          requestBody: { requests: validationRequests },
+        });
+        console.log('✓ "Photography Assignments" data validation applied');
+      }
+    }
+  }
+
+  if (photographyProgressWillBeCreated) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `'Photography Progress'!A1:${colLetter(PHOTOGRAPHY_PROGRESS_HEADERS.length - 1)}1`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [PHOTOGRAPHY_PROGRESS_HEADERS] },
+    });
+    console.log('✓ "Photography Progress" headers written');
+
+    const newMeta = await sheets.spreadsheets.get({ spreadsheetId });
+    const progressTab = (newMeta.data.sheets ?? []).find(
+      (s) => s.properties?.title === 'Photography Progress',
+    );
+    const progressSheetId = progressTab?.properties?.sheetId;
+    if (progressSheetId != null) {
+      const progressHeaderMap = buildHeaderMap(PHOTOGRAPHY_PROGRESS_HEADERS);
+      const statusColIdx = progressHeaderMap.get('status');
+      if (statusColIdx !== undefined) {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId,
+          requestBody: {
+            requests: [
+              {
+                setDataValidation: {
+                  range: {
+                    sheetId: progressSheetId,
+                    startRowIndex: 1,
+                    startColumnIndex: statusColIdx,
+                    endColumnIndex: statusColIdx + 1,
+                  },
+                  rule: {
+                    condition: {
+                      type: 'ONE_OF_LIST',
+                      values: PHOTOGRAPHY_PROGRESS_STATUS_ENUM.map((v) => ({
+                        userEnteredValue: v,
+                      })),
+                    },
+                    strict: true,
+                    showCustomUi: true,
+                  },
+                },
+              },
+            ],
+          },
+        });
+        console.log('✓ "Photography Progress" data validation applied');
+      }
+    }
   }
 
   console.log();

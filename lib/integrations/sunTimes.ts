@@ -1,4 +1,8 @@
-import { getTimes } from 'suncalc';
+// `suncalc` is a CommonJS module with no ESM named exports. Default-import +
+// destructure works under both Node's strict ESM loader (tsx in prod) and
+// Vite's permissive loader (vitest).
+import suncalc from 'suncalc';
+const { getTimes } = suncalc;
 
 export type SunTimes =
   | {

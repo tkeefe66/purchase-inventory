@@ -29,13 +29,33 @@ import { extractFromPhoto, mediaTypeFromPath } from '../../lib/parsers/photo.js'
 import { lookupProduct, fetchProductName, fetchProductInfo } from '../../lib/parsers/product-lookup.js';
 import { DEFAULT_STORAGE_ROOT } from '../../lib/integrations/image-storage.js';
 import { createClassifier } from '../../lib/classifier.js';
-import { routeMessage, routePhoto } from './router.js';
+import { routeMessage, routePhoto, routeDocument } from './router.js';
 import { runPipeline } from '../cron/pipeline.js';
-import { createWeatherClient } from '../../domains/outdoor/integrations/weather.js';
+import { createWeatherClient } from '../../lib/integrations/weather.js';
+import { StickyModeStore } from '../../lib/stickyMode.js';
+import {
+  readProgress as readPhotographyProgress,
+  upsertProgress as upsertPhotographyProgress,
+  getActiveAssignment as getPhotographyActiveAssignment,
+  appendAssignment as appendPhotographyAssignment,
+  updateAssignment as updatePhotographyAssignment,
+} from '../../lib/photographySheets.js';
+import {
+  expandAssignment as expandPhotographyAssignment,
+  expandLesson as expandPhotographyLesson,
+} from '../../domains/photography/expander.js';
+import { gradePhoto as gradePhotographyPhoto } from '../../domains/photography/grading.js';
+import { filterToActivePhotography } from '../../domains/photography/inventory.js';
+import { serializeCompact as serializePhotographyCompact } from '../../domains/photography/serialize.js';
+import { handleSubmission as handlePhotographySubmission } from './commands/photography.js';
+import { PhotographyAgent } from '../../domains/photography/agent.js';
+import { geocode } from '../../lib/integrations/weather.js';
 
 const CACHE_REFRESH_MS = 15 * 60 * 1000;
 const POLL_TIMEOUT_S = 25;
 const TZ = 'America/Denver';
+const STICKY_MODE_PATH = process.env.STICKY_MODE_PATH ?? '/data/bot-sticky-mode.json';
+
 
 interface Env {
   googleClientId: string;
@@ -110,6 +130,34 @@ async function main(): Promise<void> {
 
   const vocab = await buildVocab(sheets, env.spreadsheetId);
   const classifyFn = createClassifier({ vocab, anthropic });
+
+  const stickyMode = new StickyModeStore({ path: STICKY_MODE_PATH });
+  await stickyMode.load();
+  console.log(`[bot] sticky-mode store loaded from ${STICKY_MODE_PATH}`);
+
+  const photographyAgent = new PhotographyAgent({
+    cache,
+    conversations,
+    stats,
+    anthropic,
+    toolDeps: {
+      weather,
+      geocode,
+      getActiveAssignment: () => getPhotographyActiveAssignment(sheets, env.spreadsheetId),
+      readProgress: () => readPhotographyProgress(sheets, env.spreadsheetId),
+      expanderDeps: {
+        anthropic,
+        // Inventory is fetched at expander invocation time via a getter so it
+        // stays fresh after cache refreshes within the same agent session.
+        get inventoryText() {
+          return serializePhotographyCompact(filterToActivePhotography(cache.getSnapshot())).text;
+        },
+      },
+    },
+  });
+
+  const handlePhotographyAgentMessage = (chatId: string, text: string): Promise<string> =>
+    photographyAgent.handleMessage(chatId, text);
 
   const agent = new OutdoorAgent({
     cache,
@@ -200,17 +248,113 @@ async function main(): Promise<void> {
       telegramBotToken: undefined,
       telegramChatId: undefined,
     }),
+    stickyMode,
+    handleOutdoorAgentMessage: (chatId: string, text: string) => agent.handleMessage(chatId, text),
+    handlePhotographyAgentMessage,
+    photography: {
+      readProgress: () => readPhotographyProgress(sheets, env.spreadsheetId),
+      upsertProgress: (topicId, patch) =>
+        upsertPhotographyProgress(sheets, env.spreadsheetId, topicId, patch),
+      getActiveAssignment: () => getPhotographyActiveAssignment(sheets, env.spreadsheetId),
+      appendAssignment: (row) => appendPhotographyAssignment(sheets, env.spreadsheetId, row),
+      updateAssignment: (rowIndex, patch) =>
+        updatePhotographyAssignment(sheets, env.spreadsheetId, rowIndex, patch),
+      expandAssignment: (topic) =>
+        expandPhotographyAssignment(
+          {
+            anthropic,
+            inventoryText: serializePhotographyCompact(
+              filterToActivePhotography(cache.getSnapshot()),
+            ).text,
+          },
+          topic,
+        ),
+      expandLesson: (topic) =>
+        expandPhotographyLesson(
+          {
+            anthropic,
+            inventoryText: serializePhotographyCompact(
+              filterToActivePhotography(cache.getSnapshot()),
+            ).text,
+          },
+          topic,
+        ),
+      gradePhoto: (input) => gradePhotographyPhoto({ anthropic }, input),
+      now: () => new Date().toISOString(),
+    },
   };
 
   const routerDeps = {
     dispatchCommand: (chatId: string, text: string) => dispatchCommand(chatId, text, handlerDeps),
-    handleAgentMessage: (chatId: string, text: string) => agent.handleMessage(chatId, text),
+    handleOutdoorAgentMessage: (chatId: string, text: string) => agent.handleMessage(chatId, text),
+    handlePhotographyAgentMessage,
     handleAddgearContinuation: (chatId: string, text: string) =>
       handleAddgearContinuation(chatId, text, handlerDeps),
     handleCampingSelection: (chatId: string, text: string) =>
       handleCampingSelectionContinuation(chatId, text, handlerDeps.camping),
-    handlePhoto: (chatId: string, photoFileId: string, caption: string) =>
-      handlePhoto(chatId, photoFileId, caption, handlerDeps),
+    handlePhoto: async (chatId: string, photoFileId: string, caption: string): Promise<string | null> => {
+      // Compressed Photo from Telegram. Three paths:
+      //   1. "/addgear" caption → outdoor /addgear flow (existing).
+      //   2. Sticky mode = photography → treat as a (EXIF-stripped) submission.
+      //   3. Otherwise → outdoor's "no caption" fallback (handled by routePhoto).
+      if (/^\/addgear\b/i.test(caption.trim())) {
+        return handlePhoto(chatId, photoFileId, caption, handlerDeps);
+      }
+      const mode = stickyMode.get(chatId);
+      if (mode === 'photography') {
+        try {
+          const f = await getFile(telegramCfg, photoFileId);
+          const bytes = await downloadFile(telegramCfg, f.file_path!);
+          return await handlePhotographySubmission(
+            {
+              bytes,
+              mimeType: 'image/jpeg', // Telegram re-encodes compressed Photos as JPEG
+              fileName: '',
+              telegramFileId: photoFileId,
+              caption,
+              compressed: true,
+            },
+            handlerDeps.photography,
+          );
+        } catch (err) {
+          console.error(`[bot] photography submission (compressed) failed for ${chatId}:`, err instanceof Error ? err.message : err);
+          return `Something went wrong handling that photo. The error has been logged.`;
+        }
+      }
+      return handlePhoto(chatId, photoFileId, caption, handlerDeps);
+    },
+    handleDocument: async (
+      chatId: string,
+      fileId: string,
+      mimeType: string,
+      fileName: string,
+      caption: string,
+    ): Promise<string> => {
+      console.log(
+        `[bot] document from ${chatId}: file_id=${fileId} mime=${mimeType} name=${fileName.slice(0, 60)}`,
+      );
+      // Per spec: photo-as-Document always routes to photography (the whole
+      // point of sending as Document is to preserve EXIF for grading).
+      try {
+        const f = await getFile(telegramCfg, fileId);
+        const bytes = await downloadFile(telegramCfg, f.file_path!);
+        return await handlePhotographySubmission(
+          {
+            bytes,
+            mimeType,
+            fileName,
+            telegramFileId: fileId,
+            caption,
+            compressed: false,
+          },
+          handlerDeps.photography,
+        );
+      } catch (err) {
+        console.error(`[bot] photography submission (document) failed for ${chatId}:`, err instanceof Error ? err.message : err);
+        return `Something went wrong handling that document. The error has been logged.`;
+      }
+    },
+    getStickyMode: (chatId: string) => stickyMode.get(chatId),
   };
 
   let offset: number | undefined;
@@ -234,7 +378,14 @@ async function main(): Promise<void> {
         }
 
         let reply: string;
-        if (msg.photo && msg.photo.length > 0) {
+        if (msg.document) {
+          const d = msg.document;
+          const caption = msg.caption ?? '';
+          console.log(
+            `[bot] ${chatId} -> [document file_id=${d.file_id} mime=${d.mime_type ?? '?'} name="${(d.file_name ?? '').slice(0, 60)}" caption="${caption.slice(0, 60)}"]`,
+          );
+          reply = await routeDocument(chatId, d.file_id, d.mime_type ?? '', d.file_name ?? '', caption, routerDeps);
+        } else if (msg.photo && msg.photo.length > 0) {
           const largest = msg.photo[msg.photo.length - 1]!;
           const caption = msg.caption ?? '';
           console.log(`[bot] ${chatId} -> [photo file_id=${largest.file_id} caption="${caption.slice(0, 60)}"]`);

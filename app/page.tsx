@@ -1,5 +1,6 @@
 import { getMasterRows, getNeedsReviewRows } from './lib/data';
 import { computeKpis } from './lib/kpi';
+import Link from 'next/link';
 import { ItemsTable } from './components/items-table';
 import { KpiCard } from './components/kpi-card';
 
@@ -29,6 +30,14 @@ export default async function Home({ searchParams }: PageProps) {
       <div className="pointer-events-none absolute -right-20 -top-20 h-[280px] w-[280px] rounded-full bg-blob-gradient opacity-[0.18] blur-[40px]" />
 
       <div className="relative">
+        {domain === 'photography' && (
+          <Link
+            href="/photography"
+            className="mb-3 inline-flex items-center gap-1 rounded-chip border border-border-subtle bg-bg-surface px-2.5 py-1 text-[12px] text-text-secondary hover:text-text-primary"
+          >
+            ← Photography Skills
+          </Link>
+        )}
         <div className="text-[11px] uppercase tracking-[0.05em] text-text-muted">{scopeLabel}</div>
         <h1 className="mt-1 text-[26px] font-bold tracking-[-0.02em] text-text-primary">Items</h1>
         <p className="text-[13px] text-text-secondary">{activeCount} active items · {scopedRows.length} total</p>

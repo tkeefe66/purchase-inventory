@@ -6,7 +6,7 @@ import {
   ForecastError,
   type PirateHourData,
   type PirateWeatherResponse,
-} from '../../../../domains/outdoor/integrations/weather.js';
+} from '../../../lib/integrations/weather.js';
 
 beforeEach(() => {
   _resetNominatimStateForTests();
