@@ -45,9 +45,9 @@ export function ItemsTable({ rows }: { rows: MasterRow[] }) {
     if (sortKey === key) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
     else { setSortKey(key); setSortDir(key === 'price' || key === 'date' ? 'desc' : 'asc'); }
   }
-  function sortIndicator(key: SortKey): string {
-    if (sortKey !== key) return '';
-    return sortDir === 'asc' ? ' ↑' : ' ↓';
+  function sortState(key: SortKey): 'asc' | 'desc' | 'none' {
+    if (sortKey !== key) return 'none';
+    return sortDir;
   }
 
   function clearAll() { setState({ ...state, q: '' }); }
@@ -74,12 +74,12 @@ export function ItemsTable({ rows }: { rows: MasterRow[] }) {
         <table className="min-w-full text-[13px]">
           <thead className="sticky top-0 bg-bg-surface-raised text-left text-text-muted">
             <tr>
-              <Th onSort={() => toggleSort('date')} indicator={sortIndicator('date')} hasFilter={state.date !== undefined} onFilter={(el) => setOpenFilter({ key: 'date', anchor: el })}>Date</Th>
-              <Th onSort={() => toggleSort('brand')} indicator={sortIndicator('brand')} hasFilter={state.brand.length > 0} onFilter={(el) => setOpenFilter({ key: 'brand', anchor: el })}>Brand</Th>
-              <Th onSort={() => toggleSort('itemName')} indicator={sortIndicator('itemName')} hasFilter={state.subCategory.length > 0} onFilter={(el) => setOpenFilter({ key: 'subCategory', anchor: el })}>Item</Th>
-              <Th onSort={() => toggleSort('category')} indicator={sortIndicator('category')} hasFilter={state.category.length > 0} onFilter={(el) => setOpenFilter({ key: 'category', anchor: el })}>Category</Th>
-              <Th onSort={() => toggleSort('price')} indicator={sortIndicator('price')} hasFilter={state.price !== undefined} onFilter={(el) => setOpenFilter({ key: 'price', anchor: el })} className="text-right">Price</Th>
-              <Th onSort={() => toggleSort('status')} indicator={sortIndicator('status')} hasFilter={state.status.length > 0} onFilter={(el) => setOpenFilter({ key: 'status', anchor: el })}>Status</Th>
+              <Th onSort={() => toggleSort('date')} sort={sortState('date')} hasFilter={state.date !== undefined} onFilter={(el) => setOpenFilter({ key: 'date', anchor: el })}>Date</Th>
+              <Th onSort={() => toggleSort('brand')} sort={sortState('brand')} hasFilter={state.brand.length > 0} onFilter={(el) => setOpenFilter({ key: 'brand', anchor: el })}>Brand</Th>
+              <Th onSort={() => toggleSort('itemName')} sort={sortState('itemName')} hasFilter={state.subCategory.length > 0} onFilter={(el) => setOpenFilter({ key: 'subCategory', anchor: el })}>Item</Th>
+              <Th onSort={() => toggleSort('category')} sort={sortState('category')} hasFilter={state.category.length > 0} onFilter={(el) => setOpenFilter({ key: 'category', anchor: el })}>Category</Th>
+              <Th onSort={() => toggleSort('price')} sort={sortState('price')} hasFilter={state.price !== undefined} onFilter={(el) => setOpenFilter({ key: 'price', anchor: el })} className="text-right">Price</Th>
+              <Th onSort={() => toggleSort('status')} sort={sortState('status')} hasFilter={state.status.length > 0} onFilter={(el) => setOpenFilter({ key: 'status', anchor: el })}>Status</Th>
             </tr>
           </thead>
           <tbody>
@@ -156,20 +156,27 @@ export function ItemsTable({ rows }: { rows: MasterRow[] }) {
 }
 
 function Th({
-  children, onSort, indicator = '', hasFilter, onFilter, className = '',
+  children, onSort, sort, hasFilter, onFilter, className = '',
 }: {
   children: React.ReactNode;
   onSort: () => void;
-  indicator?: string;
+  sort: 'asc' | 'desc' | 'none';
   hasFilter: boolean;
   onFilter: (anchor: HTMLElement) => void;
   className?: string;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
+  const arrow = sort === 'asc' ? '↑' : sort === 'desc' ? '↓' : '↕';
+  const arrowClass = sort === 'none'
+    ? 'text-text-muted opacity-40 group-hover:opacity-100'
+    : 'text-text-primary';
   return (
     <th className={`group px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.08em] ${className}`}>
       <div ref={ref} className="flex items-center gap-1.5">
-        <button type="button" onClick={onSort} className="hover:text-text-primary">{children}{indicator}</button>
+        <button type="button" onClick={onSort} className="flex items-center gap-1 hover:text-text-primary">
+          <span>{children}</span>
+          <span className={`text-[11px] transition ${arrowClass}`}>{arrow}</span>
+        </button>
         {hasFilter && <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent-gradient shadow-accent-glow" />}
         <button
           type="button"

@@ -5,14 +5,23 @@ import { KpiCard } from './components/kpi-card';
 
 export const dynamic = 'force-dynamic';
 
-export default async function Home() {
-  const [rows, needsReview] = await Promise.all([
+interface PageProps {
+  searchParams: { domain?: string };
+}
+
+export default async function Home({ searchParams }: PageProps) {
+  const [allRows, needsReview] = await Promise.all([
     getMasterRows(),
     getNeedsReviewRows(),
   ]);
+  const domain = (searchParams.domain ?? '').trim();
+  // Scope KPIs to the active domain. ItemsTable receives all rows and applies
+  // its own client-side domain filter via useTableFilters — so it stays in sync.
+  const scopedRows = domain ? allRows.filter((r) => r.domain.toLowerCase() === domain.toLowerCase()) : allRows;
   const unresolved = needsReview.filter((r) => !r.resolved).length;
-  const kpis = computeKpis(rows, unresolved, new Date());
-  const activeCount = rows.filter((r) => r.status === 'active').length;
+  const kpis = computeKpis(scopedRows, unresolved, new Date());
+  const activeCount = scopedRows.filter((r) => r.status === 'active').length;
+  const scopeLabel = domain ? domain.charAt(0).toUpperCase() + domain.slice(1) : 'All domains';
 
   return (
     <div className="relative overflow-hidden px-4 py-6 md:px-7">
@@ -20,9 +29,9 @@ export default async function Home() {
       <div className="pointer-events-none absolute -right-20 -top-20 h-[280px] w-[280px] rounded-full bg-blob-gradient opacity-[0.18] blur-[40px]" />
 
       <div className="relative">
-        <div className="text-[11px] uppercase tracking-[0.05em] text-text-muted">Inventory</div>
+        <div className="text-[11px] uppercase tracking-[0.05em] text-text-muted">{scopeLabel}</div>
         <h1 className="mt-1 text-[26px] font-bold tracking-[-0.02em] text-text-primary">Items</h1>
-        <p className="text-[13px] text-text-secondary">{activeCount} active items · {rows.length} total</p>
+        <p className="text-[13px] text-text-secondary">{activeCount} active items · {scopedRows.length} total</p>
 
         <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
           <KpiCard
@@ -47,7 +56,7 @@ export default async function Home() {
         </div>
 
         <div className="mt-6">
-          <ItemsTable rows={rows} />
+          <ItemsTable rows={allRows} />
         </div>
       </div>
     </div>
