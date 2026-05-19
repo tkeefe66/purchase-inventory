@@ -39,6 +39,7 @@ export function DetailPanel({ row, onClose }: Props) {
 function PanelBody({ row, onClose }: { row: MasterRow; onClose: () => void }) {
   return (
     <div className="flex h-full flex-col">
+      <ImageBlock row={row} />
       <div className="flex items-start gap-3 border-b border-border-subtle p-4">
         <div className="flex-1 min-w-0">
           <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-text-muted">{row.brand || 'Unknown'}</div>
@@ -110,6 +111,26 @@ function PanelBody({ row, onClose }: { row: MasterRow; onClose: () => void }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ImageBlock({ row }: { row: MasterRow }) {
+  if (!row.image) {
+    return (
+      <div className="aspect-[4/3] w-full bg-bg-base flex items-center justify-center border-b border-border-subtle">
+        <span className="text-text-muted text-[12px] italic">No image</span>
+      </div>
+    );
+  }
+  return (
+    <div className="aspect-[4/3] w-full overflow-hidden border-b border-border-subtle bg-bg-base">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={row.image}
+        alt={row.itemName}
+        className="h-full w-full object-cover"
+      />
     </div>
   );
 }
