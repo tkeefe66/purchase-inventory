@@ -59,6 +59,7 @@ export function parseReiReceiptEmail(html: string): ParsedOrder | null {
     if (price <= 0) return;
 
     const productUrl = `https://www.rei.com/product/${itemId}`;
+    const imageUrl = ($img.attr('src') ?? '').trim() || undefined;
     const existing = byProductId.get(itemId);
     if (existing) {
       existing.quantity += quantity;
@@ -71,6 +72,7 @@ export function parseReiReceiptEmail(html: string): ParsedOrder | null {
       productUrl,
       color: '',
       size: '',
+      imageUrl,
     });
   });
 
@@ -124,7 +126,8 @@ export function parseReiEmail(html: string): ParsedOrder | null {
       ? detailParagraphs[2]
       : '';
 
-    items.push({ itemName, quantity, price, productUrl, color, size });
+    const imageUrl = ($img.attr('src') ?? '').trim() || undefined;
+    items.push({ itemName, quantity, price, productUrl, color, size, imageUrl });
   });
 
   // Status / shipment / delivery emails sometimes include the product thumbnail
