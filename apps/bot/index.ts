@@ -46,16 +46,14 @@ import { gradePhoto as gradePhotographyPhoto } from '../../domains/photography/g
 import { filterToActivePhotography } from '../../domains/photography/inventory.js';
 import { serializeCompact as serializePhotographyCompact } from '../../domains/photography/serialize.js';
 import { handleSubmission as handlePhotographySubmission } from './commands/photography.js';
+import { PhotographyAgent } from '../../domains/photography/agent.js';
+import { geocode } from '../../lib/integrations/weather.js';
 
 const CACHE_REFRESH_MS = 15 * 60 * 1000;
 const POLL_TIMEOUT_S = 25;
 const TZ = 'America/Denver';
 const STICKY_MODE_PATH = process.env.STICKY_MODE_PATH ?? '/data/bot-sticky-mode.json';
 
-const PHOTOGRAPHY_PLACEHOLDER =
-  "📸 Photography mode is set, but the free-form photography agent isn't wired yet — that ships next sprint. " +
-  "For now use: `/skills`, `/track <branch>`, `/next`, `/learn <id>`, `/start <id>`, `/active`, `/skip`, `/plan <duration>`. " +
-  "Or `/outdoor` to switch back.";
 
 interface Env {
   googleClientId: string;
@@ -135,8 +133,29 @@ async function main(): Promise<void> {
   await stickyMode.load();
   console.log(`[bot] sticky-mode store loaded from ${STICKY_MODE_PATH}`);
 
-  const handlePhotographyAgentMessage = async (_chatId: string, _text: string): Promise<string> =>
-    PHOTOGRAPHY_PLACEHOLDER;
+  const photographyAgent = new PhotographyAgent({
+    cache,
+    conversations,
+    stats,
+    anthropic,
+    toolDeps: {
+      weather,
+      geocode,
+      getActiveAssignment: () => getPhotographyActiveAssignment(sheets, env.spreadsheetId),
+      readProgress: () => readPhotographyProgress(sheets, env.spreadsheetId),
+      expanderDeps: {
+        anthropic,
+        // Inventory is fetched at expander invocation time via a getter so it
+        // stays fresh after cache refreshes within the same agent session.
+        get inventoryText() {
+          return serializePhotographyCompact(filterToActivePhotography(cache.getSnapshot())).text;
+        },
+      },
+    },
+  });
+
+  const handlePhotographyAgentMessage = (chatId: string, text: string): Promise<string> =>
+    photographyAgent.handleMessage(chatId, text);
 
   const agent = new OutdoorAgent({
     cache,
