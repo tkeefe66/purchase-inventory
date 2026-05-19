@@ -5,12 +5,12 @@ import {
   applyLabel,
   createGmailClient,
   ensureLabel,
-  extractHtmlBody,
   getHeader,
   getMessage,
   listMessages,
   type GmailClient,
 } from '../../lib/gmail.js';
+import { extractHtmlBody } from '../../lib/gmail-html.js';
 import { parseAmazonShipmentEmail, parseAmazonOrderEmail } from '../../lib/parsers/amazon.js';
 import { parseAmazonReturnEmail, type ReturnAction } from '../../lib/parsers/amazon-return.js';
 import { parseReiEmail, parseReiReceiptEmail } from '../../lib/parsers/rei.js';
