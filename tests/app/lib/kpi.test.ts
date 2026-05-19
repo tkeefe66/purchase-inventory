@@ -61,6 +61,17 @@ describe('computeKpis', () => {
     expect(k.needsReview.value).toBe(7);
   });
 
+  it('ignores rows with malformed dates', () => {
+    const rows = [
+      row({ date: '2026-05-01', status: 'active' }),
+      row({ date: '2026-13-45', status: 'active' }),  // invalid month + day
+      row({ date: 'garbage', status: 'active' }),
+      row({ date: '', status: 'active' }),  // empty
+    ];
+    const k = computeKpis(rows, 0, new Date('2026-05-18'));
+    expect(k.itemsYtd.value).toBe(1);  // only the valid 2026-05-01 row
+  });
+
   it('handles empty rows', () => {
     const k = computeKpis([], 0, new Date('2026-05-18'));
     expect(k.activeSpend.value).toBe(0);

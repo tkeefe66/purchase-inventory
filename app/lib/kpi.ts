@@ -1,8 +1,11 @@
 import type { MasterRow } from '../../lib/types.js';
 
 export interface Kpis {
+  /** Active items: total spend (lifetime) and delta vs same calendar month last year. */
   activeSpend: { value: number; delta: number };
+  /** Items added this year through today, and delta vs same period last year. */
   itemsYtd: { value: number; delta: number };
+  /** Unresolved Needs Review rows. Passed through; no delta. */
   needsReview: { value: number };
 }
 
@@ -26,8 +29,11 @@ export function computeKpis(rows: MasterRow[], needsReviewCount: number, now: Da
   );
   const activeSpendDelta = thisMonthSpend - lastYearSameMonthSpend;
 
-  // Items YTD: rows dated in current year, excluding `excluded` status.
-  const ytdRows = rows.filter((r) => r.status !== 'excluded' && inYear(r.date, year));
+  // Items YTD: rows dated in current year up to today's MM/DD, excluding `excluded` status.
+  // Capped at today's doy so both sides of the delta are apples-to-apples.
+  const ytdRows = rows.filter(
+    (r) => r.status !== 'excluded' && inYearUpToDoy(r.date, year, now),
+  );
   const itemsYtd = ytdRows.length;
 
   // YoY delta for items YTD: vs same period of prior year (Jan 1 → today's MM/DD).
@@ -52,7 +58,11 @@ function sum(xs: number[]): number {
 function parseDate(s: string): { y: number; m: number; d: number } | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
   if (!m) return null;
-  return { y: Number(m[1]), m: Number(m[2]), d: Number(m[3]) };
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  return { y, m: mo, d };
 }
 
 function inYear(s: string, year: number): boolean {
@@ -73,6 +83,9 @@ function inYearUpToDoy(s: string, year: number, now: Date): boolean {
   return rowDoy <= nowDoy;
 }
 
+// NOTE: Cumulative table is for non-leap years; Feb 29 maps to doy 60, same as
+// non-leap Mar 1. On the rare Feb-29 `now`, prior-year Mar 1 rows compare equal.
+// Acceptable for a count KPI.
 function dayOfYear(month: number, day: number): number {
   const cumulative = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
   return (cumulative[month - 1] ?? 0) + day;
