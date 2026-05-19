@@ -31,13 +31,18 @@ export function ColumnFilterPopover({ open, onClose, anchor, children }: Props) 
   if (!open || !anchor) return null;
 
   const rect = anchor.getBoundingClientRect();
-  const top = rect.bottom + window.scrollY + 6;
-  const left = rect.left + window.scrollX;
+  // Use position:fixed (viewport coords) so the popover anchors correctly
+  // regardless of any ancestor's positioning context (transforms, relative
+  // wrappers, flex containers). Clamp `left` so the menu can't escape the
+  // right edge of the viewport.
+  const POPOVER_WIDTH = 260;
+  const top = rect.bottom + 6;
+  const left = Math.min(rect.left, window.innerWidth - POPOVER_WIDTH - 12);
 
   return (
     <div
       ref={ref}
-      style={{ position: 'absolute', top, left, width: 260 }}
+      style={{ position: 'fixed', top, left, width: POPOVER_WIDTH }}
       className="z-50 rounded-input border border-border-subtle bg-bg-surface p-3 shadow-popover"
     >
       {children}
