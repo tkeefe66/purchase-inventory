@@ -57,13 +57,22 @@ ledger/                     # current folder name: outdoor-inventory
 │   ├── router.ts                  # Domain router
 │   └── types.ts
 ├── domains/                # Domain-specific code
-│   ├── outdoor/            # ONLY domain implemented in v1
+│   ├── outdoor/            # First domain (Phases 1-5)
 │   │   ├── classifier.ts
 │   │   ├── inventory.ts
 │   │   ├── agent.ts
 │   │   └── integrations/{weather,alltrails,freecamping}.ts
-│   ├── kitchen/            # README stub only until Phase 7+
-│   ├── photography/        # README stub only until Phase 7+
+│   ├── photography/        # Second domain (Phase 7, shipped 2026-05-19)
+│   │   ├── skillTree.ts            # 58 topics, 4 branches × 4 tiers
+│   │   ├── tracks/{operating-camera,seeing,editing,printing}.ts
+│   │   ├── curriculum.ts           # pickNextTopic, computeStatuses, etc.
+│   │   ├── expander.ts             # Sonnet 4.6 /learn + /start
+│   │   ├── grading.ts              # Opus 4.7 vision grading
+│   │   ├── agent.ts                # Free-form chat agent
+│   │   ├── tools.ts                # Tool registry
+│   │   ├── exif.ts                 # exifr wrapper
+│   │   └── classifier|inventory|serialize.ts
+│   ├── kitchen/            # README stub
 │   └── other/              # Catchall for unrouted items
 ├── scripts/                # auth, bootstrap-sheet, import-history (one-time tools)
 ├── tests/                  # vitest; fixtures in tests/fixtures/
@@ -81,7 +90,7 @@ ledger/                     # current folder name: outdoor-inventory
 
 | Topic | Decision |
 |---|---|
-| Tech stack | Node.js 20 + TypeScript 5, vitest, googleapis, cheerio, `@anthropic-ai/sdk`, Next.js, node-telegram-bot-api |
+| Tech stack | Node.js 20 + TypeScript 5, vitest, googleapis, cheerio, `@anthropic-ai/sdk`, Next.js, node-telegram-bot-api. Phase 7 added: `exifr` (EXIF parsing), `marked` (markdown rendering), `suncalc` (golden/blue hour). |
 | Hosting | Railway, three services (cron, bot, web) sharing one repo |
 | Cron | Hourly (`0 * * * *` UTC). Telegram digest only at 19:00 Mountain (audible) — silent on every other hour. Errors trigger an immediate audible Telegram alert regardless of hour. |
 | Storage | Google Sheets (sheet ID in `PLAN.md`); no separate DB in v1 |
@@ -111,11 +120,15 @@ ledger/                     # current folder name: outdoor-inventory
 | Dispersed URL enrichment (added 2026-05-18) | Canonical USFS/BLM agency URLs resolved via Sonnet 4.6 + `web_search` in `lib/dispersed/url-resolver.ts`. **Only `scripts/seed-dispersed.ts` calls it — never the cron.** Cadence: Tom reruns `npm run seed-dispersed` every ~4 months. Persistent cache at `DISPERSED_URL_CACHE_PATH` (default `/data/dispersed-url-cache.json` prod, `./local-data/dispersed-url-cache.json` dev) — canonical results kept forever, `tried-null` honored for 30 days. Interactive cost-confirm prompt at start; bypass via `--yes` / `-y`. Bootstraps from existing snapshot on first run. See DECISIONS.md 2026-05-18. |
 | Camping auto-booking | Flavor A only — Telegram deep-link alert at exact release moment. No headless browser, no stored credentials. |
 | Camping storage | Railway volume at `/data` mounted on both bot + camping-cron services: `camping-index.json`, `camping-trips.json`, `dispersed-snapshot.json`. Plus "Camping Index" sheet tab (user-writable Muted + Notes columns, authoritative for mute state) and "Dispersed Sites" sheet tab (read-only mirror of USFS+BLM+OSM data). |
-| Web UI v1 | Read-only dashboard shipped 2026-05-18 — Next.js 14 App Router at repo root `/app`. Three pages: `/` filterable items table, `/spending` Recharts (4 charts), `/needs-review` parse-failure viewer. HTTP Basic Auth via `middleware.ts` (`WEB_USER` / `WEB_PASSWORD` env vars). Deployed as Web service in Railway Purchase-Inventory project via `railway.web.json`. Live at `web-production-93cbd.up.railway.app`. Editing deferred. |
+| Web UI v1 | Read-only dashboard shipped 2026-05-18 — Next.js 14 App Router at repo root `/app`. Originally three pages (`/`, `/spending`, `/needs-review`); Phase 7 added `/photography` (Skills grid with collapsible branches), `/photography/[topicId]` (topic detail + assignment history), `/photography/assignments` (reverse-chrono history with status filter). Photography sub-pages cache sheet reads for 30s (`unstable_cache`) so nav between pages is snappy. Topic detail has Telegram `tg://msg?text=…` deep-links for `/learn`, `/start`, and `/skip` (when an assignment is active on the topic). Theory / assignment seeds rendered via `marked` from `app/components/markdown.tsx`. HTTP Basic Auth via `middleware.ts` (`WEB_USER` / `WEB_PASSWORD` env vars). Deployed as Web service in Railway Purchase-Inventory project via `railway.web.json`. Live at `web-production-93cbd.up.railway.app`. Editing deferred. |
 | Two tsconfigs | `tsconfig.json` runs Next.js bundler mode (target `app/`, `middleware.ts`, JSX, DOM lib). `tsconfig.node.json` runs NodeNext mode for cron/bot/scripts/tests (`.js` import-suffix convention). `npm run typecheck` runs both. `tsconfig.build.json` extends `tsconfig.node.json` for the production build. |
 | Trails (Phase 4, shipped 2026-05-17) | AllTrails is **not reachable from API consumers** — their MCP is claude.ai-only and the REST API is closed + DataDome-protected. Shipped via OpenStreetMap: `lookup_trail` uses Nominatim full-text search → Overpass-by-OSM-ID for canonical names; `search_trails_nearby` uses Overpass `around:` with quality filters (under-0.5km segments dropped, multi-segment ways deduped by name). Difficulty from `sac_scale` / `mtb:scale` tags. No elevation gain (OSM doesn't carry it) — agent falls back to web_search. See `domains/outdoor/integrations/trails.ts` + DECISIONS.md 2026-05-17. |
 | Maintenance nudges (Phase 5.5, shipped 2026-05-17) | 5 age-threshold rules (boots / sleeping bag / climbing rope / skis / helmets) run monthly on the 1st at 9am MT, piggybacking the email-ingest hourly cron. Matchers look at both `subCategory` AND `itemName` since Tom's sheet uses high-level subcategories ("Footwear", "Sleep System", "Protection"). "Maintenance Acked" sheet tab silences items for 12 months. `/ack-maintenance <6-char-id> [notes]` bot command writes the row. `npm run maintenance-dry` previews what the next tick would send. |
-| Multi-domain in v1 | NO — outdoor only. Other domain stubs are README.md only. |
+| Multi-domain in v1 | Outdoor + Photography. Kitchen still a README stub. |
+| Photography (Phase 7, shipped 2026-05-19) | Full second-domain build. **58 topics** organised as 4 branches × tiers (NOT the spec's 16 flat tracks — see DECISIONS.md 2026-05-19): `operating-camera` (23), `seeing` (11), `editing` (12), `printing` (12). 8 slash commands (`/skills /track /next /learn /start /active /skip /plan`), Claude expander (Sonnet 4.6, time-agnostic assignments + OSM trail tools for location suggestions), EXIF-aware Opus 4.7 **vision grading** against per-assignment rubrics, free-form conversational **photography agent** (web_search + weather + sun-times + trails + curriculum tools), agent-driven 3-question intake for fresh users, read-only **web UI** at `/photography` (Skills grid, topic detail, assignment history). New sheet tabs: `Photography Assignments` + `Photography Progress`. Two new shared infra files: `lib/photographySheets.ts` (sheet I/O) + `lib/integrations/sunTimes.ts` (golden/blue hour). |
+| Photo submissions | **Compressed Photo (normal camera-roll share) is the first-class flow** — not Document/File as originally specced. EXIF is stripped but Opus 4.7 vision grades against the rubric from the image alone; assignments that need settings ask for them in the caption. Document path still works for power users but isn't advertised. See DECISIONS.md 2026-05-19. |
+| Assignment time-bounding | `/start`-generated assignments embed CONDITIONS (e.g. "at golden hour") and named LOCATIONS (via OSM trail tools) but NEVER specific dates / weather / sun-times. Assignments stay reusable indefinitely — the conversational agent handles "is Saturday clear?" separately. |
+| `web_search` allowed-domains | (a) Must contain no duplicates and (b) must not contain Anthropic-blocked hosts (sony.com, reddit.com, youtube.com confirmed blocked as of 2026-05-19). Either violation 400s the FIRST agent call — not just when search runs. Regression test in `tests/domains/photography/tools.test.ts` enforces dedup. |
 
 ---
 
@@ -207,6 +220,9 @@ ledger/                     # current folder name: outdoor-inventory
 | USFS / BLM (ArcGIS REST) | Public-domain, no auth. USFS Recreation Opportunities Layer 0 + BLM Natl Recreation Site Points Layer 4. | **Phase 5 dispersed sites** — replaced iOverlander 2026-05-17 |
 | Next.js Web (Phase 6) | Self-hosted on Railway behind HTTP Basic Auth (`WEB_USER` + `WEB_PASSWORD`). Server Components read sheet directly. | **Phase 6 ✅ shipped 2026-05-18** |
 | Image storage | Railway volume `/data/images/<sha1(itemId)>.<ext>`. Cron `resolveImage` step: email-extract first (REI/Amazon parsers populate `ParsedItem.imageUrl`), Sonnet+`web_search` fallback (`lib/integrations/image-lookup.ts`), persistent cache at `/data/image-url-cache.json`. Web UI: `POST /api/items/[itemId]/image` (Image is the only column writable from the web). `/addgear` photo bytes also persist to the volume; fuzzy-match offers Attach/Replace against existing rows. Backfill via `npm run backfill-images` (Trash-aware Gmail search). `IMAGE_STORAGE_ROOT=/data` env var on web + cron + bot services; volume must be mounted on Web in the Railway dashboard. | **Web UI v1.1 ✅ shipped 2026-05-19** |
+| EXIF parsing | `exifr` npm package (CJS, but its default-import works with both vitest + tsx). `lib/integrations/sunTimes.ts` uses `suncalc` (also CJS — see DECISIONS.md 2026-05-19 about the default-import pattern). | **Phase 7 ✅ shipped 2026-05-19** |
+| Photography agent | Opus 4.7 primary + Sonnet/Haiku fallback chain. Tools: `get_forecast`, `lookup_trail`, `search_trails_nearby` (shared with outdoor), plus `get_sun_times`, `get_active_assignment`, `list_topics`, `get_topic_theory`. Server tool: `web_search` (curated photography-specific allowed-domains list — see "web_search allowed-domains" row above). | **Phase 7 ✅ shipped 2026-05-19** |
+| Vision grading | Opus 4.7 vision call with cached system prompt encoding the verdict rules (all-pass | n-1-of-n-with-non-core-fail = pass; else did_not_pass). JSON output validated by `parseGradingResponse`. JPEG / PNG / WebP / GIF supported; ARW rejected upstream. | **Phase 7 ✅ shipped 2026-05-19** |
 
 **Explicitly NOT building:** Trailforks (AllTrails covers MTB), Surfline / Magic Seaweed (web_search covers surf-related queries), other activity-specific APIs.
 

@@ -1351,6 +1351,95 @@ Decision: when email extraction fails to produce an `imageUrl`, the cron immedia
 
 ---
 
+## 2026-05-19 — Phase 7 shipped: Photography domain (curriculum + grading + agent + web UI)
+
+**Decision:** Photography is the second-domain end-to-end build (after Outdoor). Tom can now `/photo` to switch sticky mode, browse a 58-topic skill tree across 4 branches, get Claude-expanded lessons via `/learn`, get Claude-generated assignments via `/start`, submit photos for Opus 4.7 vision grading against a per-assignment rubric, and chat conversationally with the photography agent (weather, sun times, trails, gear advice). Read-only web UI at `/photography`.
+
+**Why:** Phase 7 of `docs/PLAN.md`. Outdoor was in daily use; the multi-domain architecture worked as designed; photography was the next domain in queue per Tom's actual needs (Sony a6700 + Sigma 18-50 + Sony 70-350 + Epson ET-8550, all freshly purchased for learning).
+
+**Scope shipped:**
+- Skill tree: 58 topics in `domains/photography/tracks/{operating-camera,seeing,editing,printing}.ts`
+- Curriculum runtime: `computeStatuses`, `pickNextTopic`, `generatePlan`, `applyProgressUpdate`
+- 8 slash commands: `/skills`, `/track`, `/next`, `/active`, `/skip`, `/plan`, `/learn`, `/start`
+- Claude expander (Sonnet 4.6 + OSM trail tools, time-agnostic assignments — see related decision below)
+- EXIF (`exifr`) + Opus 4.7 vision grading
+- Free-form photography agent (`web_search`, `get_forecast`, `lookup_trail`, `search_trails_nearby`, `get_sun_times`, `get_active_assignment`, `list_topics`, `get_topic_theory`)
+- Web UI: `/photography` Skills grid, `/photography/[topicId]` detail, `/photography/assignments` history
+- Onboarding: 3-question intake for fresh users (manual-mode confidence / starting topic preference / shooting cadence), driven entirely by agent system prompt
+- Sheet tabs: `Photography Assignments`, `Photography Progress`
+
+**How to apply:** photography work lives in `domains/photography/` and `apps/bot/commands/photography.ts`. Web UI in `app/photography/`. Sheet I/O in `lib/photographySheets.ts`. Photography is unique among domains: it has its own home page (Skills) rather than just filtering the Items table — the Photography link in DOMAINS sidebar routes to `/photography`, not `/?domain=photography`.
+
+---
+
+## 2026-05-19 — Skill tree: 4 branches × tiers (NOT 16 flat tracks)
+
+**Decision:** The photography curriculum is organised as 4 branches (`operating-camera`, `seeing`, `editing`, `printing`), each with 3-4 tiers. The original spec called for 16 flat tracks (per-genre, per-gear, etc.).
+
+**Why:** Tom's intuitive mental model is "the four things you actually do with photography" (operate the camera, see, edit, print). A flat list of 16 tracks dumped everything into one drawer. Tiers within a branch encode "tier 1 unlocks tier 2 unlocks tier 3" without needing every topic to declare full prereq chains, while still allowing per-topic prereq overrides (e.g., `manual-mode` explicitly requires `aperture-priority` + `shutter-priority`).
+
+**Trade-off:** the spec's per-genre tracks (`genre-landscape`, `genre-wildlife`, etc.) became Tier-3 "recipes" inside the `seeing` branch — composable how-to scaffolds (`landscape-recipe`, `wildlife-bird-recipe`, etc.) instead of standalone curricula. Loses the granularity of per-genre branching but gains tighter coupling with composition / light / story fundamentals.
+
+**How to apply:** `domains/photography/skillTree.ts` defines `BranchId = 'operating-camera' | 'seeing' | 'editing' | 'printing'` and `Tier = 1 | 2 | 3 | 4`. `validateSkillTree` enforces no cycles, no cross-branch prereqs, no tier violations. New topics go in the appropriate branch's file under `domains/photography/tracks/`.
+
+---
+
+## 2026-05-19 — Compressed Photo is the first-class submission flow (reversal of spec)
+
+**Decision:** Photo submissions for grading default to Telegram's compressed Photo format (paperclip → Photo/Video, normal camera-roll share). The Document/File path still works (preserves EXIF) but isn't advertised. No nag in the grading reply about "send as Document next time".
+
+**Why:** Spec section ([Phase 7 design doc] "EXIF gotchas") originally said photos must be sent as Document to preserve EXIF, with compressed Photo as the awkward fallback that prompts for manual settings. User testing (Tom: *"i would never send a photo as a document thats insane"*) made clear this was over-engineered. Real users share photos the normal way — from Camera Roll or Photos app. Telegram's compression strips EXIF but the rubric-based grading flow doesn't strictly need EXIF; Opus 4.7 vision can grade composition, light quality, focus, framing, and subject from the image alone. When the assignment specifically needs settings, the assignment text asks Tom to include them in the caption — that's the substitution.
+
+**Trade-off:** without EXIF we can't auto-flag iPhone-shot-instead-of-a6700 cases for compressed Photos (only Documents). Acceptable — gear-mismatch is rare in practice and the rubric still catches obvious misses.
+
+**How to apply:** `apps/bot/commands/photography.ts` no longer appends "send as Document next time" or "include settings in caption next time" footers. `formatStart` / `formatActive` say "Send a photo" not "Submit a photo as a Document". The agent's free-form-critique scope guardrail no longer mentions Documents either.
+
+---
+
+## 2026-05-19 — `did_not_pass` assignments stay "open" (resubmittable)
+
+**Decision:** `getActiveAssignment` returns the most-recently-issued row with status `active`, `submitted`, OR `did_not_pass`. `passed` and `skipped` are terminal — they don't count as open.
+
+**Why:** Per the Phase 7 spec, `did_not_pass` is meant to accept resubmits (retry counter bumps, photo re-grades). The original implementation filtered only `active|submitted`, so once a row was graded as failing, `/skip` and `/active` replied "Nothing active" and re-submitting a photo got "No active assignment" — making the spec's resubmit semantics unreachable.
+
+**Why also degrade gracefully on multiple open rows:** In practice multiple open rows accumulate (interrupted /start, old test data, retry mid-flow). The original strict "throw if > 1 open" was right at /start time (don't create a second active assignment) but wrong at read time (broke every photography command until Tom manually cleaned the sheet). Reads now return the most-recent and log a warning; the strict invariant is enforced at /start.
+
+**How to apply:** `lib/photographySheets.ts:getActiveAssignment` includes `did_not_pass`; returns most-recent on multiple; `console.warn` (not throw) on the multiple case. Tests in `tests/lib/photographySheets.test.ts` cover all three positive cases.
+
+---
+
+## 2026-05-19 — Assignment generation is location/time-agnostic (Claude expander rules)
+
+**Decision:** When `/start` calls the Claude expander to generate assignment text + rubric, the expander MAY embed timeless CONDITIONS (e.g. "at golden hour") and timeless LOCATIONS (named trails / overlooks via `search_trails_nearby` and `lookup_trail` tools) but MUST NOT embed specific dates, current weather, or sun-times for specific dates. The agent's conversational interface handles "is Saturday clear?" / "what time is sunset tonight?" with its own tools — assignments stay reusable indefinitely.
+
+**Why:** Tom may start an assignment and not shoot it for two weeks. Anything time-bound goes stale. Trail names + features don't expire. The separation: `/start` = "what skill to develop"; conversational agent = "when/where to shoot today".
+
+**How to apply:** `domains/photography/expander.ts` only registers `search_trails_nearby` and `lookup_trail` as tools — NOT `get_forecast` or `get_sun_times`. The system prompt explicitly forbids dates/forecasts. The photography agent (`domains/photography/agent.ts`) has the full tool set for conversational queries.
+
+---
+
+## 2026-05-19 — `web_search` allowed-domains list: dedupe + screen for Anthropic-blocked hosts
+
+**Decision:** `allowed_domains` arrays passed to Anthropic's `web_search` server tool must (a) contain no duplicates and (b) contain no hosts blocked by Anthropic's crawler. Both rules are hard requirements — violating either 400s the FIRST agent call, not just when search runs.
+
+**Why:** Both surfaced as agent-breaking bugs during Phase 7 testing:
+- A copy-paste typo left `redrivercatalog.com` listed twice in photography tools → "Domain list must not contain duplicates" 400 on every agent message
+- `sony.com` and `reddit.com` are in Anthropic's blocked list (per their crawler robots.txt policy) → "The following domains are not accessible to our user agent" 400. Confirmed `youtube.com` likely also blocked (Google).
+
+**How to apply:** `domains/photography/tools.ts` has a regression test in `tests/domains/photography/tools.test.ts` asserting `allowed_domains` is dup-free. Domain accessibility is harder to test statically (needs a live Anthropic call) — mitigation is to keep the list small + curated and remove any newly-blocked host as Anthropic's policy evolves. Outdoor's list (`domains/outdoor/tools.ts:WEB_SEARCH_ALLOWED_DOMAINS`) is the reference for the "this works" baseline.
+
+---
+
+## 2026-05-19 — `suncalc` is CommonJS — default-import + destructure required
+
+**Decision:** Code that uses `suncalc` (`lib/integrations/sunTimes.ts`) must import via `import suncalc from 'suncalc'; const { getTimes } = suncalc;`, not the natural `import { getTimes } from 'suncalc'`.
+
+**Why:** Vitest's Vite loader is permissive about CJS → ESM named imports and silently translates the named-import form. Node's strict ESM loader (which `tsx` uses for `npm run bot`) rejects it: `SyntaxError: The requested module 'suncalc' does not provide an export named 'getTimes'`. So the test suite passed while production was broken. The bot crashed on startup the first time we tried to run it locally.
+
+**How to apply:** When adding any new CJS-only dependency, prefer default-import + destructure. If the existing test passes but the bot won't start, this is the first suspect. (Other CJS-only deps in the codebase already follow this pattern; the suncalc import was a one-off slip.)
+
+---
+
 ### 2026-05-19 — Item images: `/addgear` is the single Telegram entry point
 
 Decision: do NOT add a separate `/image <itemId>` command. The existing `/addgear` fuzzy-match branch grows new options when a duplicate is detected: **Attach** (matched row has no image) or **Replace** (matched row already has an image), in addition to the pre-existing "add anyway" (create new row) and `/cancel`.
