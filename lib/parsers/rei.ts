@@ -72,7 +72,7 @@ export function parseReiReceiptEmail(html: string): ParsedOrder | null {
       productUrl,
       color: '',
       size: '',
-      imageUrl,
+      ...(imageUrl !== undefined ? { imageUrl } : {}),
     });
   });
 
@@ -127,7 +127,7 @@ export function parseReiEmail(html: string): ParsedOrder | null {
       : '';
 
     const imageUrl = ($img.attr('src') ?? '').trim() || undefined;
-    items.push({ itemName, quantity, price, productUrl, color, size, imageUrl });
+    items.push({ itemName, quantity, price, productUrl, color, size, ...(imageUrl !== undefined ? { imageUrl } : {}) });
   });
 
   // Status / shipment / delivery emails sometimes include the product thumbnail

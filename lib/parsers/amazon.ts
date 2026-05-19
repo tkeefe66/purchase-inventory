@@ -62,7 +62,7 @@ export function parseAmazonShipmentEmail(html: string): ParsedOrder[] | null {
     if (alt.toLowerCase().includes('amazon.com')) return;
     const url = ($(el).closest('a').attr('href') ?? '').trim();
     const src = $(el).attr('src')?.trim() || undefined;
-    productImages.push({ alt, url, imageUrl: src });
+    productImages.push({ alt, url, ...(src !== undefined ? { imageUrl: src } : {}) });
   });
 
   if (productImages.length === 0) return null;
@@ -85,7 +85,7 @@ export function parseAmazonShipmentEmail(html: string): ParsedOrder[] | null {
       quantity: qtyMatches[i]?.[1] ? parseInt(qtyMatches[i]![1]!, 10) : 1,
       price: prices[i] ?? 0,
       productUrl: p.url,
-      imageUrl: p.imageUrl,
+      ...(p.imageUrl !== undefined ? { imageUrl: p.imageUrl } : {}),
     }))
     // Real ordered items always have a price extracted via the typographic
     // pattern. Recommendation/ad items use a different markup (plain "$X.XX")
@@ -114,7 +114,8 @@ Return JSON only:
       "itemName": "<full product title>",
       "quantity": <integer, default 1>,
       "price": <per-item paid price in USD AFTER discounts, or 0 if not visible>,
-      "productUrl": "<canonical amazon.com product URL, or empty>"
+      "productUrl": "<canonical amazon.com product URL, or empty>",
+      "imageUrl": "<src URL of the product thumbnail IMG in this item's row; empty string if no IMG was present>"
     }
   ]
 }
@@ -187,7 +188,7 @@ export async function parseAmazonOrderEmail(
   if (!Array.isArray(parsed.items) || parsed.items.length === 0) return null;
 
   const items: ParsedItem[] = parsed.items
-    .filter((it): it is { itemName: string; quantity?: unknown; price?: unknown; productUrl?: unknown } =>
+    .filter((it): it is { itemName: string; quantity?: unknown; price?: unknown; productUrl?: unknown; imageUrl?: unknown } =>
       typeof it === 'object' && it !== null
       && typeof (it as Record<string, unknown>).itemName === 'string'
       && ((it as Record<string, unknown>).itemName as string).trim().length > 0,
@@ -197,6 +198,7 @@ export async function parseAmazonOrderEmail(
       quantity: Number.isFinite(it.quantity) && (it.quantity as number) > 0 ? Math.floor(it.quantity as number) : 1,
       price: Number.isFinite(it.price) && (it.price as number) >= 0 ? (it.price as number) : 0,
       productUrl: typeof it.productUrl === 'string' ? it.productUrl.trim() : '',
+      ...(typeof it.imageUrl === 'string' && it.imageUrl ? { imageUrl: it.imageUrl } : {}),
     }))
     // Reject items where Haiku grabbed a truncated subject-preview title or
     // couldn't find a productUrl. Without the ASIN, dedup falls back to fuzzy
