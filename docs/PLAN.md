@@ -33,8 +33,7 @@ The architecture is multi-domain from day 1. The *delivery* is single-domain at 
 | **5** | Outdoor + Free-camping integration ✅ shipped 2026-05-15 | ~1 week | Agent answers "where can I camp free near [location]?" + proactive reservation-release nudges (season opener + trip-date + deep-link alert at release moment) |
 | **5.5** | Gear age / maintenance nudges | ~1 day | Monthly cron surfaces items hitting age or maintenance thresholds via Telegram |
 | **6** | Web UI (read-only dashboard, all domains) | ~1 week | Filterable by domain/category/brand/year/status; spend chart |
-| **6.5** | Calendar-aware trip prep (Google Calendar) — *was Phase 3.5; pushed to end of build by Tom 2026-05-15* | ~3 days | Cron checks calendar; sends Telegram packing-list nudge before upcoming outdoor events using inventory + weather |
-| **7+ (deferred)** | 2nd domain (Kitchen or Photography), more integrations, web UI editing | n/a | Out of scope until Phase 6.5 is in daily use for ≥1 month |
+| **7+ (deferred)** | 2nd domain (Kitchen or Photography), more integrations, web UI editing | n/a | Out of scope until Phase 6 is in daily use for ≥1 month |
 
 **Hard rule:** do not start Phase 2 until Phase 1 has run unsupervised for 7 days without intervention. An agent grounded in bad data is worse than no agent.
 
@@ -706,42 +705,6 @@ Railway service for `apps/web/`, separate from cron and bot.
 
 ---
 
-## Phase 6.5: Calendar-aware trip prep
-
-> *Was originally Phase 3.5. Moved to the end of the build order by Tom 2026-05-15 — wants the agent feature set (Weather, AllTrails, Free camping, Maintenance, Web UI) shipped before proactive calendar nudges.*
-
-**Outcome:** A new daily cron task reads Tom's Google Calendar, identifies upcoming outdoor events, and proactively sends a Telegram packing-list nudge that combines calendar + weather + inventory.
-
-This is one of the features that uniquely justifies building the custom system over a Claude Project — a Project can't run scheduled background tasks against your calendar.
-
-### Task 6.5.1: Calendar client
-
-**Files:** `lib/calendar.ts`
-
-**Responsibilities:**
-- Authenticate using existing Google OAuth refresh token (Calendar API scope must be added — `https://www.googleapis.com/auth/calendar.readonly`)
-- `getUpcomingEvents(days: number): CalendarEvent[]` — events within next N days
-- `classifyAsOutdoor(event): boolean` — heuristic on title/description/location keywords (hike, ski, climb, trip, camping, MTB, Yosemite, etc.); fall back to Claude classification if heuristic is low-confidence
-
-**Note:** OAuth scope expansion requires re-running `scripts/auth.ts` once to mint a new refresh token covering Calendar.
-
-### Task 6.5.2: Trip-prep nudge job
-
-**Files:** `apps/cron/trip-prep.ts` (new), wire into `apps/cron/index.ts`
-
-**Behavior:**
-- Runs once per day (separate cron entry from the email-ingest cron, or same cron with a flag)
-- Fetches calendar events in next 5 days
-- For each outdoor event: looks up forecast for the location, queries inventory for relevant gear by activity, asks Claude to compose a packing-list message
-- Sends one Telegram message per event, with the event name + date + forecast summary + suggested items
-- De-dupes — doesn't send the same nudge twice (track sent-events in a small state file or sheet tab)
-
-### Task 6.5.3: Acceptance test
-
-Add a real outdoor event to your calendar 2 days out (e.g., "Saturday hike at [location]") → next morning's cron sends a Telegram message with forecast + packing suggestions sourced from inventory. Re-running the cron same day does not re-send.
-
----
-
 ## Phase 7+ (deferred — DO NOT BUILD without explicit go-ahead)
 
 ### 7a. Second domain (Kitchen or Photography)
@@ -833,7 +796,7 @@ Telegram alerts only fire when at least one email is flagged. The audit reads no
 
 These rules exist to prevent the "great architecture, nothing shipped" failure mode. Future Claude sessions: enforce these unless Tom explicitly overrides them in conversation.
 
-1. **Ship one domain end-to-end before starting another.** Outdoor must be at Phase 6 (or Phase 5 if web UI is deferred) before any second-domain work begins.
+1. **Ship one domain end-to-end before starting another.** Outdoor must be at Phase 6 before any second-domain work begins.
 2. **Architecture is multi-domain from day 1; delivery is not.** Don't write Kitchen code "just to have the structure ready" — the structure is `domains/kitchen/README.md` saying "not implemented." That's enough.
 3. **Don't build Phase N+1 features while Phase N hasn't shipped.** No "while we're here" expansions.
 4. **The 7-day soak test is non-negotiable.** Phase 1 must run unsupervised for 7 days before Phase 2 begins.

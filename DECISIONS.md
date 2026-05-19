@@ -1312,6 +1312,21 @@ The `c74c166` "fail-fast on 8 consecutive failures" guard helped, but only kicks
 
 ---
 
+## 2026-05-18 — Phase 6.5 (calendar-aware trip prep) removed from scope
+
+**Decision:** Drop Phase 6.5 entirely. The outdoor v1 build is done at Phase 6.
+
+**Why:** Tom decided he doesn't want the proactive calendar-driven packing-list nudges. The Phase 2.5 `web_search` tool + the existing weather / trails / camping integrations already let the agent answer trip-prep questions on demand. Pushing unsolicited messages from a cron isn't a behavior he wants to add.
+
+**Reverses:** the 2026-05-01 entry "Phase 3.5 added: Calendar-aware trip prep" (later renumbered to 6.5 and moved to end of build on 2026-05-15). That entry is preserved as history.
+
+**How to apply:**
+- `lib/calendar.ts`, `apps/cron/trip-prep.ts`, and the `calendar.readonly` OAuth scope expansion are no longer planned. Don't build them.
+- The Phase 7+ gate now reads "Phase 6 in daily use ≥1 month" (was "Phase 6.5 in daily use ≥1 month").
+- Phase 7+ deferred-features list still mentions "proactive features" generally — that bucket remains deferred per Discipline Rule 5 ("No proactive features in v1.5"); calendar nudges are a specific instance now removed permanently rather than postponed.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale

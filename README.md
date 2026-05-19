@@ -2,7 +2,7 @@
 
 Personal purchase-ingest + categorization platform that powers domain-specialist Claude agents. Outdoor first; other domains follow on the same architecture.
 
-> **Status (2026-05-18):** Phases 0-6 of the original outdoor scope are shipped. Email ingest, outdoor agent, weather, trails (OSM Overpass), camping (Rec.gov + USFS+BLM dispersed), monthly gear-maintenance nudges, and a read-only web dashboard are all live. Only Phase 6.5 (calendar-aware trip prep) remains in the original plan. See `docs/PLAN.md` for the full roadmap and `DECISIONS.md` for locked decisions. Read `CLAUDE.md` first if you're an AI assistant working on this repo.
+> **Status (2026-05-18):** Phases 0-6 of the outdoor scope are shipped — the full v1 build. Email ingest, outdoor agent, weather, trails (OSM Overpass), camping (Rec.gov + USFS+BLM dispersed), monthly gear-maintenance nudges, and a read-only web dashboard are all live. Phase 6.5 (calendar-aware trip prep) was removed from scope 2026-05-18 — see `DECISIONS.md`. See `docs/PLAN.md` for the full roadmap and `DECISIONS.md` for locked decisions. Read `CLAUDE.md` first if you're an AI assistant working on this repo.
 
 **Live web dashboard:** https://web-production-93cbd.up.railway.app (HTTP Basic Auth)
 
