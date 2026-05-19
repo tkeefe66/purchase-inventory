@@ -80,6 +80,7 @@ const HEADERS = [
   'Type',
   'Reasoning',
   'Notes',
+  'Image',
 ] as const;
 
 async function readHeaderRow(
@@ -152,6 +153,7 @@ export async function readMasterRows(
         type: itemType,
         reasoning: getCell(row, map, 'Reasoning'),
         notes: getCell(row, map, 'Notes'),
+        image: getCell(row, map, 'Image'),
       };
     });
 }
@@ -414,6 +416,7 @@ const FIELD_TO_HEADER: ReadonlyMap<keyof MasterRow, string> = new Map([
   ['type', 'Type'],
   ['reasoning', 'Reasoning'],
   ['notes', 'Notes'],
+  ['image', 'Image'],
 ]);
 
 export async function updateRowFields(

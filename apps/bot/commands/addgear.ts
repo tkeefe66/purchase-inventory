@@ -242,6 +242,7 @@ function rowFromDraft(draft: PartialDraft, today: string, orderId: string): Mast
     type: draft.type,
     reasoning: draft.reasoning || 'captured via /addgear photo',
     notes: '',
+    image: '',
   };
 }
 

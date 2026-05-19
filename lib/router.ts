@@ -54,5 +54,6 @@ export async function routeItem(
     type: classification.type,
     reasoning: classification.reasoning,
     notes: '',
+    image: '',
   };
 }

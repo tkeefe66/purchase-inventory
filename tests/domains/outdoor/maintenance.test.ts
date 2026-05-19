@@ -10,7 +10,7 @@ function row(p: Partial<MasterRow>): MasterRow {
     color: '', size: '', qty: 1, price: 100,
     source: 'REI', orderId: '',
     status: 'active', domain: 'Outdoor', productUrl: '', type: 'Gear',
-    reasoning: '', notes: '',
+    reasoning: '', notes: '', image: '',
     ...p,
   };
 }

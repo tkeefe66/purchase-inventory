@@ -65,6 +65,13 @@ export interface MasterRow {
    * Empty by default; never written by parsers or classifiers.
    */
   notes: string;
+  /**
+   * URL path (web-relative, leading slash) to the stored product image —
+   * e.g. `/images/<id>.jpg` — or empty string when no image has been
+   * resolved. The web service serves these from the Railway `/data/images/`
+   * mount via its route handler.
+   */
+  image: string;
 }
 
 /**

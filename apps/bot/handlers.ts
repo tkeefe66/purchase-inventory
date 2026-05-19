@@ -116,6 +116,7 @@ async function handleLog(chatId: string, args: string, deps: HandlerDeps): Promi
     type: draft.type,
     reasoning: '',
     notes: '',
+    image: '',
   };
   deps.pendingActions.set(chatId, { type: 'log-append', row });
   return [

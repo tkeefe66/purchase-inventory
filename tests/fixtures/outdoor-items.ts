@@ -19,6 +19,7 @@ export const FIXTURE_THERMAREST: MasterRow = {
   type: 'Gear',
   reasoning: 'Sleeping pad for backpacking',
   notes: '',
+  image: '',
 };
 
 export const FIXTURE_SALOMON: MasterRow = {
@@ -40,6 +41,7 @@ export const FIXTURE_SALOMON: MasterRow = {
   type: 'Gear',
   reasoning: '',
   notes: '',
+  image: '',
 };
 
 export const FIXTURE_NO_BRAND: MasterRow = {
@@ -61,6 +63,7 @@ export const FIXTURE_NO_BRAND: MasterRow = {
   type: 'Gear',
   reasoning: '',
   notes: '',
+  image: '',
 };
 
 export const FIXTURE_RETIRED: MasterRow = {

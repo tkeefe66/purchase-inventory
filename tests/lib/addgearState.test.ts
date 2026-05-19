@@ -63,6 +63,7 @@ describe('AddgearStateStore', () => {
       type: 'Gear',
       reasoning: 'captured via /addgear photo',
       notes: '',
+      image: '',
     };
     store.set('chat-1', { kind: 'awaiting-confirm', row });
     const step = store.peek('chat-1');
