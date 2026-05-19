@@ -22,9 +22,29 @@ export const OPERATING_CAMERA_TOPICS: readonly Topic[] = [
     prereqs: [],
     description: 'How aperture, shutter speed, and ISO combine to produce a correctly exposed image — and the trade-offs each one forces.',
     theorySeed:
-      'Three controls determine exposure: aperture (lens opening; smaller f-number = more light + shallower depth of field), shutter speed (how long the sensor sees light; slower = more light + motion blur), and ISO (sensor amplification; higher = more light + more noise). Cover stops as the unit of light — each stop doubles or halves exposure, and all three are measured in stops so trades are intuitive (close aperture one stop = double shutter time, same exposure). The internalised lesson is that these three are NOT independent: moving one corner of the triangle forces movement at another to hold exposure constant.',
+      `Three controls determine exposure:
+
+- **Aperture** — lens opening; smaller f-number = more light + shallower depth of field
+- **Shutter speed** — how long the sensor sees light; slower = more light + motion blur
+- **ISO** — sensor amplification; higher = more light + more noise
+
+The unit of light is the **stop**. Each stop doubles or halves exposure, and all three controls are measured in stops so trades are intuitive — close aperture one stop = double shutter time = same exposure.
+
+The internalised lesson: these three are NOT independent. *Moving one corner of the triangle forces movement at another* to hold exposure constant.`,
     assignmentSeed:
-      'Without leaving the house, take three photographs of the same subject (a houseplant, mug, or window view) on the a6700 in manual mode: one prioritising depth of field, one prioritising motion freeze, one prioritising low ISO. For each, write down all three settings and explain in one sentence which corner of the triangle was the priority and what was traded off. Rubric: correct exposure across all three (core), three visibly different stylistic choices (core), clear reasoning per image (non-core).',
+      `Without leaving the house, take three photographs of the **same subject** (a houseplant, mug, or window view) on the a6700 in manual mode:
+
+1. One prioritising **depth of field**
+2. One prioritising **motion freeze**
+3. One prioritising **low ISO**
+
+For each, write down all three settings and explain in one sentence which corner of the triangle was the priority and what was traded off.
+
+**Rubric:**
+
+- Correct exposure across all three *(core)*
+- Three visibly different stylistic choices *(core)*
+- Clear reasoning per image *(non-core)*`,
   },
   {
     id: 'operating-camera.aperture-priority',

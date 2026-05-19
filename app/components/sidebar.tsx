@@ -42,9 +42,6 @@ export function Sidebar() {
         {DOMAINS.map((d) => (
           <DomainLink key={d.slug} {...d} onClick={() => setOpen(false)} />
         ))}
-        <Section title="Photography" />
-        <NavLink href="/photography" label="Skills" onClick={() => setOpen(false)} />
-        <NavLink href="/photography/assignments" label="Assignments" onClick={() => setOpen(false)} />
         <Section title="Everything" />
         <NavLink href="/" label="All items" onClick={() => setOpen(false)} clearDomain />
         <NavLink href="/spending" label="Spending" onClick={() => setOpen(false)} />
@@ -85,10 +82,17 @@ function DomainLink({
   const search = useSearchParams();
   const pathname = usePathname();
   const currentDomain = search.get('domain') ?? '';
-  const isActive = pathname === '/' && currentDomain === slug;
+
+  // Photography has a dedicated home (Skills page). Other domains link into
+  // the filtered items table on the home page.
+  const href = slug === 'photography' ? '/photography' : `/?domain=${slug}`;
+  const isActive = slug === 'photography'
+    ? pathname.startsWith('/photography')
+    : (pathname === '/' && currentDomain === slug);
+
   return (
     <Link
-      href={`/?domain=${slug}`}
+      href={href}
       onClick={onClick}
       className={`flex items-center gap-2 rounded-chip px-2 py-1.5 text-[13px] ${
         isActive

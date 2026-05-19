@@ -45,9 +45,13 @@ export default async function AssignmentsPage({ searchParams }: PageProps) {
     <div className="relative overflow-hidden px-4 py-6 md:px-7">
       <div className="pointer-events-none absolute -right-20 -top-20 h-[280px] w-[280px] rounded-full bg-blob-gradient opacity-[0.18] blur-[40px]" />
       <div className="relative">
-        <div className="text-[11px] uppercase tracking-[0.05em] text-text-muted">
-          <Link href="/photography" className="hover:text-text-secondary">Photography</Link>
-        </div>
+        <Link
+          href="/photography"
+          className="inline-flex items-center gap-1 rounded-chip border border-border-subtle bg-bg-surface px-2.5 py-1 text-[12px] text-text-secondary hover:text-text-primary"
+        >
+          ← Skills
+        </Link>
+        <div className="mt-3 text-[11px] uppercase tracking-[0.05em] text-text-muted">Photography</div>
         <h1 className="mt-1 text-[26px] font-bold tracking-[-0.02em] text-text-primary">Assignments</h1>
         <p className="text-[13px] text-text-secondary">
           {allAssignments.length} total ·{' '}

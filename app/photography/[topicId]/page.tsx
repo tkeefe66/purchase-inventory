@@ -8,6 +8,7 @@ import {
 } from '../../../domains/photography/skillTree.js';
 import { computeStatuses, type ProgressEntry } from '../../../domains/photography/curriculum.js';
 import type { AssignmentRow, ProgressRow } from '../../../lib/photographySheets.js';
+import { Markdown } from '../../components/markdown';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,6 +61,9 @@ export default async function TopicPage({ params }: PageProps) {
   const myAssignments = allAssignments
     .filter((a) => a.topicId === topic.id)
     .sort((a, b) => (b.dateIssued || '').localeCompare(a.dateIssued || ''));
+  const activeOnThisTopic = myAssignments.find(
+    (a) => a.status === 'active' || a.status === 'submitted',
+  );
 
   const prereqStatuses = topic.prereqs.map((p) => {
     const prereq = getTopicById(p);
@@ -79,9 +83,14 @@ export default async function TopicPage({ params }: PageProps) {
     <div className="relative overflow-hidden px-4 py-6 md:px-7">
       <div className="pointer-events-none absolute -right-20 -top-20 h-[280px] w-[280px] rounded-full bg-blob-gradient opacity-[0.18] blur-[40px]" />
       <div className="relative max-w-4xl">
-        <div className="text-[11px] uppercase tracking-[0.05em] text-text-muted">
-          <Link href="/photography" className="hover:text-text-secondary">Photography</Link>
-          {' · '}{branchLabel.emoji} {branchLabel.name}{' · '}Tier {topic.tier}
+        <Link
+          href="/photography"
+          className="inline-flex items-center gap-1 rounded-chip border border-border-subtle bg-bg-surface px-2.5 py-1 text-[12px] text-text-secondary hover:text-text-primary"
+        >
+          ← Skills
+        </Link>
+        <div className="mt-3 text-[11px] uppercase tracking-[0.05em] text-text-muted">
+          {branchLabel.emoji} {branchLabel.name}{' · '}Tier {topic.tier}
         </div>
         <h1 className="mt-1 text-[26px] font-bold tracking-[-0.02em] text-text-primary">{topic.name}</h1>
         <p className="text-[13px] text-text-secondary">{topic.description}</p>
@@ -98,7 +107,15 @@ export default async function TopicPage({ params }: PageProps) {
           >
             📖 Read theory in Telegram
           </a>
-          {allPrereqsMet ? (
+          {activeOnThisTopic ? (
+            <a
+              href={`tg://msg?text=${tgEncode('/skip')}`}
+              className="rounded-input border border-border-subtle bg-bg-surface px-3 py-2 text-[13px] text-text-secondary hover:bg-chip-active hover:text-text-primary"
+              title="Skip the active assignment for this topic"
+            >
+              ⊘ Skip assignment
+            </a>
+          ) : allPrereqsMet ? (
             <a
               href={`tg://msg?text=${tgEncode(`/start ${topic.id}`)}`}
               className="rounded-input bg-accent-gradient px-3 py-2 text-[13px] font-semibold text-text-primary shadow-accent-glow hover:brightness-110"
@@ -140,9 +157,9 @@ export default async function TopicPage({ params }: PageProps) {
           <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-text-muted">
             Theory seed
           </h2>
-          <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-text-secondary">{topic.theorySeed}</p>
+          <Markdown text={topic.theorySeed} />
           <p className="mt-3 text-[11px] text-text-muted">
-            This is the scaffold the lesson is built from. Run <code>/learn {topic.id}</code> in Telegram for the
+            This is the scaffold the lesson is built from. Run <code className="rounded bg-bg-base px-1 py-0.5">/learn {topic.id}</code> in Telegram for the
             Claude-expanded version grounded in your gear.
           </p>
         </section>
@@ -152,9 +169,9 @@ export default async function TopicPage({ params }: PageProps) {
           <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-text-muted">
             Assignment seed
           </h2>
-          <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-text-secondary">{topic.assignmentSeed}</p>
+          <Markdown text={topic.assignmentSeed} />
           <p className="mt-3 text-[11px] text-text-muted">
-            <code>/start {topic.id}</code> generates the actual assignment + rubric from this scaffold using Claude.
+            <code className="rounded bg-bg-base px-1 py-0.5">/start {topic.id}</code> generates the actual assignment + rubric from this scaffold using Claude.
           </p>
         </section>
 
