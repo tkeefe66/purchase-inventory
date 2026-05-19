@@ -86,6 +86,10 @@ async function main(): Promise<void> {
   const vocab = await buildVocab(sheets, env.spreadsheetId);
   const classify = createClassifier({ vocab, anthropic });
 
+  const estimatedCost = (otherRows.length * 0.0008).toFixed(2);
+  console.log(`\nAbout to send up to ${otherRows.length} Haiku classification calls.`);
+  console.log(`Estimated cost: ~$${estimatedCost} (${otherRows.length} × $0.0008/call with prompt caching).\n`);
+
   console.log(`Reclassifying ${otherRows.length} rows via Haiku...\n`);
 
   interface Candidate {
@@ -95,17 +99,32 @@ async function main(): Promise<void> {
     cls: Classification;
   }
 
+  const skipped: Array<{ rowIndex: number; itemName: string; error: string }> = [];
   const candidates: Candidate[] = [];
   let processed = 0;
   for (const { row, rowIndex } of otherRows) {
-    const cls = await classify({ itemName: row.itemName, source: row.source });
-    if (cls.domain === 'Photography') {
-      candidates.push({ rowIndex, itemName: row.itemName, existingBrand: row.brand, cls });
+    try {
+      const cls = await classify({ itemName: row.itemName, source: row.source });
+      if (cls.domain === 'Photography') {
+        candidates.push({ rowIndex, itemName: row.itemName, existingBrand: row.brand, cls });
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      skipped.push({ rowIndex, itemName: row.itemName, error: msg });
+      console.log(`  ⚠️  row ${rowIndex} skipped: ${msg.slice(0, 80)}`);
     }
     processed++;
     if (processed % 10 === 0) {
       console.log(`  processed ${processed}/${otherRows.length} (${candidates.length} flagged as Photography so far)`);
     }
+  }
+
+  if (skipped.length > 0) {
+    console.log(`\n⚠️  ${skipped.length} rows skipped due to errors:`);
+    for (const s of skipped.slice(0, 10)) {
+      console.log(`  row ${s.rowIndex}: ${s.itemName} — ${s.error.slice(0, 100)}`);
+    }
+    if (skipped.length > 10) console.log(`  ... and ${skipped.length - 10} more`);
   }
 
   console.log(`\nFound ${candidates.length} rows to reclassify Other → Photography:`);
