@@ -55,4 +55,31 @@ describe('classifyPhotography', () => {
     });
     expect(result.isMatch).toBe(false);
   });
+
+  it('does NOT classify a flashlight as Photography', () => {
+    const result = classifyPhotography({
+      itemName: 'Coast HP7R Rechargeable Flashlight',
+      brand: 'Coast',
+      source: 'Amazon',
+    });
+    expect(result.isMatch).toBe(false);
+  });
+
+  it('does NOT classify an Epson office EcoTank printer as Photography', () => {
+    const result = classifyPhotography({
+      itemName: 'Epson EcoTank ET-2803 All-in-One Printer',
+      brand: 'Epson',
+      source: 'Amazon',
+    });
+    expect(result.isMatch).toBe(false);
+  });
+
+  it('classifies Sony a6700 body (minimal name) as Photography', () => {
+    const result = classifyPhotography({
+      itemName: 'Sony a6700 Body',
+      brand: 'Sony',
+      source: 'Manual',
+    });
+    expect(result.isMatch).toBe(true);
+  });
 });

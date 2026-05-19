@@ -12,9 +12,9 @@ export type ClassifyResult = {
 };
 
 const KEYWORDS_STRONG = [
-  'camera', 'mirrorless', 'dslr', 'lens', 'tripod', 'gimbal', 'flash',
+  'camera', 'mirrorless', 'dslr', 'lens', 'tripod', 'gimbal',
   'speedlight', 'softbox', 'lightroom', 'capture one', 'photoshop',
-  'epson ecotank', 'photo printer', 'photo paper', 'icc profile',
+  'photo printer', 'photo paper', 'icc profile',
   'sd card', 'cf card', 'memory card', 'card reader', 'shutter release',
   'remote release', 'lens hood', 'lens cap', 'lens filter', 'polarizer',
   'cpl filter', 'nd filter', 'uv filter', 'lens cleaning',
@@ -23,7 +23,7 @@ const KEYWORDS_STRONG = [
 ];
 
 const KEYWORDS_BRAND = new Set([
-  'sony alpha', 'sony fe', 'sigma art', 'sigma contemporary', 'sigma sport',
+  'sony alpha', 'sony fe', 'sony a', 'sigma art', 'sigma contemporary', 'sigma sport',
   'tamron', 'rokinon', 'samyang', 'viltrox', 'tt artisan',
   'fujifilm x', 'fuji gfx', 'canon eos', 'canon rf', 'canon ef',
   'nikon z', 'nikon f', 'panasonic lumix', 'olympus om',
