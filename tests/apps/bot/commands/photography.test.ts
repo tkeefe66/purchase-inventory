@@ -1,6 +1,9 @@
 import { describe, test, expect, vi } from 'vitest';
 import {
   handlePhotographyCommand,
+  handleSubmission,
+  checkSubmissionGate,
+  formatGateRejection,
   formatSkills,
   formatTrack,
   formatNext,
@@ -11,6 +14,7 @@ import {
   formatStart,
   parseDurationToTopicCount,
   type PhotographyDeps,
+  type SubmissionInput,
 } from '../../../../apps/bot/commands/photography.js';
 import { getTopicById } from '../../../../domains/photography/skillTree.js';
 import type { ProgressEntry } from '../../../../domains/photography/curriculum.js';
@@ -34,6 +38,12 @@ function makeDeps(overrides: Partial<PhotographyDeps> = {}): PhotographyDeps {
       ],
     })),
     expandLesson: vi.fn(async () => 'Expanded lesson body explaining the topic in 300 words.'),
+    gradePhoto: vi.fn(async () => ({
+      verdict: 'pass' as const,
+      perCriterion: [{ criterion: 'x', result: 'pass' as const, reason: '' }],
+      overallCritique: 'Solid work.',
+      suggestedNextStep: 'Try f/4 next time.',
+    })),
     now: () => NOW,
     ...overrides,
   };
@@ -430,6 +440,162 @@ describe('handlePhotographyCommand: /start', () => {
     );
     expect(out).toMatch(/Couldn't generate the assignment/);
     expect(appendAssignment).not.toHaveBeenCalled();
+    expect(upsertProgress).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Submission flow ──────────────────────────────────────────────────────
+
+function makeSubmission(overrides: Partial<SubmissionInput> = {}): SubmissionInput {
+  return {
+    bytes: Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+    mimeType: 'image/jpeg',
+    fileName: 'IMG_2024.jpg',
+    telegramFileId: 'tg-file-xyz',
+    caption: '',
+    compressed: false,
+    ...overrides,
+  };
+}
+
+describe('checkSubmissionGate', () => {
+  test('passes a valid JPEG with active assignment', () => {
+    expect(checkSubmissionGate(makeSubmission(), activeRow('x.y'))).toEqual({ kind: 'ok' });
+  });
+  test('rejects ARW by mime', () => {
+    expect(checkSubmissionGate(makeSubmission({ mimeType: 'image/x-sony-arw' }), activeRow('x.y')))
+      .toEqual({ kind: 'arw-rejected' });
+  });
+  test('rejects ARW by extension when mime is generic', () => {
+    expect(checkSubmissionGate(makeSubmission({ mimeType: 'application/octet-stream', fileName: 'DSC04738.ARW' }), activeRow('x.y')))
+      .toEqual({ kind: 'arw-rejected' });
+  });
+  test('rejects unsupported mime', () => {
+    expect(checkSubmissionGate(makeSubmission({ mimeType: 'application/pdf' }), activeRow('x.y')))
+      .toEqual({ kind: 'unsupported-mime', mime: 'application/pdf' });
+  });
+  test('reports no-active-assignment when none', () => {
+    expect(checkSubmissionGate(makeSubmission(), null)).toEqual({ kind: 'no-active-assignment' });
+  });
+});
+
+describe('formatGateRejection', () => {
+  test('ARW gets a JPEG hint', () => {
+    expect(formatGateRejection({ kind: 'arw-rejected' })).toMatch(/JPEG export/);
+  });
+  test('unsupported mime mentions the mime', () => {
+    expect(formatGateRejection({ kind: 'unsupported-mime', mime: 'application/pdf' })).toMatch(/application\/pdf/);
+  });
+  test('no-active points to /next', () => {
+    expect(formatGateRejection({ kind: 'no-active-assignment' })).toMatch(/\/next/);
+  });
+});
+
+describe('handleSubmission', () => {
+  test('happy path: grades a JPEG, updates sheet row twice (submitted then passed), bumps progress', async () => {
+    const updateAssignment = vi.fn(async () => undefined);
+    const upsertProgress = vi.fn(async () => undefined);
+    const gradePhoto = vi.fn(async () => ({
+      verdict: 'pass' as const,
+      perCriterion: [{ criterion: 'frames at golden hour', result: 'pass' as const, reason: 'warm light visible' }],
+      overallCritique: 'Beautiful frame.',
+      suggestedNextStep: 'Try one with foreground anchor next time.',
+    }));
+    const deps = makeDeps({
+      getActiveAssignment: vi.fn(async () => activeRow('operating-camera.exposure-triangle')),
+      updateAssignment,
+      upsertProgress,
+      gradePhoto,
+      readProgress: vi.fn(async () => []),
+    });
+    const out = await handleSubmission(makeSubmission({ caption: 'Shot at Chautauqua sunset.' }), deps);
+
+    expect(gradePhoto).toHaveBeenCalledTimes(1);
+    // Two updateAssignment calls: once to mark submitted, once with verdict
+    expect(updateAssignment).toHaveBeenCalledTimes(2);
+    const calls = updateAssignment.mock.calls as unknown as Array<[number, Record<string, unknown>]>;
+    expect(calls[0]![1].status).toBe('submitted');
+    expect(calls[0]![1].submittedPhotoTelegramFileId).toBe('tg-file-xyz');
+    expect(calls[1]![1].status).toBe('passed');
+    expect(calls[1]![1].aiVerdict).toBe('pass');
+    // Progress bumped to completed
+    expect(upsertProgress).toHaveBeenCalledWith(
+      'operating-camera.exposure-triangle',
+      expect.objectContaining({ status: 'completed', assignmentsPassed: 1 }),
+    );
+    expect(out).toContain('PASS');
+    expect(out).toContain('Beautiful frame');
+  });
+
+  test('did_not_pass keeps progress in-progress and bumps fail count', async () => {
+    const updateAssignment = vi.fn(async () => undefined);
+    const upsertProgress = vi.fn(async () => undefined);
+    const gradePhoto = vi.fn(async () => ({
+      verdict: 'did_not_pass' as const,
+      perCriterion: [{ criterion: 'frames at golden hour', result: 'fail' as const, reason: 'midday light' }],
+      overallCritique: 'Light is wrong.',
+      suggestedNextStep: 'Reshoot at sunset.',
+    }));
+    const deps = makeDeps({
+      getActiveAssignment: vi.fn(async () => activeRow('operating-camera.exposure-triangle')),
+      updateAssignment,
+      upsertProgress,
+      gradePhoto,
+      readProgress: vi.fn(async () => []),
+    });
+    const out = await handleSubmission(makeSubmission(), deps);
+    expect(out).toContain('DID NOT PASS');
+    expect(upsertProgress).toHaveBeenCalledWith(
+      'operating-camera.exposure-triangle',
+      expect.objectContaining({ status: 'in-progress', assignmentsFailed: 1 }),
+    );
+  });
+
+  test('rejects ARW with a useful message and doesn\'t call grading', async () => {
+    const gradePhoto = vi.fn();
+    const deps = makeDeps({
+      getActiveAssignment: vi.fn(async () => activeRow('operating-camera.exposure-triangle')),
+      gradePhoto,
+    });
+    const out = await handleSubmission(makeSubmission({ mimeType: 'image/x-sony-arw', fileName: 'DSC.ARW' }), deps);
+    expect(out).toMatch(/RAW/i);
+    expect(gradePhoto).not.toHaveBeenCalled();
+  });
+
+  test('refuses when no active assignment + doesn\'t grade', async () => {
+    const gradePhoto = vi.fn();
+    const deps = makeDeps({
+      getActiveAssignment: vi.fn(async () => null),
+      gradePhoto,
+    });
+    const out = await handleSubmission(makeSubmission(), deps);
+    expect(out).toMatch(/No active assignment/);
+    expect(gradePhoto).not.toHaveBeenCalled();
+  });
+
+  test('compressed Photo path appends "send as Document next time" note', async () => {
+    const deps = makeDeps({
+      getActiveAssignment: vi.fn(async () => activeRow('operating-camera.exposure-triangle')),
+      readProgress: vi.fn(async () => []),
+    });
+    const out = await handleSubmission(makeSubmission({ compressed: true }), deps);
+    expect(out).toMatch(/Send as Document\/File next time/);
+  });
+
+  test('grader failure leaves assignment in "submitted" status (no verdict overwrite)', async () => {
+    const updateAssignment = vi.fn(async () => undefined);
+    const upsertProgress = vi.fn(async () => undefined);
+    const gradePhoto = vi.fn(async () => { throw new Error('claude 529'); });
+    const deps = makeDeps({
+      getActiveAssignment: vi.fn(async () => activeRow('operating-camera.exposure-triangle')),
+      updateAssignment,
+      upsertProgress,
+      gradePhoto,
+      readProgress: vi.fn(async () => []),
+    });
+    const out = await handleSubmission(makeSubmission(), deps);
+    expect(out).toMatch(/Couldn't grade/);
+    expect(updateAssignment).toHaveBeenCalledTimes(1); // only the "submitted" update
     expect(upsertProgress).not.toHaveBeenCalled();
   });
 });

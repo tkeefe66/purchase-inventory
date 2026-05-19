@@ -94,19 +94,19 @@ describe('routeMessage — sticky mode dispatch', () => {
 });
 
 describe('routeDocument', () => {
-  test('delegates to handleDocument', async () => {
+  test('delegates to handleDocument with caption', async () => {
     const handle = vi.fn(async () => 'doc handled') as unknown as RouterDeps['handleDocument'];
     const deps = makeDeps({ handleDocument: handle });
-    const out = await routeDocument('chat-1', 'file-123', 'image/jpeg', 'IMG.jpg', deps);
+    const out = await routeDocument('chat-1', 'file-123', 'image/jpeg', 'IMG.jpg', 'shot wide', deps);
     expect(out).toBe('doc handled');
-    expect(handle).toHaveBeenCalledWith('chat-1', 'file-123', 'image/jpeg', 'IMG.jpg');
+    expect(handle).toHaveBeenCalledWith('chat-1', 'file-123', 'image/jpeg', 'IMG.jpg', 'shot wide');
   });
 
   test('catches throws and returns generic error', async () => {
     const deps = makeDeps({
       handleDocument: vi.fn(async () => { throw new Error('boom'); }) as unknown as RouterDeps['handleDocument'],
     });
-    const out = await routeDocument('chat-1', 'file-123', 'image/jpeg', 'IMG.jpg', deps);
+    const out = await routeDocument('chat-1', 'file-123', 'image/jpeg', 'IMG.jpg', '', deps);
     expect(out).toMatch(/something went wrong|error/i);
   });
 });

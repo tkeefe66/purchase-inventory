@@ -88,6 +88,12 @@ function makeDeps(rows: MasterRow[], overrides: Partial<HandlerDeps> = {}): {
         rubric: [{ criterion: 'c', description: '', is_core: true }],
       })) as unknown as HandlerDeps['photography']['expandAssignment'],
       expandLesson: vi.fn(async () => 'stub lesson') as unknown as HandlerDeps['photography']['expandLesson'],
+      gradePhoto: vi.fn(async () => ({
+        verdict: 'pass',
+        perCriterion: [{ criterion: 'x', result: 'pass', reason: '' }],
+        overallCritique: '',
+        suggestedNextStep: '',
+      })) as unknown as HandlerDeps['photography']['gradePhoto'],
       now: () => '2026-05-19T15:00:00Z',
     },
     ...overrides,

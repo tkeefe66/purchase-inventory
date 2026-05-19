@@ -7,7 +7,7 @@ export interface RouterDeps {
   handleOutdoorAgentMessage: (chatId: string, text: string) => Promise<string>;
   handlePhotographyAgentMessage: (chatId: string, text: string) => Promise<string>;
   handlePhoto: (chatId: string, photoFileId: string, caption: string) => Promise<string | null>;
-  handleDocument: (chatId: string, fileId: string, mimeType: string, fileName: string) => Promise<string>;
+  handleDocument: (chatId: string, fileId: string, mimeType: string, fileName: string, caption: string) => Promise<string>;
   getStickyMode: (chatId: string) => DomainMode;
 }
 
@@ -74,10 +74,11 @@ export async function routeDocument(
   fileId: string,
   mimeType: string,
   fileName: string,
+  caption: string,
   deps: RouterDeps,
 ): Promise<string> {
   try {
-    return await deps.handleDocument(chatId, fileId, mimeType, fileName);
+    return await deps.handleDocument(chatId, fileId, mimeType, fileName, caption);
   } catch (err) {
     console.error(
       `[router] document error from ${chatId}:`,

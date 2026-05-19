@@ -42,8 +42,10 @@ import {
   expandAssignment as expandPhotographyAssignment,
   expandLesson as expandPhotographyLesson,
 } from '../../domains/photography/expander.js';
+import { gradePhoto as gradePhotographyPhoto } from '../../domains/photography/grading.js';
 import { filterToActivePhotography } from '../../domains/photography/inventory.js';
 import { serializeCompact as serializePhotographyCompact } from '../../domains/photography/serialize.js';
+import { handleSubmission as handlePhotographySubmission } from './commands/photography.js';
 
 const CACHE_REFRESH_MS = 15 * 60 * 1000;
 const POLL_TIMEOUT_S = 25;
@@ -51,12 +53,9 @@ const TZ = 'America/Denver';
 const STICKY_MODE_PATH = process.env.STICKY_MODE_PATH ?? '/data/bot-sticky-mode.json';
 
 const PHOTOGRAPHY_PLACEHOLDER =
-  "📸 Photography mode is set, but the photography agent isn't wired yet — that ships in week 2-3 of Phase 7. " +
-  "Use `/outdoor` to switch back.";
-
-const DOC_PHOTOGRAPHY_PLACEHOLDER =
-  "📸 Got your photo as a document (EXIF preserved). Once the photography submission flow is wired " +
-  "(week 2-3 of Phase 7), this will be graded against your active assignment. For now: logged, no action.";
+  "📸 Photography mode is set, but the free-form photography agent isn't wired yet — that ships next sprint. " +
+  "For now use: `/skills`, `/track <branch>`, `/next`, `/learn <id>`, `/start <id>`, `/active`, `/skip`, `/plan <duration>`. " +
+  "Or `/outdoor` to switch back.";
 
 interface Env {
   googleClientId: string;
@@ -238,6 +237,7 @@ async function main(): Promise<void> {
           },
           topic,
         ),
+      gradePhoto: (input) => gradePhotographyPhoto({ anthropic }, input),
       now: () => new Date().toISOString(),
     },
   };
@@ -250,24 +250,67 @@ async function main(): Promise<void> {
       handleAddgearContinuation(chatId, text, handlerDeps),
     handleCampingSelection: (chatId: string, text: string) =>
       handleCampingSelectionContinuation(chatId, text, handlerDeps.camping),
-    handlePhoto: (chatId: string, photoFileId: string, caption: string) =>
-      handlePhoto(chatId, photoFileId, caption, handlerDeps),
+    handlePhoto: async (chatId: string, photoFileId: string, caption: string): Promise<string | null> => {
+      // Compressed Photo from Telegram. Three paths:
+      //   1. "/addgear" caption → outdoor /addgear flow (existing).
+      //   2. Sticky mode = photography → treat as a (EXIF-stripped) submission.
+      //   3. Otherwise → outdoor's "no caption" fallback (handled by routePhoto).
+      if (/^\/addgear\b/i.test(caption.trim())) {
+        return handlePhoto(chatId, photoFileId, caption, handlerDeps);
+      }
+      const mode = stickyMode.get(chatId);
+      if (mode === 'photography') {
+        try {
+          const f = await getFile(telegramCfg, photoFileId);
+          const bytes = await downloadFile(telegramCfg, f.file_path!);
+          return await handlePhotographySubmission(
+            {
+              bytes,
+              mimeType: 'image/jpeg', // Telegram re-encodes compressed Photos as JPEG
+              fileName: '',
+              telegramFileId: photoFileId,
+              caption,
+              compressed: true,
+            },
+            handlerDeps.photography,
+          );
+        } catch (err) {
+          console.error(`[bot] photography submission (compressed) failed for ${chatId}:`, err instanceof Error ? err.message : err);
+          return `Something went wrong handling that photo. The error has been logged.`;
+        }
+      }
+      return handlePhoto(chatId, photoFileId, caption, handlerDeps);
+    },
     handleDocument: async (
       chatId: string,
       fileId: string,
       mimeType: string,
       fileName: string,
+      caption: string,
     ): Promise<string> => {
-      // Photos sent as Document are always treated as photography submissions
-      // (per Phase 7 spec). Until the grading flow is wired in week 2-3, log
-      // the metadata and reply with the placeholder.
       console.log(
         `[bot] document from ${chatId}: file_id=${fileId} mime=${mimeType} name=${fileName.slice(0, 60)}`,
       );
-      if (!/^image\//i.test(mimeType)) {
-        return `Send images only — got mime type \`${mimeType}\`.`;
+      // Per spec: photo-as-Document always routes to photography (the whole
+      // point of sending as Document is to preserve EXIF for grading).
+      try {
+        const f = await getFile(telegramCfg, fileId);
+        const bytes = await downloadFile(telegramCfg, f.file_path!);
+        return await handlePhotographySubmission(
+          {
+            bytes,
+            mimeType,
+            fileName,
+            telegramFileId: fileId,
+            caption,
+            compressed: false,
+          },
+          handlerDeps.photography,
+        );
+      } catch (err) {
+        console.error(`[bot] photography submission (document) failed for ${chatId}:`, err instanceof Error ? err.message : err);
+        return `Something went wrong handling that document. The error has been logged.`;
       }
-      return DOC_PHOTOGRAPHY_PLACEHOLDER;
     },
     getStickyMode: (chatId: string) => stickyMode.get(chatId),
   };
@@ -295,10 +338,11 @@ async function main(): Promise<void> {
         let reply: string;
         if (msg.document) {
           const d = msg.document;
+          const caption = msg.caption ?? '';
           console.log(
-            `[bot] ${chatId} -> [document file_id=${d.file_id} mime=${d.mime_type ?? '?'} name="${(d.file_name ?? '').slice(0, 60)}"]`,
+            `[bot] ${chatId} -> [document file_id=${d.file_id} mime=${d.mime_type ?? '?'} name="${(d.file_name ?? '').slice(0, 60)}" caption="${caption.slice(0, 60)}"]`,
           );
-          reply = await routeDocument(chatId, d.file_id, d.mime_type ?? '', d.file_name ?? '', routerDeps);
+          reply = await routeDocument(chatId, d.file_id, d.mime_type ?? '', d.file_name ?? '', caption, routerDeps);
         } else if (msg.photo && msg.photo.length > 0) {
           const largest = msg.photo[msg.photo.length - 1]!;
           const caption = msg.caption ?? '';

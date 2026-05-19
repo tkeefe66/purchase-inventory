@@ -19,7 +19,19 @@ import type {
   ProgressRow,
   ProgressStatus,
 } from '../../../lib/photographySheets.js';
-import type { ExpandedAssignment } from '../../../domains/photography/expander.js';
+import type { ExpandedAssignment, RubricCriterion } from '../../../domains/photography/expander.js';
+import {
+  extractExif,
+  isLikelyTomsA6700,
+  hasUsableExif,
+  formatSettingsLine,
+  type PhotoExif,
+} from '../../../domains/photography/exif.js';
+import {
+  formatGradingReply,
+  type GradingInput,
+  type GradingResult,
+} from '../../../domains/photography/grading.js';
 import { randomUUID } from 'node:crypto';
 
 // ---------------------------------------------------------------------------
@@ -41,8 +53,25 @@ export interface PhotographyDeps {
   /** Claude-powered expanders for /start and /learn. */
   expandAssignment: (topic: Topic) => Promise<ExpandedAssignment>;
   expandLesson: (topic: Topic) => Promise<string>;
+  /** Claude vision grading — called by handleSubmission. */
+  gradePhoto: (input: GradingInput) => Promise<GradingResult>;
   /** ISO timestamp of "now" — injectable for tests. */
   now: () => string;
+}
+
+export interface SubmissionInput {
+  /** Raw image bytes (already downloaded). */
+  bytes: Uint8Array | Buffer;
+  /** MIME type as reported by Telegram (e.g. "image/jpeg", "image/x-sony-arw"). */
+  mimeType: string;
+  /** File name from Telegram (used for ARW detection when mime is missing). */
+  fileName: string;
+  /** Telegram file_id (persisted on the assignment row for audit). */
+  telegramFileId: string;
+  /** Tom's caption / context — used as user_notes + may carry manual settings. */
+  caption: string;
+  /** True when sent as compressed Photo (EXIF will be stripped). False for Document. */
+  compressed: boolean;
 }
 
 const BRANCH_LABELS: Record<BranchId, { emoji: string; name: string }> = {
@@ -446,6 +475,181 @@ export async function handleStart(args: string, deps: PhotographyDeps): Promise<
   });
 
   return formatStart(topic, expanded);
+}
+
+// ---------------------------------------------------------------------------
+// Submission flow (called from bot index when a photo arrives)
+// ---------------------------------------------------------------------------
+
+const ARW_MIME_RE = /image\/x-(sony-)?arw|image\/arw/i;
+const ARW_EXT_RE = /\.arw$/i;
+
+/**
+ * Decide whether a photo can be graded as-is, refused, or needs a hint.
+ * Pure for testability.
+ */
+export type SubmissionGate =
+  | { kind: 'ok' }
+  | { kind: 'arw-rejected' }
+  | { kind: 'unsupported-mime'; mime: string }
+  | { kind: 'no-active-assignment' };
+
+export function checkSubmissionGate(
+  submission: Pick<SubmissionInput, 'mimeType' | 'fileName'>,
+  activeAssignment: AssignmentRow | null,
+): SubmissionGate {
+  if (ARW_MIME_RE.test(submission.mimeType) || ARW_EXT_RE.test(submission.fileName)) {
+    return { kind: 'arw-rejected' };
+  }
+  if (!/^image\/(jpeg|png|webp|gif)$/i.test(submission.mimeType)) {
+    return { kind: 'unsupported-mime', mime: submission.mimeType };
+  }
+  if (!activeAssignment) return { kind: 'no-active-assignment' };
+  return { kind: 'ok' };
+}
+
+export function formatGateRejection(gate: SubmissionGate): string {
+  if (gate.kind === 'arw-rejected') {
+    return "Can't grade RAW (.ARW) files — they're too large and not supported as vision input. Send a JPEG export from Lightroom (full res is fine; EXIF preserved is best).";
+  }
+  if (gate.kind === 'unsupported-mime') {
+    return `Send a JPEG, PNG, WebP, or GIF. Got \`${gate.mime}\`.`;
+  }
+  if (gate.kind === 'no-active-assignment') {
+    return 'No active assignment to grade against. `/next` to pick one, or `/start <topic-id>` for a specific topic.';
+  }
+  return '';
+}
+
+export async function handleSubmission(
+  input: SubmissionInput,
+  deps: PhotographyDeps,
+): Promise<string> {
+  const active = await deps.getActiveAssignment();
+  const gate = checkSubmissionGate(input, active);
+  if (gate.kind !== 'ok') return formatGateRejection(gate);
+  const assignment = active!; // gate ensures non-null
+
+  // Extract EXIF (returns empty shape on compressed Photo or any parse error).
+  const exif: PhotoExif = await extractExif(input.bytes);
+  const topic = getTopicById(assignment.topicId);
+  const topicName = topic?.name ?? assignment.topicId;
+
+  // Parse the assignment row's rubric back to RubricCriterion shape.
+  let rubric: RubricCriterion[];
+  try {
+    const parsed = JSON.parse(assignment.rubricJson || '[]') as unknown;
+    if (!Array.isArray(parsed)) throw new Error('rubric_json is not an array');
+    rubric = parsed as RubricCriterion[];
+  } catch (err) {
+    console.error(`[photography] active assignment ${assignment.id} has invalid rubric_json:`, err);
+    return `Can\'t grade — the active assignment\'s rubric is corrupted. \`/skip\` and start fresh with \`/start <topic-id>\`.`;
+  }
+
+  // Decide camera/lens for the grading prompt — prefer EXIF, fall back to existing row values.
+  const camera = exif.camera || assignment.camera || '';
+  const lens = exif.lens || assignment.lens || '';
+
+  // Bump retry count if the user is re-submitting on an already-graded row
+  // (status 'did_not_pass' kept open per spec — we re-grade).
+  const isRetry = assignment.status === 'submitted' || assignment.status === 'did_not_pass';
+  const now = deps.now();
+
+  // Mark as submitted before grading so a slow/failed grade leaves an audit trail.
+  await deps.updateAssignment(assignment.rowIndex, {
+    status: 'submitted',
+    dateSubmitted: now,
+    submittedPhotoTelegramFileId: input.telegramFileId,
+    camera,
+    lens,
+    settingsExtracted: JSON.stringify({
+      aperture: exif.aperture,
+      shutterSeconds: exif.shutterSeconds,
+      iso: exif.iso,
+      focalLengthMm: exif.focalLengthMm,
+      focalLength35mmEq: exif.focalLength35mmEq,
+      gpsLat: exif.gpsLat,
+      gpsLng: exif.gpsLng,
+      dateTimeOriginal: exif.dateTimeOriginal,
+    }),
+    userNotes: input.caption,
+    retryCount: isRetry ? assignment.retryCount + 1 : assignment.retryCount,
+  });
+
+  // Grade.
+  let result: GradingResult;
+  try {
+    result = await deps.gradePhoto({
+      assignmentText: assignment.assignmentText,
+      rubric,
+      camera,
+      lens,
+      exif: hasUsableExif(exif) ? exif : null,
+      manualSettings: input.caption,
+      userNotes: input.caption,
+      imageBytes: input.bytes,
+      imageMimeType: input.mimeType,
+    });
+  } catch (err) {
+    console.error(`[photography] gradePhoto failed for assignment ${assignment.id}:`, err instanceof Error ? err.message : err);
+    // Leave the row in 'submitted' status — user can re-submit or /skip.
+    return `Couldn\'t grade the photo right now (Claude error). The submission is on record — try again in a minute by re-sending the photo, or \`/active\` to see what you submitted.`;
+  }
+
+  // Persist verdict + critique + per-criterion JSON.
+  await deps.updateAssignment(assignment.rowIndex, {
+    status: result.verdict === 'pass' ? 'passed' : 'did_not_pass',
+    dateGraded: now,
+    aiVerdict: result.verdict === 'pass' ? 'pass' : 'did_not_pass',
+    aiCritique: result.overallCritique,
+    perCriterionJson: JSON.stringify(result.perCriterion),
+  });
+
+  // Update Progress tab: pass → completed; fail → in-progress + counter bump.
+  const progRows = await deps.readProgress();
+  const current = progRows.find((r) => r.topicId === assignment.topicId);
+  const entry: ProgressEntry | null = current
+    ? {
+        topicId: current.topicId,
+        status: current.status,
+        lastActivityAt: current.lastActivityAt,
+        assignmentsPassed: current.assignmentsPassed,
+        assignmentsFailed: current.assignmentsFailed,
+        theoryLastReadAt: current.theoryLastReadAt,
+      }
+    : null;
+  const event = result.verdict === 'pass'
+    ? { kind: 'assignment-passed' as const }
+    : { kind: 'assignment-failed' as const };
+  const nextEntry = applyProgressUpdate(entry, assignment.topicId, event, now);
+  await deps.upsertProgress(assignment.topicId, {
+    status: nextEntry.status,
+    lastActivityAt: nextEntry.lastActivityAt,
+    assignmentsPassed: nextEntry.assignmentsPassed,
+    assignmentsFailed: nextEntry.assignmentsFailed,
+    theoryLastReadAt: nextEntry.theoryLastReadAt,
+  });
+
+  // Build the user-facing reply. Prepend EXIF / gear notes when relevant.
+  const noteLines: string[] = [];
+  if (input.compressed) {
+    noteLines.push(
+      '_Note: photo was sent compressed (EXIF stripped). Send as Document/File next time so I can grade your settings too._',
+    );
+  } else if (!hasUsableExif(exif) && !input.caption.trim()) {
+    noteLines.push(
+      '_Note: no EXIF found in this file. Include settings in your caption next time (e.g. "a6700 / Sigma 18-50 / f/8 / 1/250 / ISO 200")._',
+    );
+  }
+  const gearCheck = isLikelyTomsA6700(exif);
+  if (gearCheck === false) {
+    noteLines.push(
+      `_Note: EXIF says this was shot on \`${exif.camera}\`, not your a6700. Grade still applies to the rubric, but assignments are for your a6700._`,
+    );
+  }
+
+  const reply = formatGradingReply(result, topicName);
+  return noteLines.length > 0 ? `${noteLines.join('\n')}\n\n${reply}` : reply;
 }
 
 // ---------------------------------------------------------------------------
