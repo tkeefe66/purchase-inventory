@@ -6,6 +6,15 @@ import type { PhotoExtraction } from '../../../lib/parsers/photo.js';
 import type { ProductCandidate } from '../../../lib/parsers/product-lookup.js';
 import type { Classification } from '../../../lib/classifier.js';
 
+// Mock saveItemImage at the module level so tests don't touch the filesystem.
+vi.mock('../../../lib/integrations/image-storage.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../../lib/integrations/image-storage.js')>();
+  return {
+    ...original,
+    saveItemImage: vi.fn(async () => ({ ok: true as const, path: '/images/abc123def456.jpg' })),
+  };
+});
+
 function makeDeps(overrides: Partial<AddgearDeps> = {}): AddgearDeps {
   const addgearState = new AddgearStateStore({ ttlMs: 5 * 60 * 1000 });
   const pendingActions = new PendingActionStore({ ttlMs: 5 * 60 * 1000 });
@@ -13,7 +22,10 @@ function makeDeps(overrides: Partial<AddgearDeps> = {}): AddgearDeps {
     addgearState,
     pendingActions,
     today: () => '2026-05-14',
-    downloadPhoto: vi.fn(async (_fileId: string) => Buffer.from('FAKE')),
+    downloadPhoto: vi.fn(async (_fileId: string) => ({
+      bytes: Buffer.from('FAKE'),
+      mediaType: 'image/jpeg' as const,
+    })),
     extractFromPhoto: vi.fn(async (_buf: Buffer, _caption: string): Promise<PhotoExtraction | null> => ({
       brand: 'Patagonia',
       itemName: 'Houdini Jacket',
@@ -216,6 +228,36 @@ describe('continueAddgear — confirm, correct, cancel', () => {
     expect(reply).toMatch(/cancelled/i);
     expect(deps.addgearState.peek('chat-1')).toBeNull();
     expect(deps.pendingActions.peek('chat-1')).toBeNull();
+  });
+});
+
+describe('startAddgear — image persistence via saveItemImage', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-14T12:00:00Z'));
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  test('row.image is set to the /images/... path when imageBytes are present', async () => {
+    const deps = makeDeps();
+    await startAddgearSkippingPick('chat-1', 'FILE-1', '/addgear ~2018 ~$120', deps);
+    const step = deps.addgearState.peek('chat-1');
+    expect(step?.kind).toBe('awaiting-confirm');
+    if (step?.kind === 'awaiting-confirm') {
+      expect(step.row.image).toMatch(/^\/images\//);
+    }
+  });
+
+  test('row.image is empty string when saveItemImage returns ok:false', async () => {
+    const { saveItemImage: mockSave } = await import('../../../lib/integrations/image-storage.js');
+    vi.mocked(mockSave).mockResolvedValueOnce({ ok: false, error: 'too_large' });
+
+    const deps = makeDeps();
+    await startAddgearSkippingPick('chat-1', 'FILE-2', '/addgear ~2018 ~$120', deps);
+    const step = deps.addgearState.peek('chat-1');
+    if (step?.kind === 'awaiting-confirm') {
+      expect(step.row.image).toBe('');
+    }
   });
 });
 

@@ -24,8 +24,9 @@ import { dispatchCommand, handlePhoto, handleAddgearContinuation, type HandlerDe
 import { extractLogDraft } from './commands/log.js';
 import { startAddgear, continueAddgear } from './commands/addgear.js';
 import { handleCampingSelectionContinuation } from './commands/camping.js';
-import { extractFromPhoto } from '../../lib/parsers/photo.js';
+import { extractFromPhoto, mediaTypeFromPath } from '../../lib/parsers/photo.js';
 import { lookupProduct, fetchProductName, fetchProductInfo } from '../../lib/parsers/product-lookup.js';
+import { DEFAULT_STORAGE_ROOT } from '../../lib/integrations/image-storage.js';
 import { createClassifier } from '../../lib/classifier.js';
 import { routeMessage, routePhoto } from './router.js';
 import { runPipeline } from '../cron/pipeline.js';
@@ -137,8 +138,11 @@ async function main(): Promise<void> {
     addgearInner: {
       downloadPhoto: async (fileId: string) => {
         const f = await getFile(telegramCfg, fileId);
-        const bytes = await downloadFile(telegramCfg, f.file_path!);
-        return bytes;
+        const filePath = f.file_path ?? '';
+        const bytes = await downloadFile(telegramCfg, filePath);
+        const mt = mediaTypeFromPath(filePath);
+        const mediaType = mt === 'image/gif' ? 'image/jpeg' : mt;
+        return { bytes, mediaType };
       },
       extractFromPhoto: (bytes, caption) => extractFromPhoto(anthropic, bytes, caption),
       classify: (input) =>
@@ -148,6 +152,7 @@ async function main(): Promise<void> {
       fetchProductInfo: (url) => fetchProductInfo(anthropic, url),
       listExistingRows: () =>
         cache.getSnapshot().map((r) => ({ brand: r.brand, itemName: r.itemName })),
+      imageStorageRoot: DEFAULT_STORAGE_ROOT,
     },
     camping: {
       // All persistent camping state lives in the sheet (Camping Index +

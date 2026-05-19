@@ -1,6 +1,7 @@
 import type { MasterRow, Domain, ItemType } from './types.js';
 import type { FuzzyMatch } from './dedup.js';
 import type { ProductCandidate } from './parsers/product-lookup.js';
+import type { SupportedMediaType } from './integrations/image-storage.js';
 
 /**
  * Per-chat state for the /addgear capture flow.
@@ -25,6 +26,8 @@ export interface PartialDraft {
   priceAcknowledgedUnknown: boolean;
   productUrl: string;
   imageFileId: string;
+  imageBytes?: Buffer;
+  imageMediaType?: SupportedMediaType;
   domain: Domain;
   category: string;
   subCategory: string;

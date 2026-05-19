@@ -3,23 +3,26 @@ import type { AddgearStateStore, PartialDraft } from '../../../lib/addgearState.
 import type { PendingActionStore } from '../../../lib/pendingActions.js';
 import { fuzzyMatchExisting, type FuzzyCandidateRow } from '../../../lib/dedup.js';
 import type { PhotoExtraction } from '../../../lib/parsers/photo.js';
+import { mediaTypeFromPath } from '../../../lib/parsers/photo.js';
 import type { ProductCandidate, UrlProductInfo } from '../../../lib/parsers/product-lookup.js';
 import type { Classification } from '../../../lib/classifier.js';
 import type { MasterRow } from '../../../lib/types.js';
 import { DOMAIN_VALUES, ITEM_TYPE_VALUES, type Domain, type ItemType } from '../../../lib/types.js';
+import { saveItemImage, type SupportedMediaType, type ImageStorageResult } from '../../../lib/integrations/image-storage.js';
 import { formatLogPreview } from '../preview.js';
 
 export interface AddgearDeps {
   addgearState: AddgearStateStore;
   pendingActions: PendingActionStore;
   today: () => string;
-  downloadPhoto: (fileId: string) => Promise<Buffer>;
+  downloadPhoto: (fileId: string) => Promise<{ bytes: Buffer; mediaType: SupportedMediaType }>;
   extractFromPhoto: (bytes: Buffer, caption: string) => Promise<PhotoExtraction | null>;
   classify: (input: { brand: string; itemName: string }) => Promise<Classification>;
   lookupProduct: (brand: string, itemName: string) => Promise<ProductCandidate[]>;
   fetchProductName: (url: string, brand: string) => Promise<string | null>;
   fetchProductInfo: (url: string) => Promise<UrlProductInfo | null>;
   listExistingRows: () => readonly FuzzyCandidateRow[];
+  imageStorageRoot?: string;
 }
 
 interface CaptionHints {
@@ -222,8 +225,13 @@ function makeHash(parts: readonly string[]): string {
   return createHash('sha256').update(parts.join('|')).digest('hex');
 }
 
-function rowFromDraft(draft: PartialDraft, today: string, orderId: string): MasterRow {
-  return {
+async function rowFromDraft(
+  draft: PartialDraft,
+  today: string,
+  orderId: string,
+  imageStorageRoot: string | undefined,
+): Promise<MasterRow> {
+  const row: MasterRow = {
     year: draft.date ? draft.date.slice(0, 4) : '',
     date: draft.date,
     category: draft.category,
@@ -244,6 +252,22 @@ function rowFromDraft(draft: PartialDraft, today: string, orderId: string): Mast
     notes: '',
     image: '',
   };
+
+  if (draft.imageBytes && draft.imageMediaType) {
+    const itemId = `${orderId}|${draft.productUrl || draft.itemName}`;
+    let saved: ImageStorageResult;
+    try {
+      saved = await saveItemImage(itemId, draft.imageBytes, draft.imageMediaType, imageStorageRoot);
+    } catch (err) {
+      console.warn('[addgear] saveItemImage failed:', err instanceof Error ? err.message : err);
+      saved = { ok: false, error: 'fetch_failed' };
+    }
+    if (saved.ok) {
+      row.image = saved.path;
+    }
+  }
+
+  return row;
 }
 
 function previewRow(row: MasterRow): string {
@@ -299,10 +323,10 @@ export async function startAddgear(
   const captionUrl = urlMatch?.[0];
   const visionCaption = captionUrl ? hints.rest.replace(captionUrl, '').trim() : hints.rest;
 
-  const photoBytes = await deps.downloadPhoto(photoFileId);
+  const { bytes: photoBytes, mediaType: photoMediaType } = await deps.downloadPhoto(photoFileId);
 
   if (captionUrl) {
-    return startAddgearWithUrl(chatId, photoFileId, photoBytes, captionUrl, visionCaption, hints, deps);
+    return startAddgearWithUrl(chatId, photoFileId, photoBytes, photoMediaType, captionUrl, visionCaption, hints, deps);
   }
 
   const extraction = await deps.extractFromPhoto(photoBytes, hints.rest);
@@ -335,6 +359,8 @@ export async function startAddgear(
     priceAcknowledgedUnknown: false,
     productUrl: '',
     imageFileId: photoFileId,
+    imageBytes: photoBytes,
+    imageMediaType: photoMediaType,
     domain: classification.domain,
     category: classification.category,
     subCategory: classification.subCategory,
@@ -374,6 +400,7 @@ async function startAddgearWithUrl(
   chatId: string,
   photoFileId: string,
   photoBytes: Buffer,
+  photoMediaType: SupportedMediaType,
   url: string,
   visionCaption: string,
   hints: CaptionHints,
@@ -419,6 +446,8 @@ async function startAddgearWithUrl(
     priceAcknowledgedUnknown: false,
     productUrl: url,
     imageFileId: photoFileId,
+    imageBytes: photoBytes,
+    imageMediaType: photoMediaType,
     domain: classification.domain,
     category: classification.category,
     subCategory: classification.subCategory,
@@ -426,10 +455,10 @@ async function startAddgearWithUrl(
     reasoning: 'captured via /addgear photo+url',
   };
 
-  return warning + advanceFlow(chatId, draft, deps);
+  return warning + await advanceFlow(chatId, draft, deps);
 }
 
-function advanceFlow(chatId: string, draft: PartialDraft, deps: AddgearDeps): string {
+async function advanceFlow(chatId: string, draft: PartialDraft, deps: AddgearDeps): Promise<string> {
   if (!draft.date && !draft.dateAcknowledgedUnknown) {
     deps.addgearState.set(chatId, { kind: 'awaiting-date', draft });
     return `Got ${draft.brand} ${draft.itemName}. When did you buy it? (e.g. "2018", "12/21/23", or "12-11-21 for $135.15" to give both at once)`;
@@ -453,7 +482,7 @@ function advanceFlow(chatId: string, draft: PartialDraft, deps: AddgearDeps): st
 
   const hash = makeHash([draft.brand, draft.itemName, draft.color, draft.size, String(Date.now())]);
   const orderId = makeOrderId(deps.today(), hash);
-  const row = rowFromDraft(draft, deps.today(), orderId);
+  const row = await rowFromDraft(draft, deps.today(), orderId, deps.imageStorageRoot);
   return parkForConfirm(chatId, row, deps);
 }
 
@@ -490,7 +519,7 @@ export async function continueAddgear(
       }
       step.draft.itemName = candidate.itemName;
       step.draft.productUrl = candidate.productUrl;
-      return advanceFlow(chatId, step.draft, deps);
+      return await advanceFlow(chatId, step.draft, deps);
     }
     if (/^https?:\/\/\S+$/i.test(reply)) {
       step.draft.productUrl = reply;
@@ -499,10 +528,10 @@ export async function continueAddgear(
       if (refined && refined.length > 0) {
         step.draft.itemName = refined;
       }
-      return advanceFlow(chatId, step.draft, deps);
+      return await advanceFlow(chatId, step.draft, deps);
     }
     if (/^skip$/i.test(reply)) {
-      return advanceFlow(chatId, step.draft, deps);
+      return await advanceFlow(chatId, step.draft, deps);
     }
     return hasCandidates
       ? `Pick 1, 2, or 3, paste a full URL (https://...), or reply 'skip' to leave URL blank.`
@@ -530,7 +559,7 @@ export async function continueAddgear(
         }
       }
     }
-    return advanceFlow(chatId, step.draft, deps);
+    return await advanceFlow(chatId, step.draft, deps);
   }
 
   if (step.kind === 'awaiting-price') {
@@ -543,7 +572,7 @@ export async function continueAddgear(
       }
       step.draft.price = n;
     }
-    return advanceFlow(chatId, step.draft, deps);
+    return await advanceFlow(chatId, step.draft, deps);
   }
 
   if (step.kind === 'awaiting-dedup') {
@@ -552,7 +581,7 @@ export async function continueAddgear(
         step.draft.brand, step.draft.itemName, step.draft.color, step.draft.size, String(Date.now()),
       ]);
       const orderId = makeOrderId(deps.today(), hash);
-      const row = rowFromDraft(step.draft, deps.today(), orderId);
+      const row = await rowFromDraft(step.draft, deps.today(), orderId, deps.imageStorageRoot);
       return parkForConfirm(chatId, row, deps);
     }
     return `Reply 'add anyway' to log this as new, or /cancel.`;
