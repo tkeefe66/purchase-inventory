@@ -4,8 +4,15 @@
 
 :root {
   color-scheme: dark;
+  --accent-from: #a78bfa;
+  --accent-to: #f472b6;
 }
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, "Helvetica Neue", sans-serif;
+html, body {
+  background-color: #0f0d1a;
+  color: #fafafa;
 }
+
+/* Hide scrollbars on mobile horizontal scroll-snap rows */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
