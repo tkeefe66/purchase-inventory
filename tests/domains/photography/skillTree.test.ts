@@ -140,6 +140,25 @@ describe('skillTree — Seeing branch (Branch 2)', () => {
   });
 });
 
+describe('skillTree — Editing branch (Branch 3)', () => {
+  test('has 12 topics in editing branch', () => {
+    expect(listByBranch('editing')).toHaveLength(12);
+  });
+
+  test('Tier counts match the outline (4/3/3/2 across editing)', () => {
+    expect(listByTier('editing', 1)).toHaveLength(4);
+    expect(listByTier('editing', 2)).toHaveLength(3);
+    expect(listByTier('editing', 3)).toHaveLength(3);
+    expect(listByTier('editing', 4)).toHaveLength(2);
+  });
+
+  test('Tier 1 entry point is lightroom-classic-setup (only rootless)', () => {
+    const tier1 = listByTier('editing', 1);
+    const rootless = tier1.filter((t) => t.prereqs.length === 0);
+    expect(rootless.map((t) => t.id)).toEqual(['editing.lightroom-classic-setup']);
+  });
+});
+
 describe('getTopicById + listByBranch + listByTier', () => {
   test('getTopicById returns the topic by exact id', () => {
     const t = getTopicById('operating-camera.exposure-triangle');
@@ -149,7 +168,7 @@ describe('getTopicById + listByBranch + listByTier', () => {
     expect(getTopicById('does.not.exist')).toBeNull();
   });
   test('listByBranch returns empty for branches not yet authored', () => {
-    const unwritten: BranchId[] = ['editing', 'printing'];
+    const unwritten: BranchId[] = ['printing'];
     for (const b of unwritten) expect(listByBranch(b)).toEqual([]);
   });
 });

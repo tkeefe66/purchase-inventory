@@ -21,6 +21,7 @@
 
 import { OPERATING_CAMERA_TOPICS } from './tracks/operating-camera.js';
 import { SEEING_TOPICS } from './tracks/seeing.js';
+import { EDITING_TOPICS } from './tracks/editing.js';
 
 export type BranchId = 'operating-camera' | 'seeing' | 'editing' | 'printing';
 
@@ -51,6 +52,7 @@ export interface Topic {
 export const ALL_TOPICS: readonly Topic[] = [
   ...OPERATING_CAMERA_TOPICS,
   ...SEEING_TOPICS,
+  ...EDITING_TOPICS,
 ];
 
 const BY_ID: ReadonlyMap<string, Topic> = new Map(ALL_TOPICS.map((t) => [t.id, t]));
