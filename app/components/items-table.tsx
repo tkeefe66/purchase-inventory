@@ -260,7 +260,7 @@ function Th({
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); if (ref.current) onFilter(ref.current); }}
-            className="text-text-muted transition hover:text-text-primary"
+            className="-my-1 ml-0.5 rounded px-1.5 py-0.5 text-[14px] leading-none text-text-muted transition hover:bg-bg-base hover:text-text-primary"
             aria-label="Filter column"
           >▾</button>
         )}
