@@ -957,7 +957,7 @@ export async function readCampingIndexFromSheet(
 // ---------------------------------------------------------------------------
 //
 // Schema: one row per ack. Tom can also add rows by hand from the sheet UI.
-//   A  Item ID         — stable 6-char hash from domains/outdoor/types.ts
+//   A  Item ID         — stable 6-char hash from lib/itemId.ts
 //   B  Acked At        — ISO timestamp the ack was recorded
 //   C  Notes           — optional free-form ("acked via /ack-maintenance", etc.)
 //
