@@ -27,13 +27,23 @@ import { handleCampingSelectionContinuation } from './commands/camping.js';
 import { extractFromPhoto } from '../../lib/parsers/photo.js';
 import { lookupProduct, fetchProductName, fetchProductInfo } from '../../lib/parsers/product-lookup.js';
 import { createClassifier } from '../../lib/classifier.js';
-import { routeMessage, routePhoto } from './router.js';
+import { routeMessage, routePhoto, routeDocument } from './router.js';
 import { runPipeline } from '../cron/pipeline.js';
 import { createWeatherClient } from '../../lib/integrations/weather.js';
+import { StickyModeStore } from '../../lib/stickyMode.js';
 
 const CACHE_REFRESH_MS = 15 * 60 * 1000;
 const POLL_TIMEOUT_S = 25;
 const TZ = 'America/Denver';
+const STICKY_MODE_PATH = process.env.STICKY_MODE_PATH ?? '/data/bot-sticky-mode.json';
+
+const PHOTOGRAPHY_PLACEHOLDER =
+  "📸 Photography mode is set, but the photography agent isn't wired yet — that ships in week 2-3 of Phase 7. " +
+  "Use `/outdoor` to switch back.";
+
+const DOC_PHOTOGRAPHY_PLACEHOLDER =
+  "📸 Got your photo as a document (EXIF preserved). Once the photography submission flow is wired " +
+  "(week 2-3 of Phase 7), this will be graded against your active assignment. For now: logged, no action.";
 
 interface Env {
   googleClientId: string;
@@ -109,6 +119,13 @@ async function main(): Promise<void> {
   const vocab = await buildVocab(sheets, env.spreadsheetId);
   const classifyFn = createClassifier({ vocab, anthropic });
 
+  const stickyMode = new StickyModeStore({ path: STICKY_MODE_PATH });
+  await stickyMode.load();
+  console.log(`[bot] sticky-mode store loaded from ${STICKY_MODE_PATH}`);
+
+  const handlePhotographyAgentMessage = async (_chatId: string, _text: string): Promise<string> =>
+    PHOTOGRAPHY_PLACEHOLDER;
+
   const agent = new OutdoorAgent({
     cache,
     conversations,
@@ -177,17 +194,39 @@ async function main(): Promise<void> {
       telegramBotToken: undefined,
       telegramChatId: undefined,
     }),
+    stickyMode,
+    handleOutdoorAgentMessage: (chatId: string, text: string) => agent.handleMessage(chatId, text),
+    handlePhotographyAgentMessage,
   };
 
   const routerDeps = {
     dispatchCommand: (chatId: string, text: string) => dispatchCommand(chatId, text, handlerDeps),
-    handleAgentMessage: (chatId: string, text: string) => agent.handleMessage(chatId, text),
+    handleOutdoorAgentMessage: (chatId: string, text: string) => agent.handleMessage(chatId, text),
+    handlePhotographyAgentMessage,
     handleAddgearContinuation: (chatId: string, text: string) =>
       handleAddgearContinuation(chatId, text, handlerDeps),
     handleCampingSelection: (chatId: string, text: string) =>
       handleCampingSelectionContinuation(chatId, text, handlerDeps.camping),
     handlePhoto: (chatId: string, photoFileId: string, caption: string) =>
       handlePhoto(chatId, photoFileId, caption, handlerDeps),
+    handleDocument: async (
+      chatId: string,
+      fileId: string,
+      mimeType: string,
+      fileName: string,
+    ): Promise<string> => {
+      // Photos sent as Document are always treated as photography submissions
+      // (per Phase 7 spec). Until the grading flow is wired in week 2-3, log
+      // the metadata and reply with the placeholder.
+      console.log(
+        `[bot] document from ${chatId}: file_id=${fileId} mime=${mimeType} name=${fileName.slice(0, 60)}`,
+      );
+      if (!/^image\//i.test(mimeType)) {
+        return `Send images only — got mime type \`${mimeType}\`.`;
+      }
+      return DOC_PHOTOGRAPHY_PLACEHOLDER;
+    },
+    getStickyMode: (chatId: string) => stickyMode.get(chatId),
   };
 
   let offset: number | undefined;
@@ -211,7 +250,13 @@ async function main(): Promise<void> {
         }
 
         let reply: string;
-        if (msg.photo && msg.photo.length > 0) {
+        if (msg.document) {
+          const d = msg.document;
+          console.log(
+            `[bot] ${chatId} -> [document file_id=${d.file_id} mime=${d.mime_type ?? '?'} name="${(d.file_name ?? '').slice(0, 60)}"]`,
+          );
+          reply = await routeDocument(chatId, d.file_id, d.mime_type ?? '', d.file_name ?? '', routerDeps);
+        } else if (msg.photo && msg.photo.length > 0) {
           const largest = msg.photo[msg.photo.length - 1]!;
           const caption = msg.caption ?? '';
           console.log(`[bot] ${chatId} -> [photo file_id=${largest.file_id} caption="${caption.slice(0, 60)}"]`);

@@ -15,6 +15,7 @@ import { AddgearStateStore } from '../../lib/addgearState.js';
 import { formatLogPreview } from './preview.js';
 import type { PipelineResult } from '../cron/pipeline.js';
 import { handleCampingCommand, type CampingDeps } from './commands/camping.js';
+import type { StickyModeStore, DomainMode } from '../../lib/stickyMode.js';
 
 const STATUS_CHANGE_COMMANDS: Record<string, Status> = {
   lost: 'lost', sold: 'sold', donated: 'donated', retired: 'retired', broken: 'broken',
@@ -40,6 +41,14 @@ export interface HandlerDeps {
    *  bot returns one formatted reply instead of two messages. */
   runScan: () => Promise<PipelineResult>;
   camping: CampingDeps;
+  /** Per-chat sticky domain mode. Persisted across bot restarts. */
+  stickyMode: StickyModeStore;
+  /** Domain agent invocations. Used by per-message slash overrides
+   *  (`/photo <body>`, `/outdoor <body>`). The router also calls these
+   *  for the sticky-mode fallback, but via routerDeps; the dispatchCommand
+   *  copies here exist so override-form commands can reach the agents too. */
+  handleOutdoorAgentMessage: (chatId: string, text: string) => Promise<string>;
+  handlePhotographyAgentMessage: (chatId: string, text: string) => Promise<string>;
 }
 
 export async function dispatchCommand(chatId: string, text: string, deps: HandlerDeps): Promise<string | null> {
@@ -62,7 +71,35 @@ export async function dispatchCommand(chatId: string, text: string, deps: Handle
   ) {
     return handleCampingCommand({ name, args }, deps.camping, chatId);
   }
+  if (name === 'photo' || name === 'outdoor') return handleDomainCommand(chatId, name, args, deps);
+  if (name === 'who') return handleWho(chatId, deps);
   return null;
+}
+
+async function handleDomainCommand(
+  chatId: string,
+  domain: 'photo' | 'outdoor',
+  args: string,
+  deps: HandlerDeps,
+): Promise<string> {
+  const mode: DomainMode = domain === 'photo' ? 'photography' : 'outdoor';
+  // With a body, this is a per-message override — route the body to that
+  // domain's agent without touching sticky mode.
+  if (args) {
+    return mode === 'photography'
+      ? deps.handlePhotographyAgentMessage(chatId, args)
+      : deps.handleOutdoorAgentMessage(chatId, args);
+  }
+  // Bare form sets sticky mode.
+  await deps.stickyMode.set(chatId, mode);
+  return mode === 'photography' ? `📸 Photography mode.` : `🏕 Outdoor mode.`;
+}
+
+function handleWho(chatId: string, deps: HandlerDeps): string {
+  const mode = deps.stickyMode.get(chatId);
+  return mode === 'photography'
+    ? `Current mode: 📸 Photography. Switch with \`/outdoor\`.`
+    : `Current mode: 🏕 Outdoor. Switch with \`/photo\`.`;
 }
 
 const ID_RE = /^[0-9a-z]{6}$/;
