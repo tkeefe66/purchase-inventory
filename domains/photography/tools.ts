@@ -179,20 +179,24 @@ export const TOOL_SCHEMAS = [
 ] as const;
 
 // Web search server tool — photography-focused allowed domains.
+// Anthropic's web_search crawler is blocked by some hosts (sony.com, reddit.com,
+// youtube.com, etc.). Including a blocked domain causes the API to 400 on the
+// FIRST agent call, not just when the search is attempted. So keep this list
+// curated to domains we've verified are accessible.
 const PHOTO_WEB_SEARCH_DOMAINS = [
   // Reviews + tutorials
   'dpreview.com', 'petapixel.com', 'fstoppers.com', 'photographylife.com',
   'kenrockwell.com', 'thephoblographer.com', 'digital-photography-school.com',
-  // Manufacturers + official docs
-  'sony.com', 'sonyalpha.com', 'sigmaphoto.com', 'epson.com', 'epsonprint.com',
-  'helpx.adobe.com', 'adobe.com', 'lightroomqueen.com',
+  // Manufacturers + official docs (Sony's own site blocks Anthropic's UA,
+  // so we link to sonyalpha.com — the third-party Sony-photography hub —
+  // instead.)
+  'sonyalpha.com', 'sigmaphoto.com', 'epson.com',
+  'helpx.adobe.com', 'lightroomqueen.com',
   // Retailers (for gear specs + pricing)
   'bhphotovideo.com', 'adorama.com', 'mpb.com',
   // Paper + print
   'redrivercatalog.com', 'hahnemuhle.com', 'canson-infinity.com', 'ilford.com',
-  'shop.hahnemuehle.com', 'redrivercatalog.com',
-  // Community
-  'reddit.com', 'youtube.com',
+  'shop.hahnemuehle.com',
 ] as const;
 
 export const SERVER_TOOLS = [

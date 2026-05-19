@@ -55,6 +55,13 @@ describe('TOOL_SCHEMAS + SERVER_TOOLS', () => {
       'dpreview.com', 'sigmaphoto.com', 'epson.com', 'helpx.adobe.com',
     ]));
   });
+
+  test('web_search allowed_domains has no duplicates (Anthropic 400s on dups)', () => {
+    const ws = SERVER_TOOLS.find((t) => t.name === 'web_search');
+    const domains = ws?.allowed_domains ?? [];
+    const dups = domains.filter((d, i) => domains.indexOf(d) !== i);
+    expect(dups, `duplicate domains in allowed list: ${dups.join(', ')}`).toEqual([]);
+  });
 });
 
 describe('createTools — list_topics', () => {
