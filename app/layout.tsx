@@ -1,4 +1,5 @@
 import './globals.css';
+import { Suspense } from 'react';
 import { Inter } from 'next/font/google';
 import type { Metadata, Viewport } from 'next';
 import { Sidebar } from './components/sidebar';
@@ -24,7 +25,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${inter.variable} bg-bg-base text-text-primary`}>
       <body className="min-h-screen font-sans">
         <div className="flex min-h-screen">
-          <Sidebar />
+          <Suspense fallback={<aside className="hidden w-[170px] border-r border-border-subtle bg-bg-sidebar md:block" />}>
+            <Sidebar />
+          </Suspense>
           <main className="flex-1 min-w-0">{children}</main>
         </div>
       </body>

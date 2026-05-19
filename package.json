@@ -48,6 +48,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.92.0",
+    "@types/suncalc": "^1.9.2",
     "cheerio": "^1.0.0",
     "chrono-node": "^2.9.1",
     "date-fns": "^4.1.0",
@@ -59,7 +60,8 @@
     "proper-lockfile": "^4.1.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "recharts": "^2.13.3"
+    "recharts": "^2.13.3",
+    "suncalc": "^1.9.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
