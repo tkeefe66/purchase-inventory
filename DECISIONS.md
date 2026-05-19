@@ -1327,6 +1327,42 @@ The `c74c166` "fail-fast on 8 consecutive failures" guard helped, but only kicks
 
 ---
 
+### 2026-05-19 — Item images: store locally vs hotlink retailer CDNs
+
+Decision: download every image to the Railway `/data/images/` volume rather than hotlink retailer CDN URLs (m.media-amazon.com, images.rei.com, etc.).
+
+**Why:** four of the five image sources — manual web upload, `/addgear` photo bytes, AI-resolved arbitrary-domain URLs, and the backfill phase — already need local storage. Hotlinking the remaining two (Amazon + REI parsed-email URLs) would require source-branching in `resolveImage`, expose the web UI to CORS/upstream-rotation issues, and break the read-after-write model that the detail panel depends on. A single storage path is simpler.
+
+**Trade-off:** ~450MB of volume overhead for ~1500 items at ~300KB each, vs. zero-byte hotlink. Well within Railway's allocation. URL stability is no longer a concern once stored.
+
+**How to apply:** all image resolution paths funnel through `lib/integrations/image-storage.ts:saveItemImage` (bytes in hand) or `downloadAndSave` (URL → local copy). The sheet's `Image` column stores the URL path the web service serves (`/images/<sha1>.<ext>`), not the source URL.
+
+---
+
+### 2026-05-19 — Item images: AI lookup runs on every cron ingest (not lazy / not batch)
+
+Decision: when email extraction fails to produce an `imageUrl`, the cron immediately calls `lookupProductImageUrl` (Sonnet 4.6 + `web_search`) during the ingest, downloads the result, and writes it to the sheet on the same pass. No background queue, no lazy-on-view, no manual trigger.
+
+**Why:** keeps the sheet visually complete without a separate backfill queue or a "loading" state in the UI. Tom values "everything has an image" over the cost minimization that on-demand would provide. The lookup only runs when email extraction failed (the minority case for Amazon + REI), so the unit cost is amortized over rows where it's the only option (in-store eReceipts, historical CSV imports).
+
+**Trade-off:** ongoing Sonnet+`web_search` cost. Estimated ~$0.10–$1/day typical, ~$0.50–$2/day during heavy buying. Persistent cache at `/data/image-url-cache.json` (`canonical` forever, `tried-null` 30 days) amortizes repeats for re-classified rows.
+
+**How to apply:** the resolution order in `lib/integrations/resolve-image.ts` is fixed — parsed `imageUrl` → cached lookup → fresh Sonnet call → download → fail-soft to empty string. Don't reorder; don't add a "skip lookup" flag without explicit user direction.
+
+---
+
+### 2026-05-19 — Item images: `/addgear` is the single Telegram entry point
+
+Decision: do NOT add a separate `/image <itemId>` command. The existing `/addgear` fuzzy-match branch grows new options when a duplicate is detected: **Attach** (matched row has no image) or **Replace** (matched row already has an image), in addition to the pre-existing "add anyway" (create new row) and `/cancel`.
+
+**Why:** avoids fragmenting the Telegram-bot command surface; the fuzzy-match dedup machinery already exists in `lib/dedup.ts`; users don't need to memorize / copy item IDs from the web UI. Sending a photo of a thing already in inventory naturally lands at the dedup prompt — the right place to ask "is this the same item?".
+
+**Trade-off:** there's no way via Telegram to attach an image to a specific row when the photo *doesn't* fuzzy-match it (e.g., to attach a stock photo to a row whose name has drifted). Web UI handles that case; sit-down backfill on the dashboard is the recommended path for those.
+
+**How to apply:** dedup carries `image`, `orderId`, and `productUrl` on the matched-row record (`FuzzyMatch` interface in `lib/dedup.ts`). The `awaiting-dedup` state accepts `1`–`9` to attach/replace by candidate index; "add anyway" remains for force-creating a new row. `FuzzyCandidateRow` is now wider — any future caller of `fuzzyMatchExisting` must supply the new fields.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale
