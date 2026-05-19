@@ -184,15 +184,36 @@ describe('getActiveAssignment', () => {
     expect(result!.id).toBe('a1');
   });
 
-  test('throws when more than one active/submitted row exists', async () => {
+  test('returns the most-recent open row when multiple exist (no throw)', async () => {
+    // Multiple open rows happen in practice — old testing data accumulates,
+    // a prior /start gets interrupted, etc. Spec invariant ("one open at a
+    // time") is enforced at /start; for reads we degrade gracefully.
     const rows = [
-      makeRow(ASSIGNMENT_HEADER, { id: 'a1', status: 'active' }),
-      makeRow(ASSIGNMENT_HEADER, { id: 'a2', status: 'submitted' }),
+      makeRow(ASSIGNMENT_HEADER, { id: 'old', status: 'did_not_pass', date_issued: '2026-05-10T00:00:00Z' }),
+      makeRow(ASSIGNMENT_HEADER, { id: 'newer', status: 'active', date_issued: '2026-05-19T00:00:00Z' }),
     ];
     const sheets = mockSheets({ tab: 'assignments', dataRows: rows });
-    await expect(getActiveAssignment(sheets as never, 'sid')).rejects.toThrow(
-      /data invariant violated/i,
-    );
+    const result = await getActiveAssignment(sheets as never, 'sid');
+    expect(result?.id).toBe('newer');
+  });
+
+  test('includes did_not_pass rows as open (resubmittable per spec)', async () => {
+    const rows = [
+      makeRow(ASSIGNMENT_HEADER, { id: 'failed-row', status: 'did_not_pass', date_issued: '2026-05-19T00:00:00Z' }),
+    ];
+    const sheets = mockSheets({ tab: 'assignments', dataRows: rows });
+    const result = await getActiveAssignment(sheets as never, 'sid');
+    expect(result?.id).toBe('failed-row');
+  });
+
+  test('passed and skipped rows are terminal (do NOT count as open)', async () => {
+    const rows = [
+      makeRow(ASSIGNMENT_HEADER, { id: 'p', status: 'passed' }),
+      makeRow(ASSIGNMENT_HEADER, { id: 's', status: 'skipped' }),
+    ];
+    const sheets = mockSheets({ tab: 'assignments', dataRows: rows });
+    const result = await getActiveAssignment(sheets as never, 'sid');
+    expect(result).toBeNull();
   });
 });
 

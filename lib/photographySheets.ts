@@ -222,21 +222,35 @@ export async function readAssignments(
     .filter((r) => r.id !== '');
 }
 
+/**
+ * The currently-open assignment row, if any. "Open" means anything Tom
+ * can still act on: `active` (issued, not yet submitted), `submitted`
+ * (mid-grading), or `did_not_pass` (graded as failing but resubmittable
+ * per spec). `passed` and `skipped` are terminal — they don't count.
+ *
+ * If multiple open rows exist (which can happen after old testing data
+ * accumulates, or if a previous /start was interrupted), return the most
+ * recently issued and log a warning rather than throw — the bot stays
+ * usable, and Tom can clean up the sheet at his leisure. The "at most
+ * one active|submitted" invariant is still enforced at /start time.
+ */
 export async function getActiveAssignment(
   sheets: sheets_v4.Sheets,
   spreadsheetId: string,
 ): Promise<AssignmentRow | null> {
   const rows = await readAssignments(sheets, spreadsheetId);
-  const active = rows.filter(
-    (r) => r.status === 'active' || r.status === 'submitted',
+  const open = rows.filter(
+    (r) => r.status === 'active' || r.status === 'submitted' || r.status === 'did_not_pass',
   );
-  if (active.length === 0) return null;
-  if (active.length > 1) {
-    throw new Error(
-      `Data invariant violated: expected at most one active/submitted assignment, found ${active.length} (ids: ${active.map((r) => r.id).join(', ')})`,
+  if (open.length === 0) return null;
+  if (open.length > 1) {
+    const sorted = [...open].sort((a, b) => (b.dateIssued || '').localeCompare(a.dateIssued || ''));
+    console.warn(
+      `[photographySheets] ${open.length} open assignment rows found (ids: ${open.map((r) => r.id).join(', ')}); returning most recent (${sorted[0]!.id}). Older rows should be marked skipped/passed manually.`,
     );
+    return sorted[0]!;
   }
-  return active[0]!;
+  return open[0]!;
 }
 
 export async function appendAssignment(
