@@ -22,24 +22,21 @@ export interface FilterState {
   price: PriceFilter | undefined;
 }
 
-const MULTI_KEYS = ['status', 'brand', 'category', 'subCategory', 'type', 'year'] as const;
+function getMultiValue(params: URLSearchParams, key: string): string[] {
+  const raw = params.get(key);
+  return raw ? raw.split(',').map((s) => s.trim()).filter(Boolean) : [];
+}
 
 export function parseFilterState(params: URLSearchParams): FilterState {
-  const multi: Record<string, string[]> = {};
-  for (const k of MULTI_KEYS) {
-    const raw = params.get(k);
-    multi[k] = raw ? raw.split(',').map((s) => s.trim()).filter(Boolean) : [];
-  }
-
   return {
     q: params.get('q') ?? '',
     domain: params.get('domain') ?? '',
-    status: multi.status!,
-    brand: multi.brand!,
-    category: multi.category!,
-    subCategory: multi.subCategory!,
-    type: multi.type!,
-    year: multi.year!,
+    status: getMultiValue(params, 'status'),
+    brand: getMultiValue(params, 'brand'),
+    category: getMultiValue(params, 'category'),
+    subCategory: getMultiValue(params, 'subCategory'),
+    type: getMultiValue(params, 'type'),
+    year: getMultiValue(params, 'year'),
     date: parseDate(params.get('date')),
     price: parsePrice(params.get('price')),
   };
@@ -49,10 +46,12 @@ export function serializeFilterState(state: FilterState): URLSearchParams {
   const p = new URLSearchParams();
   if (state.q) p.set('q', state.q);
   if (state.domain) p.set('domain', state.domain);
-  for (const k of MULTI_KEYS) {
-    const v = state[k];
-    if (v.length > 0) p.set(k, v.join(','));
-  }
+  if (state.status.length) p.set('status', state.status.join(','));
+  if (state.brand.length) p.set('brand', state.brand.join(','));
+  if (state.category.length) p.set('category', state.category.join(','));
+  if (state.subCategory.length) p.set('subCategory', state.subCategory.join(','));
+  if (state.type.length) p.set('type', state.type.join(','));
+  if (state.year.length) p.set('year', state.year.join(','));
   const ds = serializeDate(state.date);
   if (ds) p.set('date', ds);
   const ps = serializePrice(state.price);
@@ -89,6 +88,10 @@ function serializeDate(d: DateFilter | undefined): string | null {
     case 'year': return String(d.value);
     case 'month': return `${d.year}-${String(d.month).padStart(2, '0')}`;
     case 'range': return `range:${d.start}:${d.end}`;
+    default: {
+      const _exhaustive: never = d;
+      return _exhaustive;
+    }
   }
 }
 
@@ -104,8 +107,11 @@ function parsePrice(raw: string | null): PriceFilter | undefined {
   }
   if (raw.startsWith('range:')) {
     const [, minStr, maxStr] = raw.split(':');
-    const min = Number(minStr); const max = Number(maxStr);
-    if (Number.isFinite(min) && Number.isFinite(max)) return { kind: 'range', min, max };
+    if (minStr && maxStr) {
+      const min = Number(minStr);
+      const max = Number(maxStr);
+      if (Number.isFinite(min) && Number.isFinite(max)) return { kind: 'range', min, max };
+    }
   }
   return undefined;
 }
@@ -116,5 +122,9 @@ function serializePrice(p: PriceFilter | undefined): string | null {
     case 'gte': return `gte:${p.value}`;
     case 'lte': return `lte:${p.value}`;
     case 'range': return `range:${p.min}:${p.max}`;
+    default: {
+      const _exhaustive: never = p;
+      return _exhaustive;
+    }
   }
 }

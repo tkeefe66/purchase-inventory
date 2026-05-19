@@ -52,6 +52,17 @@ describe('parseFilterState', () => {
     expect(parseFilterState(new URLSearchParams('price=lte:50')).price).toEqual({ kind: 'lte', value: 50 });
     expect(parseFilterState(new URLSearchParams('price=range:50:200')).price).toEqual({ kind: 'range', min: 50, max: 200 });
   });
+
+  it('returns undefined for malformed price', () => {
+    expect(parseFilterState(new URLSearchParams('price=garbage')).price).toBeUndefined();
+    expect(parseFilterState(new URLSearchParams('price=gte:abc')).price).toBeUndefined();
+  });
+
+  it('returns undefined for incomplete price range', () => {
+    expect(parseFilterState(new URLSearchParams('price=range::100')).price).toBeUndefined();
+    expect(parseFilterState(new URLSearchParams('price=range:50:')).price).toBeUndefined();
+    expect(parseFilterState(new URLSearchParams('price=range::')).price).toBeUndefined();
+  });
 });
 
 describe('serializeFilterState', () => {
