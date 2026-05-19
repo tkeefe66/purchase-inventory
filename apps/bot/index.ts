@@ -31,6 +31,12 @@ import { routeMessage, routePhoto, routeDocument } from './router.js';
 import { runPipeline } from '../cron/pipeline.js';
 import { createWeatherClient } from '../../lib/integrations/weather.js';
 import { StickyModeStore } from '../../lib/stickyMode.js';
+import {
+  readProgress as readPhotographyProgress,
+  upsertProgress as upsertPhotographyProgress,
+  getActiveAssignment as getPhotographyActiveAssignment,
+  updateAssignment as updatePhotographyAssignment,
+} from '../../lib/photographySheets.js';
 
 const CACHE_REFRESH_MS = 15 * 60 * 1000;
 const POLL_TIMEOUT_S = 25;
@@ -197,6 +203,15 @@ async function main(): Promise<void> {
     stickyMode,
     handleOutdoorAgentMessage: (chatId: string, text: string) => agent.handleMessage(chatId, text),
     handlePhotographyAgentMessage,
+    photography: {
+      readProgress: () => readPhotographyProgress(sheets, env.spreadsheetId),
+      upsertProgress: (topicId, patch) =>
+        upsertPhotographyProgress(sheets, env.spreadsheetId, topicId, patch),
+      getActiveAssignment: () => getPhotographyActiveAssignment(sheets, env.spreadsheetId),
+      updateAssignment: (rowIndex, patch) =>
+        updatePhotographyAssignment(sheets, env.spreadsheetId, rowIndex, patch),
+      now: () => new Date().toISOString(),
+    },
   };
 
   const routerDeps = {

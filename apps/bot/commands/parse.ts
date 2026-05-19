@@ -4,7 +4,8 @@ export type CommandName =
   | 'watch' | 'unwatch' | 'watchlist' | 'regions'
   | 'plan-trip' | 'trips' | 'cancel-trip' | 'campsites'
   | 'ack-maintenance'
-  | 'photo' | 'outdoor' | 'who';
+  | 'photo' | 'outdoor' | 'who'
+  | 'skills' | 'track' | 'next' | 'active' | 'skip' | 'plan' | 'learn';
 
 export interface ParsedCommand {
   name: CommandName;
@@ -18,6 +19,7 @@ const KNOWN: readonly CommandName[] = [
   'plan-trip', 'trips', 'cancel-trip', 'campsites',
   'ack-maintenance',
   'photo', 'outdoor', 'who',
+  'skills', 'track', 'next', 'active', 'skip', 'plan', 'learn',
 ];
 
 export function parseCommand(text: string): ParsedCommand | null {

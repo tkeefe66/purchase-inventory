@@ -15,6 +15,7 @@ import { AddgearStateStore } from '../../lib/addgearState.js';
 import { formatLogPreview } from './preview.js';
 import type { PipelineResult } from '../cron/pipeline.js';
 import { handleCampingCommand, type CampingDeps } from './commands/camping.js';
+import { handlePhotographyCommand, type PhotographyDeps } from './commands/photography.js';
 import type { StickyModeStore, DomainMode } from '../../lib/stickyMode.js';
 
 const STATUS_CHANGE_COMMANDS: Record<string, Status> = {
@@ -49,6 +50,9 @@ export interface HandlerDeps {
    *  copies here exist so override-form commands can reach the agents too. */
   handleOutdoorAgentMessage: (chatId: string, text: string) => Promise<string>;
   handlePhotographyAgentMessage: (chatId: string, text: string) => Promise<string>;
+  /** Photography curriculum + assignment sheet I/O — powers /skills /track
+   *  /next /active /skip /plan /learn. */
+  photography: PhotographyDeps;
 }
 
 export async function dispatchCommand(chatId: string, text: string, deps: HandlerDeps): Promise<string | null> {
@@ -73,6 +77,12 @@ export async function dispatchCommand(chatId: string, text: string, deps: Handle
   }
   if (name === 'photo' || name === 'outdoor') return handleDomainCommand(chatId, name, args, deps);
   if (name === 'who') return handleWho(chatId, deps);
+  if (
+    name === 'skills' || name === 'track' || name === 'next'
+    || name === 'active' || name === 'skip' || name === 'plan' || name === 'learn'
+  ) {
+    return handlePhotographyCommand({ name, args }, deps.photography);
+  }
   return null;
 }
 

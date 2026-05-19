@@ -77,6 +77,13 @@ function makeDeps(rows: MasterRow[], overrides: Partial<HandlerDeps> = {}): {
     stickyMode,
     handleOutdoorAgentMessage: vi.fn(async (_c, t) => `outdoor: ${t}`) as unknown as HandlerDeps['handleOutdoorAgentMessage'],
     handlePhotographyAgentMessage: vi.fn(async (_c, t) => `photography: ${t}`) as unknown as HandlerDeps['handlePhotographyAgentMessage'],
+    photography: {
+      readProgress: vi.fn(async () => []) as unknown as HandlerDeps['photography']['readProgress'],
+      upsertProgress: vi.fn(async () => undefined) as unknown as HandlerDeps['photography']['upsertProgress'],
+      getActiveAssignment: vi.fn(async () => null) as unknown as HandlerDeps['photography']['getActiveAssignment'],
+      updateAssignment: vi.fn(async () => undefined) as unknown as HandlerDeps['photography']['updateAssignment'],
+      now: () => '2026-05-19T15:00:00Z',
+    },
     ...overrides,
   };
   return { deps, cache, updateCalls, appendCalls, stickyMode };
