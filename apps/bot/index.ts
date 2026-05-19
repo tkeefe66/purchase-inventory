@@ -49,6 +49,7 @@ import { filterToActivePhotography } from '../../domains/photography/inventory.j
 import { serializeCompact as serializePhotographyCompact } from '../../domains/photography/serialize.js';
 import { handleSubmission as handlePhotographySubmission } from './commands/photography.js';
 import { PhotographyAgent } from '../../domains/photography/agent.js';
+import { PhotographyReadCache } from './photographyCache.js';
 import { geocode } from '../../lib/integrations/weather.js';
 
 const CACHE_REFRESH_MS = 15 * 60 * 1000;
@@ -135,6 +136,14 @@ async function main(): Promise<void> {
   await stickyMode.load();
   console.log(`[bot] sticky-mode store loaded from ${STICKY_MODE_PATH}`);
 
+  // Shared 10s-TTL cache for the two hot photography sheet reads. Used by
+  // both the photography agent's tool deps and the slash-command deps —
+  // writes from either path invalidate. See apps/bot/photographyCache.ts.
+  const photographyReadCache = new PhotographyReadCache({
+    readProgress: () => readPhotographyProgress(sheets, env.spreadsheetId),
+    getActiveAssignment: () => getPhotographyActiveAssignment(sheets, env.spreadsheetId),
+  });
+
   const photographyAgent = new PhotographyAgent({
     cache,
     conversations,
@@ -143,8 +152,8 @@ async function main(): Promise<void> {
     toolDeps: {
       weather,
       geocode,
-      getActiveAssignment: () => getPhotographyActiveAssignment(sheets, env.spreadsheetId),
-      readProgress: () => readPhotographyProgress(sheets, env.spreadsheetId),
+      getActiveAssignment: () => photographyReadCache.getActiveAssignment(),
+      readProgress: () => photographyReadCache.readProgress(),
       expanderDeps: {
         anthropic,
         // Inventory is fetched at expander invocation time via a getter so it
@@ -252,13 +261,21 @@ async function main(): Promise<void> {
     handleOutdoorAgentMessage: (chatId: string, text: string) => agent.handleMessage(chatId, text),
     handlePhotographyAgentMessage,
     photography: {
-      readProgress: () => readPhotographyProgress(sheets, env.spreadsheetId),
-      upsertProgress: (topicId, patch) =>
-        upsertPhotographyProgress(sheets, env.spreadsheetId, topicId, patch),
-      getActiveAssignment: () => getPhotographyActiveAssignment(sheets, env.spreadsheetId),
-      appendAssignment: (row) => appendPhotographyAssignment(sheets, env.spreadsheetId, row),
-      updateAssignment: (rowIndex, patch) =>
-        updatePhotographyAssignment(sheets, env.spreadsheetId, rowIndex, patch),
+      readProgress: () => photographyReadCache.readProgress(),
+      upsertProgress: async (topicId, patch) => {
+        await upsertPhotographyProgress(sheets, env.spreadsheetId, topicId, patch);
+        photographyReadCache.invalidate();
+      },
+      getActiveAssignment: () => photographyReadCache.getActiveAssignment(),
+      appendAssignment: async (row) => {
+        const rowIndex = await appendPhotographyAssignment(sheets, env.spreadsheetId, row);
+        photographyReadCache.invalidate();
+        return rowIndex;
+      },
+      updateAssignment: async (rowIndex, patch) => {
+        await updatePhotographyAssignment(sheets, env.spreadsheetId, rowIndex, patch);
+        photographyReadCache.invalidate();
+      },
       expandAssignment: (topic) =>
         expandPhotographyAssignment(
           {
