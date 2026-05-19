@@ -5,8 +5,8 @@ import { useState } from 'react';
 
 const DOMAINS = [
   { slug: 'outdoor', label: 'Outdoor', active: true },
+  { slug: 'photography', label: 'Photography', active: true },
   { slug: 'kitchen', label: 'Kitchen', active: false },
-  { slug: 'photography', label: 'Photography', active: false },
 ];
 
 export function Sidebar() {
@@ -42,6 +42,9 @@ export function Sidebar() {
         {DOMAINS.map((d) => (
           <DomainLink key={d.slug} {...d} onClick={() => setOpen(false)} />
         ))}
+        <Section title="Photography" />
+        <NavLink href="/photography" label="Skills" onClick={() => setOpen(false)} />
+        <NavLink href="/photography/assignments" label="Assignments" onClick={() => setOpen(false)} />
         <Section title="Everything" />
         <NavLink href="/" label="All items" onClick={() => setOpen(false)} clearDomain />
         <NavLink href="/spending" label="Spending" onClick={() => setOpen(false)} />
