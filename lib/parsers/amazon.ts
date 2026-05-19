@@ -55,13 +55,14 @@ export function parseAmazonShipmentEmail(html: string): ParsedOrder[] | null {
   const $ = load(truncatedHtml);
   $('head, style, script').remove();
 
-  const productImages: Array<{ alt: string; url: string }> = [];
+  const productImages: Array<{ alt: string; url: string; imageUrl?: string }> = [];
   $('img[alt]').each((_, el) => {
     const alt = ($(el).attr('alt') ?? '').trim();
     if (alt.length < 30) return;
     if (alt.toLowerCase().includes('amazon.com')) return;
     const url = ($(el).closest('a').attr('href') ?? '').trim();
-    productImages.push({ alt, url });
+    const src = $(el).attr('src')?.trim() || undefined;
+    productImages.push({ alt, url, imageUrl: src });
   });
 
   if (productImages.length === 0) return null;
@@ -84,6 +85,7 @@ export function parseAmazonShipmentEmail(html: string): ParsedOrder[] | null {
       quantity: qtyMatches[i]?.[1] ? parseInt(qtyMatches[i]![1]!, 10) : 1,
       price: prices[i] ?? 0,
       productUrl: p.url,
+      imageUrl: p.imageUrl,
     }))
     // Real ordered items always have a price extracted via the typographic
     // pattern. Recommendation/ad items use a different markup (plain "$X.XX")
