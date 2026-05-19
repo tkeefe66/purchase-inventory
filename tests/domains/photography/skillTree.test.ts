@@ -159,6 +159,38 @@ describe('skillTree — Editing branch (Branch 3)', () => {
   });
 });
 
+describe('skillTree — Printing branch (Branch 4)', () => {
+  test('has 12 topics in printing branch', () => {
+    expect(listByBranch('printing')).toHaveLength(12);
+  });
+
+  test('Tier counts match the outline (3/3/3/3 across printing)', () => {
+    expect(listByTier('printing', 1)).toHaveLength(3);
+    expect(listByTier('printing', 2)).toHaveLength(3);
+    expect(listByTier('printing', 3)).toHaveLength(3);
+    expect(listByTier('printing', 4)).toHaveLength(3);
+  });
+
+  test('Tier 1 entry point is color-management-basics (only rootless)', () => {
+    const tier1 = listByTier('printing', 1);
+    const rootless = tier1.filter((t) => t.prereqs.length === 0);
+    expect(rootless.map((t) => t.id)).toEqual(['printing.color-management-basics']);
+  });
+});
+
+describe('skillTree — total + per-branch totals', () => {
+  test('total topic count across all four branches', () => {
+    expect(ALL_TOPICS.length).toBe(58);
+  });
+
+  test('every branch is non-empty', () => {
+    const branches: BranchId[] = ['operating-camera', 'seeing', 'editing', 'printing'];
+    for (const b of branches) {
+      expect(listByBranch(b).length, `branch ${b} should have topics`).toBeGreaterThan(0);
+    }
+  });
+});
+
 describe('getTopicById + listByBranch + listByTier', () => {
   test('getTopicById returns the topic by exact id', () => {
     const t = getTopicById('operating-camera.exposure-triangle');
@@ -166,9 +198,5 @@ describe('getTopicById + listByBranch + listByTier', () => {
   });
   test('getTopicById returns null for unknown id', () => {
     expect(getTopicById('does.not.exist')).toBeNull();
-  });
-  test('listByBranch returns empty for branches not yet authored', () => {
-    const unwritten: BranchId[] = ['printing'];
-    for (const b of unwritten) expect(listByBranch(b)).toEqual([]);
   });
 });

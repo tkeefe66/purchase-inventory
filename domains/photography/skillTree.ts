@@ -22,6 +22,7 @@
 import { OPERATING_CAMERA_TOPICS } from './tracks/operating-camera.js';
 import { SEEING_TOPICS } from './tracks/seeing.js';
 import { EDITING_TOPICS } from './tracks/editing.js';
+import { PRINTING_TOPICS } from './tracks/printing.js';
 
 export type BranchId = 'operating-camera' | 'seeing' | 'editing' | 'printing';
 
@@ -48,11 +49,12 @@ export interface Topic {
   assignmentSeed: string;
 }
 
-/** All topics across every branch. New branches append here as they're authored. */
+/** All topics across every branch. */
 export const ALL_TOPICS: readonly Topic[] = [
   ...OPERATING_CAMERA_TOPICS,
   ...SEEING_TOPICS,
   ...EDITING_TOPICS,
+  ...PRINTING_TOPICS,
 ];
 
 const BY_ID: ReadonlyMap<string, Topic> = new Map(ALL_TOPICS.map((t) => [t.id, t]));
