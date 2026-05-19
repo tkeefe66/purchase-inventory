@@ -3,7 +3,7 @@ import {
   buildSearchNearbyQuery, buildLookupByNameQuery,
   computeLengthKm, mapOsmWay, searchTrailsNearby, lookupTrail,
   type OverpassWay,
-} from '../../../../domains/outdoor/integrations/trails.js';
+} from '../../../lib/integrations/trails.js';
 
 describe('buildSearchNearbyQuery', () => {
   test('hiking activity filters to sac_scale + named paths', () => {

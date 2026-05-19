@@ -29,7 +29,7 @@ import { lookupProduct, fetchProductName, fetchProductInfo } from '../../lib/par
 import { createClassifier } from '../../lib/classifier.js';
 import { routeMessage, routePhoto } from './router.js';
 import { runPipeline } from '../cron/pipeline.js';
-import { createWeatherClient } from '../../domains/outdoor/integrations/weather.js';
+import { createWeatherClient } from '../../lib/integrations/weather.js';
 
 const CACHE_REFRESH_MS = 15 * 60 * 1000;
 const POLL_TIMEOUT_S = 25;

@@ -3,8 +3,8 @@ import { createTools, TOOL_SCHEMAS, type ToolDeps } from '../../../domains/outdo
 import { InventoryCache } from '../../../apps/bot/inventoryCache.js';
 import { itemId } from '../../../domains/outdoor/types.js';
 import type { MasterRow } from '../../../lib/types.js';
-import type { WeatherClient, ForecastResult } from '../../../domains/outdoor/integrations/weather.js';
-import { ForecastError } from '../../../domains/outdoor/integrations/weather.js';
+import type { WeatherClient, ForecastResult } from '../../../lib/integrations/weather.js';
+import { ForecastError } from '../../../lib/integrations/weather.js';
 import {
   FIXTURE_THERMAREST,
   FIXTURE_SALOMON,

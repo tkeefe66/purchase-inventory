@@ -6,7 +6,7 @@ import { Stats, formatStats } from '../apps/bot/stats.js';
 import { ConversationStore } from '../lib/conversations.js';
 import { filterToActiveOutdoor } from '../domains/outdoor/inventory.js';
 import { OutdoorAgent } from '../domains/outdoor/agent.js';
-import { createWeatherClient } from '../domains/outdoor/integrations/weather.js';
+import { createWeatherClient } from '../lib/integrations/weather.js';
 
 async function main(): Promise<void> {
   const clientId = process.env.GOOGLE_CLIENT_ID;

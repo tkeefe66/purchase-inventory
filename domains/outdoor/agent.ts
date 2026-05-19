@@ -7,8 +7,8 @@ import { Stats } from '../../apps/bot/stats.js';
 import { callWithRetry } from '../../lib/anthropic-retry.js';
 import { AGENT_PRIMARY_MODEL, AGENT_FALLBACK_MODELS } from '../../lib/models.js';
 import { createTools, TOOL_SCHEMAS, SERVER_TOOLS, type ToolHandlers, type FindFreeCampsitesInput, type LookupTrailInput, type SearchTrailsNearbyInput } from './tools.js';
-import type { WeatherClient } from './integrations/weather.js';
-import { geocode } from './integrations/weather.js';
+import type { WeatherClient } from '../../lib/integrations/weather.js';
+import { geocode } from '../../lib/integrations/weather.js';
 
 export interface SystemPromptInput {
   compactViewText: string;

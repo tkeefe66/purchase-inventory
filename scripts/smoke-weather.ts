@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { createWeatherClient } from '../domains/outdoor/integrations/weather.js';
+import { createWeatherClient } from '../lib/integrations/weather.js';
 
 const key = process.env.PIRATE_WEATHER_API_KEY;
 if (!key) {

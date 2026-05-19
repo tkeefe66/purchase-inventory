@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { lookupTrail, searchTrailsNearby } from '../domains/outdoor/integrations/trails.js';
+import { lookupTrail, searchTrailsNearby } from '../lib/integrations/trails.js';
 
 /**
  * Live smoke test for the OSM Overpass trail adapter. Hits the real
