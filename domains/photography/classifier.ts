@@ -23,7 +23,9 @@ const KEYWORDS_STRONG = [
 ];
 
 const KEYWORDS_BRAND = new Set([
-  'sony alpha', 'sony fe', 'sony a', 'sigma art', 'sigma contemporary', 'sigma sport',
+  'sony alpha', 'sony fe',
+  'sony a1', 'sony a5', 'sony a6', 'sony a7', 'sony a9',
+  'sigma art', 'sigma contemporary', 'sigma sport',
   'tamron', 'rokinon', 'samyang', 'viltrox', 'tt artisan',
   'fujifilm x', 'fuji gfx', 'canon eos', 'canon rf', 'canon ef',
   'nikon z', 'nikon f', 'panasonic lumix', 'olympus om',

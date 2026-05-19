@@ -82,4 +82,22 @@ describe('classifyPhotography', () => {
     });
     expect(result.isMatch).toBe(true);
   });
+
+  it('does NOT classify a Sony Active Speaker as Photography', () => {
+    const result = classifyPhotography({
+      itemName: 'Sony Active Speaker SRS-XB43',
+      brand: 'Sony',
+      source: 'Amazon',
+    });
+    expect(result.isMatch).toBe(false);
+  });
+
+  it('does NOT classify a Sony A80K OLED TV as Photography', () => {
+    const result = classifyPhotography({
+      itemName: 'Sony A80K 65-inch OLED TV',
+      brand: 'Sony',
+      source: 'Amazon',
+    });
+    expect(result.isMatch).toBe(false);
+  });
 });
