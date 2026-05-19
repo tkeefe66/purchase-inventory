@@ -1,6 +1,6 @@
 import type { MasterRow } from '../../lib/types.js';
 import { serializeCompact, type CompactView } from '../../domains/outdoor/serialize.js';
-import { itemId } from '../../domains/outdoor/types.js';
+import { itemId } from '../../lib/itemId.js';
 
 export type Fetcher = () => Promise<MasterRow[]>;
 

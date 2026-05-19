@@ -4,7 +4,7 @@ import { InventoryCache } from '../../../apps/bot/inventoryCache.js';
 import { Stats } from '../../../apps/bot/stats.js';
 import { PendingActionStore } from '../../../lib/pendingActions.js';
 import { AddgearStateStore } from '../../../lib/addgearState.js';
-import { itemId } from '../../../domains/outdoor/types.js';
+import { itemId } from '../../../lib/itemId.js';
 import type { MasterRow, Status } from '../../../lib/types.js';
 import {
   FIXTURE_THERMAREST,

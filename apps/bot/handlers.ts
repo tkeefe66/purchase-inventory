@@ -7,7 +7,7 @@ import type { Stats } from './stats.js';
 import type { PendingActionStore } from '../../lib/pendingActions.js';
 import { formatStats } from './stats.js';
 import { filterToActiveOutdoor, findByFuzzyName, getById } from '../../domains/outdoor/inventory.js';
-import { itemId } from '../../domains/outdoor/types.js';
+import { itemId } from '../../lib/itemId.js';
 import { parseCommand } from './commands/parse.js';
 import type { LogDraft } from './commands/log.js';
 import { startAddgear, continueAddgear, type AddgearDeps } from './commands/addgear.js';
