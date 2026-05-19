@@ -241,8 +241,8 @@ function Th({
   const ref = useRef<HTMLDivElement | null>(null);
   const arrow = sort === 'asc' ? '↑' : sort === 'desc' ? '↓' : '↕';
   const arrowClass = sort === 'none'
-    ? 'text-text-muted opacity-40 group-hover:opacity-100'
-    : 'text-text-primary';
+    ? 'text-text-muted group-hover:text-text-secondary'
+    : 'text-accent-from';
   const justify = className.includes('text-right') ? 'justify-end' : '';
   return (
     <th className={`group px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.08em] ${className}`}>
@@ -260,7 +260,7 @@ function Th({
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); if (ref.current) onFilter(ref.current); }}
-            className="opacity-0 transition group-hover:opacity-100 hover:text-text-primary"
+            className="text-text-muted transition hover:text-text-primary"
             aria-label="Filter column"
           >▾</button>
         )}
