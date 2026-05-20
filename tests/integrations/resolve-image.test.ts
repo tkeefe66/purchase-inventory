@@ -17,7 +17,7 @@ afterEach(async () => {
 });
 
 describe('resolveImage', () => {
-  it('uses the parsed imageUrl when present (no Sonnet call)', async () => {
+  it('returns the parsed source URL when present (no Sonnet call)', async () => {
     const lookupCalls: number[] = [];
     const fakeAnthropic = {} as never;
 
@@ -28,7 +28,7 @@ describe('resolveImage', () => {
         headers: { 'content-type': 'image/jpeg' },
       });
     try {
-      const path = await resolveImage({
+      const ref = await resolveImage({
         itemId: 'A1',
         brand: 'Patagonia',
         itemName: 'Nano Puff',
@@ -42,14 +42,14 @@ describe('resolveImage', () => {
         storageRoot: TMP_ROOT,
         cachePath: CACHE_PATH,
       });
-      expect(path).toMatch(/^\/images\//);
+      expect(ref).toBe('https://example.com/x.jpg');
       expect(lookupCalls.length).toBe(0);
     } finally {
       globalThis.fetch = realFetch;
     }
   });
 
-  it('falls back to lookup when parsedImageUrl is missing', async () => {
+  it('falls back to lookup when parsedImageUrl is missing — returns lookup URL', async () => {
     const realFetch = globalThis.fetch;
     globalThis.fetch = async () =>
       new Response(Buffer.from([0xff, 0xd8, 0xff]), {
@@ -57,7 +57,7 @@ describe('resolveImage', () => {
         headers: { 'content-type': 'image/jpeg' },
       });
     try {
-      const path = await resolveImage({
+      const ref = await resolveImage({
         itemId: 'A2',
         brand: 'Patagonia',
         itemName: 'Nano Puff',
@@ -68,14 +68,14 @@ describe('resolveImage', () => {
         storageRoot: TMP_ROOT,
         cachePath: CACHE_PATH,
       });
-      expect(path).toMatch(/^\/images\//);
+      expect(ref).toBe('https://example.com/y.jpg');
     } finally {
       globalThis.fetch = realFetch;
     }
   });
 
   it('returns empty string when everything fails', async () => {
-    const path = await resolveImage({
+    const ref = await resolveImage({
       itemId: 'A3',
       brand: 'X',
       itemName: 'Y',
@@ -86,6 +86,6 @@ describe('resolveImage', () => {
       storageRoot: TMP_ROOT,
       cachePath: CACHE_PATH,
     });
-    expect(path).toBe('');
+    expect(ref).toBe('');
   });
 });

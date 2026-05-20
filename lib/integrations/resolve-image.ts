@@ -25,11 +25,20 @@ export interface ResolveImageInput {
 const DEFAULT_CACHE_PATH =
   process.env.IMAGE_URL_CACHE_PATH ?? './local-data/image-url-cache.json';
 
+/**
+ * Resolves a product image and persists the bytes to local storage as a hedge
+ * against upstream URL rot. Returns the *source URL* used (not the local path).
+ *
+ * Storage is best-effort: if the download fails after a URL is found, the URL
+ * is still returned. Callers write this URL into the sheet's Image column,
+ * which the web UI uses directly as the `<img src>`. The bytes on disk are a
+ * future failover — useful if/when the upstream CDN URL stops working.
+ */
 export async function resolveImage(input: ResolveImageInput): Promise<string> {
   // 1. Email-extracted URL
   if (input.parsedImageUrl) {
-    const r = await downloadAndSave(input.itemId, input.parsedImageUrl, input.storageRoot);
-    if (r.ok) return r.path;
+    await downloadAndSave(input.itemId, input.parsedImageUrl, input.storageRoot);
+    return input.parsedImageUrl;
   }
 
   // 2. AI lookup with persistent cache
@@ -53,8 +62,8 @@ export async function resolveImage(input: ResolveImageInput): Promise<string> {
   }
 
   if (lookedUpUrl) {
-    const r = await downloadAndSave(input.itemId, lookedUpUrl, input.storageRoot);
-    if (r.ok) return r.path;
+    await downloadAndSave(input.itemId, lookedUpUrl, input.storageRoot);
+    return lookedUpUrl;
   }
 
   return '';

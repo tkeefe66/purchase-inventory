@@ -291,7 +291,7 @@ async function processOrderOrShipmentMessage(
         { parsedOrder: order, parsedItem: item, emailDate },
         classify,
       );
-      const imagePath = await resolveImage({
+      const imageRef = await resolveImage({
         itemId: `${order.orderId}|${item.productUrl || item.itemName}`,
         brand: row.brand,
         itemName: row.itemName,
@@ -299,7 +299,7 @@ async function processOrderOrShipmentMessage(
         parsedImageUrl: item.imageUrl,
         anthropic,
       });
-      row.image = imagePath;
+      row.image = imageRef;
       rows.push(row);
     }
   }

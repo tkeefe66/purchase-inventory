@@ -27,6 +27,7 @@ import { parseAmazonShipmentEmail, parseAmazonOrderEmail } from '../lib/parsers/
 import { downloadAndSave } from '../lib/integrations/image-storage.js';
 import { resolveImage } from '../lib/integrations/resolve-image.js';
 import {
+  buildHeaderMap,
   createSheetsClient,
   readMasterRows,
   updateRowFields,
@@ -147,6 +148,43 @@ async function flushBatch(
   await updateRowFields(sheets, spreadsheetId, pending.splice(0));
 }
 
+/**
+ * Reads the "Include Photo?" column from All Purchases and returns a Set of
+ * `${orderId}|${itemName}` keys for every row where the flag is "Yes". This
+ * mirrors how readMasterRows identifies rows (by Order ID + Item Name).
+ */
+async function readIncludePhotoFlags(
+  sheets: ReturnType<typeof createSheetsClient>,
+  spreadsheetId: string,
+): Promise<Set<string>> {
+  const resp = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: "'All Purchases'!A1:ZZ",
+    valueRenderOption: 'UNFORMATTED_VALUE',
+  });
+  const values = (resp.data.values ?? []) as Array<Array<string | number | null | undefined>>;
+  if (values.length === 0) return new Set();
+  const headers = (values[0] ?? []) as Array<string | null | undefined>;
+  const map = buildHeaderMap(headers);
+  const includeIdx = map.get('Include Photo?');
+  const orderIdIdx = map.get('Order ID');
+  const itemNameIdx = map.get('Item Name');
+  if (includeIdx === undefined || orderIdIdx === undefined || itemNameIdx === undefined) {
+    throw new Error(
+      '"Include Photo?", "Order ID", or "Item Name" column missing from All Purchases',
+    );
+  }
+  const out = new Set<string>();
+  for (const row of values.slice(1)) {
+    const flag = String(row[includeIdx] ?? '').trim().toLowerCase();
+    if (flag !== 'yes') continue;
+    const orderId = String(row[orderIdIdx] ?? '').trim();
+    const itemName = String(row[itemNameIdx] ?? '').trim();
+    out.add(`${orderId}|${itemName}`);
+  }
+  return out;
+}
+
 async function main(): Promise<void> {
   const env = readEnv();
 
@@ -158,20 +196,30 @@ async function main(): Promise<void> {
 
   console.log('Reading sheet...');
   const rows = await readMasterRows(sheets, env.spreadsheetId);
+  const includeYes = await readIncludePhotoFlags(sheets, env.spreadsheetId);
 
-  const missing = rows.filter((r) => !r.image);
+  // Gate: only rows whose admin-set "Include Photo?" column is "Yes".
+  // Long-term this gate will move into the email parser; for now it's a manual
+  // sheet-side flag the user toggles per row.
+  const yesRows = rows.filter((r) =>
+    includeYes.has(`${r.orderId}|${r.itemName}`),
+  );
+
+  const missing = yesRows.filter((r) => !r.image);
   const fromEmail = missing.filter(
     (r) => (r.source === 'Amazon' || r.source === 'REI') && r.orderId,
   );
   const needsLookupCount = missing.length - fromEmail.length;
   const estimatedUsd = needsLookupCount * COST_PER_LOOKUP_USD;
 
-  console.log('Backfill image plan:');
-  console.log(`  Rows total:          ${rows.length}`);
-  console.log(`  Already have image:  ${rows.length - missing.length}`);
-  console.log(`  Email re-parse pool: ${fromEmail.length}`);
-  console.log(`  AI lookup pool:      ${needsLookupCount} (est. max)`);
-  console.log(`  Estimated max cost:  ~$${estimatedUsd.toFixed(2)} (Sonnet + web_search)`);
+  console.log('Backfill image plan (only "Include Photo? = Yes" rows):');
+  console.log(`  Rows total:              ${rows.length}`);
+  console.log(`  Flagged Include = Yes:   ${yesRows.length}`);
+  console.log(`  Of those, already done:  ${yesRows.length - missing.length}`);
+  console.log(`  Of those, need image:    ${missing.length}`);
+  console.log(`    Email re-parse pool:   ${fromEmail.length}  (free)`);
+  console.log(`    AI lookup pool (est):  ${needsLookupCount}  × $${COST_PER_LOOKUP_USD.toFixed(2)}`);
+  console.log(`  Estimated max cost:      ~$${estimatedUsd.toFixed(2)} (Sonnet + web_search)`);
 
   const skipConfirm = process.argv.includes('--yes') || process.argv.includes('-y');
   if (!skipConfirm) {
@@ -216,7 +264,10 @@ async function main(): Promise<void> {
         console.warn(`  [skip] ${row.orderId} "${row.itemName}": download failed (${saved.error})`);
         continue;
       }
-      emailUpdates.push({ rowIndex, fields: { image: saved.path } });
+      // Record the URL (not saved.path) so the sheet stays a thin metadata
+      // layer. Bytes on /data/images/ are a storage hedge for if/when the
+      // upstream URL rots — see lib/integrations/resolve-image.ts.
+      emailUpdates.push({ rowIndex, fields: { image: url } });
       updatedIndices.add(rows.indexOf(row));
       emailSuccess++;
 
@@ -239,12 +290,12 @@ async function main(): Promise<void> {
   // -------------------------------------------------------------------
   console.log('\nPhase 2: AI lookup...');
 
-  // Include:
-  // - non-Amazon/REI rows that were in the missing list
-  // - Amazon/REI rows that were in fromEmail but NOT successfully updated in phase 1
-  const stillMissing = rows.filter((r, i) => {
-    if (r.image) return false;                // already has image
-    if (updatedIndices.has(i)) return false;  // just populated in phase 1
+  // Only the Yes-flagged rows that are still missing — both non-Amazon/REI
+  // rows (which skipped phase 1 entirely) and Amazon/REI rows that fell
+  // through phase 1.
+  const stillMissing = yesRows.filter((r) => {
+    if (r.image) return false;                                   // already has image
+    if (updatedIndices.has(rows.indexOf(r))) return false;       // just populated in phase 1
     return true;
   });
 
@@ -256,7 +307,7 @@ async function main(): Promise<void> {
     const rowIndex = rows.indexOf(row) + 2;
     const itemId = `${row.orderId || `row-${rowIndex}`}|${row.productUrl || row.itemName}`;
     try {
-      const path = await resolveImage({
+      const imageUrl = await resolveImage({
         itemId,
         brand: row.brand,
         itemName: row.itemName,
@@ -264,11 +315,11 @@ async function main(): Promise<void> {
         parsedImageUrl: undefined, // skip straight to AI lookup
         anthropic,
       });
-      if (!path) {
+      if (!imageUrl) {
         lookupFail++;
         continue;
       }
-      lookupUpdates.push({ rowIndex, fields: { image: path } });
+      lookupUpdates.push({ rowIndex, fields: { image: imageUrl } });
       lookupSuccess++;
 
       if (lookupUpdates.length >= BATCH_SIZE) {
