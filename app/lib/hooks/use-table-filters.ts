@@ -39,6 +39,10 @@ function applyFilters(rows: MasterRow[], s: FilterState): MasterRow[] {
     if (s.subCategory.length && !s.subCategory.includes(r.subCategory)) return false;
     if (s.type.length && !s.type.includes(r.type)) return false;
     if (s.year.length && !s.year.includes(r.year)) return false;
+    if (s.color.length && !s.color.includes(r.color)) return false;
+    if (s.size.length && !s.size.includes(r.size)) return false;
+    if (s.source.length && !s.source.includes(r.source)) return false;
+    if (s.entryMethod.length && !s.entryMethod.includes(r.entryMethod)) return false;
     if (s.date && !matchDate(r.date, s.date)) return false;
     if (s.price && !matchPrice(r.price, s.price)) return false;
     if (q && !`${r.brand} ${r.itemName} ${r.category} ${r.subCategory} ${r.notes}`.toLowerCase().includes(q)) return false;

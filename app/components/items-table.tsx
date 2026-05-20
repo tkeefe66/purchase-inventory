@@ -1,7 +1,7 @@
 'use client';
 import { useMemo, useRef, useState } from 'react';
 import type { MasterRow, Status } from '../../lib/types.js';
-import { STATUS_VALUES } from '../../lib/types.js';
+import { STATUS_VALUES, DOMAIN_VALUES, ITEM_TYPE_VALUES, ENTRY_METHOD_VALUES } from '../../lib/types.js';
 import { useTableFilters } from '../lib/hooks/use-table-filters.js';
 import { useColumnPrefs } from '../lib/hooks/use-column-prefs.js';
 import { COLUMN_DEFS, type ColumnId } from '../lib/columns.js';
@@ -16,9 +16,14 @@ import { ColumnSettings } from './column-settings.js';
 import { DetailPanel } from './detail-panel.js';
 
 type SortDir = 'asc' | 'desc';
-type FilterKey = 'date' | 'brand' | 'itemName' | 'category' | 'subCategory' | 'price' | 'status';
+type FilterKey =
+  | 'date' | 'brand' | 'category' | 'subCategory' | 'price' | 'status'
+  | 'domain' | 'year' | 'type' | 'color' | 'size' | 'source' | 'entryMethod';
 
-const FILTERABLE_COLUMNS: ReadonlySet<ColumnId> = new Set<ColumnId>(['date', 'brand', 'itemName', 'category', 'subCategory', 'price', 'status']);
+const FILTERABLE_COLUMNS: ReadonlySet<ColumnId> = new Set<ColumnId>([
+  'date', 'brand', 'category', 'subCategory', 'price', 'status',
+  'domain', 'year', 'type', 'color', 'size', 'source', 'entryMethod',
+]);
 
 export function ItemsTable({ rows }: { rows: MasterRow[] }) {
   const { state, setState, filtered, total } = useTableFilters(rows);
@@ -37,6 +42,9 @@ export function ItemsTable({ rows }: { rows: MasterRow[] }) {
   const categories = useMemo(() => uniqueSorted(rows.map((r) => r.category)), [rows]);
   const subCats = useMemo(() => uniqueSorted(rows.map((r) => r.subCategory)), [rows]);
   const years = useMemo(() => uniqueSorted(rows.map((r) => r.year)).sort((a, b) => b.localeCompare(a)), [rows]);
+  const colors = useMemo(() => uniqueSorted(rows.map((r) => r.color)), [rows]);
+  const sizes = useMemo(() => uniqueSorted(rows.map((r) => r.size)), [rows]);
+  const sources = useMemo(() => uniqueSorted(rows.map((r) => r.source)), [rows]);
 
   const sorted = useMemo(() => {
     const dir = sortDir === 'asc' ? 1 : -1;
@@ -71,6 +79,13 @@ export function ItemsTable({ rows }: { rows: MasterRow[] }) {
       case 'category': return state.category.length > 0;
       case 'subCategory': return state.subCategory.length > 0;
       case 'status': return state.status.length > 0;
+      case 'domain': return state.domain !== '';
+      case 'year': return state.year.length > 0;
+      case 'type': return state.type.length > 0;
+      case 'color': return state.color.length > 0;
+      case 'size': return state.size.length > 0;
+      case 'source': return state.source.length > 0;
+      case 'entryMethod': return state.entryMethod.length > 0;
       default: return false;
     }
   }
@@ -80,12 +95,15 @@ export function ItemsTable({ rows }: { rows: MasterRow[] }) {
       q: '',
       domain: state.domain,
       status: [], brand: [], category: [], subCategory: [], type: [], year: [],
+      color: [], size: [], source: [], entryMethod: [],
       date: undefined, price: undefined,
     });
   }
 
   const hasActiveFilters = state.status.length || state.brand.length || state.category.length
-    || state.subCategory.length || state.date || state.price;
+    || state.subCategory.length || state.type.length || state.year.length
+    || state.color.length || state.size.length || state.source.length
+    || state.entryMethod.length || state.date || state.price;
 
   return (
     <div className="md:flex md:items-start md:gap-4">
@@ -105,8 +123,8 @@ export function ItemsTable({ rows }: { rows: MasterRow[] }) {
           <ColumnSettings prefs={prefs} onChange={setPrefs} onReset={resetPrefs} />
         </div>
 
-        {/* Desktop table */}
-        <div className="hidden overflow-hidden rounded-card border border-border-subtle bg-bg-surface shadow-card md:block">
+        {/* Desktop table — horizontal scroll kicks in when columns exceed the viewport */}
+        <div className="hidden overflow-x-auto rounded-card border border-border-subtle bg-bg-surface shadow-card md:block">
           <table className="min-w-full text-[13px]">
             <thead className="sticky top-0 bg-bg-surface-raised text-left text-text-muted">
               <tr>
@@ -199,6 +217,32 @@ export function ItemsTable({ rows }: { rows: MasterRow[] }) {
           )}
           {openFilter?.key === 'status' && (
             <EnumFilter label="Status" selected={state.status} options={STATUS_VALUES} onChange={(v) => setState({ ...state, status: v })} />
+          )}
+          {openFilter?.key === 'domain' && (
+            <EnumFilter
+              label="Domain"
+              selected={state.domain ? [state.domain] : []}
+              options={DOMAIN_VALUES}
+              onChange={(v) => setState({ ...state, domain: v[0] ?? '' })}
+            />
+          )}
+          {openFilter?.key === 'year' && (
+            <TextFilter label="Year" selected={state.year} options={years} onChange={(v) => setState({ ...state, year: v })} />
+          )}
+          {openFilter?.key === 'type' && (
+            <EnumFilter label="Type" selected={state.type} options={ITEM_TYPE_VALUES} onChange={(v) => setState({ ...state, type: v })} />
+          )}
+          {openFilter?.key === 'color' && (
+            <TextFilter label="Color" selected={state.color} options={colors} onChange={(v) => setState({ ...state, color: v })} />
+          )}
+          {openFilter?.key === 'size' && (
+            <TextFilter label="Size" selected={state.size} options={sizes} onChange={(v) => setState({ ...state, size: v })} />
+          )}
+          {openFilter?.key === 'source' && (
+            <TextFilter label="Source" selected={state.source} options={sources} onChange={(v) => setState({ ...state, source: v })} />
+          )}
+          {openFilter?.key === 'entryMethod' && (
+            <EnumFilter label="Entry Method" selected={state.entryMethod} options={ENTRY_METHOD_VALUES} onChange={(v) => setState({ ...state, entryMethod: v })} />
           )}
         </ColumnFilterPopover>
       </div>
@@ -306,6 +350,24 @@ function activeFilterChips(state: ReturnType<typeof useTableFilters>['state'], s
   }
   for (const sc of state.subCategory) {
     chips.push(<ActiveFilterChip key={`sub-${sc}`} label={`Sub: ${sc}`} onRemove={() => setState({ ...state, subCategory: state.subCategory.filter((x) => x !== sc) })} />);
+  }
+  for (const t of state.type) {
+    chips.push(<ActiveFilterChip key={`type-${t}`} label={`Type: ${t}`} onRemove={() => setState({ ...state, type: state.type.filter((x) => x !== t) })} />);
+  }
+  for (const y of state.year) {
+    chips.push(<ActiveFilterChip key={`year-${y}`} label={`Year: ${y}`} onRemove={() => setState({ ...state, year: state.year.filter((x) => x !== y) })} />);
+  }
+  for (const c of state.color) {
+    chips.push(<ActiveFilterChip key={`color-${c}`} label={`Color: ${c}`} onRemove={() => setState({ ...state, color: state.color.filter((x) => x !== c) })} />);
+  }
+  for (const sz of state.size) {
+    chips.push(<ActiveFilterChip key={`size-${sz}`} label={`Size: ${sz}`} onRemove={() => setState({ ...state, size: state.size.filter((x) => x !== sz) })} />);
+  }
+  for (const src of state.source) {
+    chips.push(<ActiveFilterChip key={`source-${src}`} label={`Source: ${src}`} onRemove={() => setState({ ...state, source: state.source.filter((x) => x !== src) })} />);
+  }
+  for (const em of state.entryMethod) {
+    chips.push(<ActiveFilterChip key={`em-${em}`} label={`Entry: ${em}`} onRemove={() => setState({ ...state, entryMethod: state.entryMethod.filter((x) => x !== em) })} />);
   }
   if (state.date) {
     chips.push(<ActiveFilterChip key="date" label={`Date: ${dateLabel(state.date)}`} onRemove={() => setState({ ...state, date: undefined })} />);

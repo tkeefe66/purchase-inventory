@@ -3,12 +3,12 @@ import type { MasterRow } from '../../lib/types.js';
 export type ColumnId =
   | 'date' | 'category' | 'itemName' | 'brand' | 'price' | 'status'
   | 'subCategory' | 'domain' | 'year' | 'color' | 'size' | 'qty'
-  | 'type' | 'source' | 'orderId';
+  | 'type' | 'source' | 'orderId' | 'entryMethod';
 
 const ALL_COLUMN_IDS: readonly ColumnId[] = [
   'date', 'category', 'itemName', 'brand', 'price', 'status',
   'subCategory', 'domain', 'year', 'color', 'size', 'qty',
-  'type', 'source', 'orderId',
+  'type', 'source', 'orderId', 'entryMethod',
 ] as const;
 
 export interface ColumnDef {
@@ -35,6 +35,7 @@ export const COLUMN_DEFS: Record<ColumnId, ColumnDef> = {
   type:        { id: 'type',        label: 'Type',         sortable: true, accessor: (r) => r.type },
   source:      { id: 'source',      label: 'Source',       sortable: true, accessor: (r) => r.source },
   orderId:     { id: 'orderId',     label: 'Order ID',     sortable: true, accessor: (r) => r.orderId },
+  entryMethod: { id: 'entryMethod', label: 'Entry Method', sortable: true, accessor: (r) => r.entryMethod },
 };
 
 export interface ColumnPrefs {
@@ -58,6 +59,7 @@ export const DEFAULT_PREFS: ColumnPrefs = {
     { id: 'type',        visible: false },
     { id: 'source',      visible: false },
     { id: 'orderId',     visible: false },
+    { id: 'entryMethod', visible: false },
   ],
 };
 

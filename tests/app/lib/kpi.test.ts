@@ -7,7 +7,7 @@ function row(p: Partial<MasterRow>): MasterRow {
     year: '', date: '', category: '', subCategory: '', brand: '', itemName: '',
     color: '', size: '', qty: 1, price: 0, source: 'Other', orderId: '',
     status: 'active', domain: 'Outdoor', productUrl: '', type: 'Gear',
-    reasoning: '', notes: '', image: '',
+    reasoning: '', notes: '', image: '', entryMethod: 'email',
     ...p,
   };
 }

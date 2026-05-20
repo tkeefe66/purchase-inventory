@@ -18,6 +18,10 @@ export interface FilterState {
   subCategory: string[];
   type: string[];
   year: string[];
+  color: string[];
+  size: string[];
+  source: string[];
+  entryMethod: string[];
   date: DateFilter | undefined;
   price: PriceFilter | undefined;
 }
@@ -37,6 +41,10 @@ export function parseFilterState(params: URLSearchParams): FilterState {
     subCategory: getMultiValue(params, 'subCategory'),
     type: getMultiValue(params, 'type'),
     year: getMultiValue(params, 'year'),
+    color: getMultiValue(params, 'color'),
+    size: getMultiValue(params, 'size'),
+    source: getMultiValue(params, 'source'),
+    entryMethod: getMultiValue(params, 'entryMethod'),
     date: parseDate(params.get('date')),
     price: parsePrice(params.get('price')),
   };
@@ -52,6 +60,10 @@ export function serializeFilterState(state: FilterState): URLSearchParams {
   if (state.subCategory.length) p.set('subCategory', state.subCategory.join(','));
   if (state.type.length) p.set('type', state.type.join(','));
   if (state.year.length) p.set('year', state.year.join(','));
+  if (state.color.length) p.set('color', state.color.join(','));
+  if (state.size.length) p.set('size', state.size.join(','));
+  if (state.source.length) p.set('source', state.source.join(','));
+  if (state.entryMethod.length) p.set('entryMethod', state.entryMethod.join(','));
   const ds = serializeDate(state.date);
   if (ds) p.set('date', ds);
   const ps = serializePrice(state.price);

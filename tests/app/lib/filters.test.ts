@@ -10,7 +10,7 @@ describe('parseFilterState', () => {
     const s = parseFilterState(new URLSearchParams(''));
     expect(s).toEqual({
       q: '', domain: '', status: [], brand: [], category: [], subCategory: [],
-      type: [], year: [],
+      type: [], year: [], color: [], size: [], source: [], entryMethod: [],
       date: undefined, price: undefined,
     });
   });
@@ -69,7 +69,8 @@ describe('serializeFilterState', () => {
   it('omits empty values', () => {
     const empty: FilterState = {
       q: '', domain: '', status: [], brand: [], category: [], subCategory: [],
-      type: [], year: [], date: undefined, price: undefined,
+      type: [], year: [], color: [], size: [], source: [], entryMethod: [],
+      date: undefined, price: undefined,
     };
     expect(serializeFilterState(empty).toString()).toBe('');
   });
@@ -78,6 +79,7 @@ describe('serializeFilterState', () => {
     const s: FilterState = {
       q: 'patagonia', domain: 'outdoor',
       status: ['active'], brand: [], category: [], subCategory: [], type: [], year: [],
+      color: [], size: [], source: [], entryMethod: [],
       date: undefined, price: undefined,
     };
     const out = serializeFilterState(s);
@@ -90,6 +92,7 @@ describe('serializeFilterState', () => {
     const s: FilterState = {
       q: '', domain: '',
       status: [], brand: [], category: [], subCategory: [], type: [], year: [],
+      color: [], size: [], source: [], entryMethod: [],
       date: { kind: 'range', start: '2024-03-01', end: '2024-04-30' },
       price: { kind: 'range', min: 50, max: 200 },
     };
@@ -102,6 +105,7 @@ describe('serializeFilterState', () => {
     const s: FilterState = {
       q: '', domain: '',
       status: [], brand: ["Arc'teryx", 'Patagonia'], category: [], subCategory: [], type: [], year: [],
+      color: [], size: [], source: [], entryMethod: [],
       date: undefined, price: undefined,
     };
     const round = parseFilterState(serializeFilterState(s));

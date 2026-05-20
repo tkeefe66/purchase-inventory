@@ -26,11 +26,11 @@ beforeEach(() => {
 const ALL_IDS: ColumnId[] = [
   'date', 'category', 'itemName', 'brand', 'price', 'status',
   'subCategory', 'domain', 'year', 'color', 'size', 'qty',
-  'type', 'source', 'orderId',
+  'type', 'source', 'orderId', 'entryMethod',
 ];
 
 describe('DEFAULT_PREFS', () => {
-  it('lists all 15 ColumnIds', () => {
+  it('lists every ColumnId exactly once', () => {
     expect(DEFAULT_PREFS.columns.map((c) => c.id).sort()).toEqual([...ALL_IDS].sort());
   });
 
@@ -39,9 +39,9 @@ describe('DEFAULT_PREFS', () => {
     expect(visible).toEqual(['date', 'category', 'itemName', 'brand', 'price', 'status']);
   });
 
-  it('has the 9 default-hidden columns last', () => {
+  it('has the remaining columns default-hidden, in declared order', () => {
     const hidden = DEFAULT_PREFS.columns.filter((c) => !c.visible).map((c) => c.id);
-    expect(hidden).toEqual(['subCategory', 'domain', 'year', 'color', 'size', 'qty', 'type', 'source', 'orderId']);
+    expect(hidden).toEqual(['subCategory', 'domain', 'year', 'color', 'size', 'qty', 'type', 'source', 'orderId', 'entryMethod']);
   });
 });
 
@@ -99,6 +99,7 @@ describe('loadColumnPrefs', () => {
         { id: 'type', visible: false },
         { id: 'source', visible: false },
         { id: 'orderId', visible: false },
+        { id: 'entryMethod', visible: false },
       ],
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(custom));
@@ -115,12 +116,12 @@ describe('loadColumnPrefs', () => {
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(partial));
     const loaded = loadColumnPrefs();
-    expect(loaded.columns.length).toBe(15);
+    expect(loaded.columns.length).toBe(ALL_IDS.length);
     expect(loaded.columns[0]).toEqual({ id: 'date', visible: true });
     expect(loaded.columns[1]).toEqual({ id: 'price', visible: true });
-    // remaining 13 ids appear after, hidden
+    // remaining ids appear after, hidden
     const remainingIds = loaded.columns.slice(2).map((c) => c.id);
-    for (const id of ['category', 'itemName', 'brand', 'status', 'subCategory', 'domain', 'year', 'color', 'size', 'qty', 'type', 'source', 'orderId']) {
+    for (const id of ['category', 'itemName', 'brand', 'status', 'subCategory', 'domain', 'year', 'color', 'size', 'qty', 'type', 'source', 'orderId', 'entryMethod']) {
       expect(remainingIds).toContain(id);
     }
     expect(loaded.columns.slice(2).every((c) => !c.visible)).toBe(true);
