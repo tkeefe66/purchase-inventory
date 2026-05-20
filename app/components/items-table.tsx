@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MasterRow, Status } from '../../lib/types.js';
 import { STATUS_VALUES, DOMAIN_VALUES, ITEM_TYPE_VALUES, ENTRY_METHOD_VALUES } from '../../lib/types.js';
 import { useTableFilters } from '../lib/hooks/use-table-filters.js';
@@ -32,6 +32,12 @@ export function ItemsTable({ rows }: { rows: MasterRow[] }) {
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [openFilter, setOpenFilter] = useState<{ key: FilterKey; anchor: HTMLElement } | null>(null);
   const [openRowKey, setOpenRowKey] = useState<string | null>(null);
+
+  // Local search draft — typing only updates local state; we commit to URL
+  // (which triggers the server re-render) on Enter. Without this, every
+  // keystroke navigates and the input lags / drops characters.
+  const [searchDraft, setSearchDraft] = useState(state.q);
+  useEffect(() => { setSearchDraft(state.q); }, [state.q]);
 
   const visibleColumns = useMemo(
     () => prefs.columns.filter((c) => c.visible).map((c) => c.id),
@@ -110,9 +116,13 @@ export function ItemsTable({ rows }: { rows: MasterRow[] }) {
       <div className="md:flex-1 md:min-w-0">
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <input
-            type="search" placeholder="Search…"
-            value={state.q}
-            onChange={(e) => setState({ ...state, q: e.target.value })}
+            type="search" placeholder="Search… (press Enter)"
+            value={searchDraft}
+            onChange={(e) => setSearchDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); setState({ ...state, q: searchDraft }); }
+              else if (e.key === 'Escape') { setSearchDraft(state.q); }
+            }}
             className="w-44 rounded-input border border-border-subtle bg-bg-surface px-3 py-2 text-[12px] text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent-from"
           />
           {activeFilterChips(state, setState)}
@@ -123,10 +133,13 @@ export function ItemsTable({ rows }: { rows: MasterRow[] }) {
           <ColumnSettings prefs={prefs} onChange={setPrefs} onReset={resetPrefs} />
         </div>
 
-        {/* Desktop table — horizontal scroll kicks in when columns exceed the viewport */}
-        <div className="hidden overflow-x-auto rounded-card border border-border-subtle bg-bg-surface shadow-card md:block">
+        {/* Desktop table — wrapper is its own scroll container in both axes, so
+            the sticky <thead> engages relative to the table's own scrollbar
+            rather than the page. Without overflow:auto here the page scrolls
+            instead and the sticky position never activates. */}
+        <div className="hidden max-h-[calc(100vh-220px)] overflow-auto rounded-card border border-border-subtle bg-bg-surface shadow-card md:block">
           <table className="min-w-full text-[13px]">
-            <thead className="sticky top-0 bg-bg-surface-raised text-left text-text-muted">
+            <thead className="sticky top-0 z-10 bg-bg-surface-raised text-left text-text-muted">
               <tr>
                 {visibleColumns.map((id) => {
                   const def = COLUMN_DEFS[id];

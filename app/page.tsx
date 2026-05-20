@@ -25,9 +25,12 @@ export default async function Home({ searchParams }: PageProps) {
   const scopeLabel = domain ? domain.charAt(0).toUpperCase() + domain.slice(1) : 'All domains';
 
   return (
-    <div className="relative overflow-hidden px-4 py-6 md:px-7">
-      {/* Atmospheric gradient blob */}
-      <div className="pointer-events-none absolute -right-20 -top-20 h-[280px] w-[280px] rounded-full bg-blob-gradient opacity-[0.18] blur-[40px]" />
+    <div className="relative px-4 py-6 md:px-7">
+      {/* Atmospheric gradient blob — clipped here so the page wrapper can keep
+          overflow:visible, which is required for the detail panel's sticky position. */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -right-20 -top-20 h-[280px] w-[280px] rounded-full bg-blob-gradient opacity-[0.18] blur-[40px]" />
+      </div>
 
       <div className="relative">
         {domain === 'photography' && (

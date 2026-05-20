@@ -172,7 +172,7 @@ function ImageBlock({ row }: { row: MasterRow }) {
     >
       {row.image ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={row.image} alt={row.itemName} className="h-full w-full object-cover" />
+        <img src={row.image} alt={row.itemName} className="h-full w-full object-contain" />
       ) : mode === 'url' ? (
         <form
           onSubmit={(e) => {
