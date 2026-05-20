@@ -18,6 +18,7 @@ const minimalDraft: PartialDraft = {
   subCategory: 'Shell',
   type: 'Gear',
   reasoning: '',
+  purchaseSource: '',
 };
 
 describe('AddgearStateStore', () => {
@@ -55,7 +56,7 @@ describe('AddgearStateStore', () => {
       size: 'M',
       qty: 1,
       price: 149,
-      source: 'Image',
+      source: 'Patagonia',
       orderId: 'IMG-20260514-abc123',
       status: 'active',
       domain: 'Outdoor',
@@ -64,13 +65,15 @@ describe('AddgearStateStore', () => {
       reasoning: 'captured via /addgear photo',
       notes: '',
       image: '',
+      entryMethod: 'photo',
     };
     store.set('chat-1', { kind: 'awaiting-confirm', row });
     const step = store.peek('chat-1');
     expect(step?.kind).toBe('awaiting-confirm');
     if (step?.kind === 'awaiting-confirm') {
       expect(step.row.brand).toBe('Patagonia');
-      expect(step.row.source).toBe('Image');
+      expect(step.row.source).toBe('Patagonia');
+      expect(step.row.entryMethod).toBe('photo');
     }
   });
 

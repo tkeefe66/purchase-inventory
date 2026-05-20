@@ -81,6 +81,7 @@ const HEADERS = [
   'Reasoning',
   'Notes',
   'Image',
+  'Entry Method',
 ] as const;
 
 async function readHeaderRow(
@@ -134,6 +135,11 @@ export async function readMasterRows(
       const domain = (getCell(row, map, 'Domain') as MasterRow['domain']) || 'Other';
       const itemType = (getCell(row, map, 'Type') as MasterRow['type']) || 'Gear';
       const source = (getCell(row, map, 'Source') as MasterRow['source']) || 'REI';
+      // Entry Method is a relatively new column — fall back to 'manual' for
+      // rows that pre-date it. The backfill script repopulates these from
+      // orderId patterns; until it runs, treating them as manual is the
+      // safest default (won't fool anyone into thinking they were ingested).
+      const entryMethod = (getCell(row, map, 'Entry Method') as MasterRow['entryMethod']) || 'manual';
       return {
         year: getCell(row, map, 'Year'),
         date: getCell(row, map, 'Date Purchased'),
@@ -154,6 +160,7 @@ export async function readMasterRows(
         reasoning: getCell(row, map, 'Reasoning'),
         notes: getCell(row, map, 'Notes'),
         image: getCell(row, map, 'Image'),
+        entryMethod,
       };
     });
 }
@@ -299,6 +306,7 @@ function buildRowValues(
   set('Type', r.type);
   set('Reasoning', r.reasoning);
   set('Notes', r.notes);
+  set('Entry Method', r.entryMethod);
   return arr;
 }
 
@@ -417,6 +425,7 @@ const FIELD_TO_HEADER: ReadonlyMap<keyof MasterRow, string> = new Map([
   ['reasoning', 'Reasoning'],
   ['notes', 'Notes'],
   ['image', 'Image'],
+  ['entryMethod', 'Entry Method'],
 ]);
 
 export async function updateRowFields(

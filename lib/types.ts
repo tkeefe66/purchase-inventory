@@ -33,12 +33,30 @@ export type Domain = (typeof DOMAIN_VALUES)[number];
 export const ITEM_TYPE_VALUES = ['Gear', 'Consumable', 'Service'] as const;
 export type ItemType = (typeof ITEM_TYPE_VALUES)[number];
 
-export const SOURCE_VALUES = ['REI', 'Amazon', 'Other', 'Image'] as const;
-export type Source = (typeof SOURCE_VALUES)[number];
+/**
+ * Canonical source values surfaced as quick-select options. Source is no
+ * longer a closed enum — /addgear lets the user type a free-text retailer
+ * (e.g. "Backcountry", "Patagonia") — but these are the values seeded into
+ * dropdowns and used by parsers. 'Image' was removed when the photo-upload
+ * flow stopped conflating "where I got the data" with "where I bought it".
+ */
+export const SOURCE_VALUES = ['REI', 'Amazon', 'Other'] as const;
+export type Source = string;
 
 /**
- * One row in the `All Purchases` tab. 18 columns. Position-independent —
- * code accesses fields by header name, not column letter.
+ * How a row got into the sheet. Set once at row creation; never inferred
+ * later (except by the one-shot backfill script for existing data).
+ *   email  — ingested by the cron from a retailer order/shipment email
+ *   photo  — captured via /addgear in Telegram
+ *   manual — typed directly into the sheet by the user
+ *   import — written by the historical CSV import script
+ */
+export const ENTRY_METHOD_VALUES = ['email', 'photo', 'manual', 'import'] as const;
+export type EntryMethod = (typeof ENTRY_METHOD_VALUES)[number];
+
+/**
+ * One row in the `All Purchases` tab. Position-independent — code accesses
+ * fields by header name, not column letter.
  */
 export interface MasterRow {
   year: string;
@@ -66,12 +84,21 @@ export interface MasterRow {
    */
   notes: string;
   /**
-   * URL path (web-relative, leading slash) to the stored product image —
-   * e.g. `/images/<id>.jpg` — or empty string when no image has been
-   * resolved. The web service serves these from the Railway `/data/images/`
-   * mount via its route handler.
+   * Image reference — either the upstream source URL (e.g.
+   * `https://m.media-amazon.com/.../foo.jpg`, written by the cron and
+   * backfill) or a web-relative local path (`/images/<id>.jpg`, written by
+   * the manual-upload API route when a user uploads from the web UI).
+   * Empty string when no image has been resolved. The web UI renders this
+   * directly as `<img src>`; both forms work for the browser. Bytes are also
+   * persisted to `/data/images/<id>.<ext>` on the Railway volume as a hedge
+   * against upstream URL rot — see `lib/integrations/resolve-image.ts`.
    */
   image: string;
+  /**
+   * How this row was created. Email-ingest, /addgear photo-upload, manual
+   * sheet edit, or historical CSV import. See {@link EntryMethod}.
+   */
+  entryMethod: EntryMethod;
 }
 
 /**

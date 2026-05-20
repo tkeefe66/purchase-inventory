@@ -234,6 +234,42 @@ function makeHash(parts: readonly string[]): string {
   return createHash('sha256').update(parts.join('|')).digest('hex');
 }
 
+/**
+ * Best-effort retailer guess from a product URL host. Used to pre-fill the
+ * awaiting-source step when the user pasted a URL in the /addgear caption —
+ * they can still type a different value to override. Returns '' when the host
+ * isn't recognized so the bot falls through to a normal prompt.
+ */
+function sourceFromUrl(url: string): string {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host.endsWith('rei.com')) return 'REI';
+    if (host.endsWith('amazon.com') || host.endsWith('amzn.com')) return 'Amazon';
+    return '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Normalize whatever the user typed at the source prompt to a canonical
+ * retailer label. 'rei', 'REI' → 'REI'; 'amazon', 'amzn', 'AMZN' → 'Amazon';
+ * everything else gets Title-Cased token-wise so "patagonia" → "Patagonia",
+ * "back country" → "Back Country". An empty reply returns '' so callers can
+ * re-prompt.
+ */
+export function normalizeSource(input: string): string {
+  const s = input.trim();
+  if (!s) return '';
+  const lower = s.toLowerCase();
+  if (lower === 'rei') return 'REI';
+  if (lower === 'amazon' || lower === 'amzn') return 'Amazon';
+  return s
+    .split(/\s+/)
+    .map((tok) => (tok.length === 0 ? tok : tok[0]!.toUpperCase() + tok.slice(1).toLowerCase()))
+    .join(' ');
+}
+
 async function rowFromDraft(
   draft: PartialDraft,
   today: string,
@@ -251,7 +287,7 @@ async function rowFromDraft(
     size: draft.size,
     qty: 1,
     price: draft.price ?? 0,
-    source: 'Image',
+    source: draft.purchaseSource || 'Other',
     orderId,
     status: 'active',
     domain: draft.domain,
@@ -260,6 +296,7 @@ async function rowFromDraft(
     reasoning: draft.reasoning || 'captured via /addgear photo',
     notes: '',
     image: '',
+    entryMethod: 'photo',
   };
 
   if (draft.imageBytes && draft.imageMediaType) {
@@ -390,6 +427,7 @@ export async function startAddgear(
     subCategory: classification.subCategory,
     type: classification.type,
     reasoning: 'captured via /addgear photo',
+    purchaseSource: '',
   };
 
   // Always enter the product-pick step. Even with 0 candidates the user
@@ -477,6 +515,9 @@ async function startAddgearWithUrl(
     subCategory: classification.subCategory,
     type: classification.type,
     reasoning: 'captured via /addgear photo+url',
+    // When user pasted a product URL we can guess the retailer from the host;
+    // they still get the awaiting-source step so they can confirm or override.
+    purchaseSource: sourceFromUrl(url),
   };
 
   return warning + await advanceFlow(chatId, draft, deps);
@@ -490,6 +531,10 @@ async function advanceFlow(chatId: string, draft: PartialDraft, deps: AddgearDep
   if (draft.price === null && !draft.priceAcknowledgedUnknown) {
     deps.addgearState.set(chatId, { kind: 'awaiting-price', draft });
     return `What did you pay? (number, or "unknown")`;
+  }
+  if (!draft.purchaseSource) {
+    deps.addgearState.set(chatId, { kind: 'awaiting-source', draft });
+    return `Where did you buy it? Reply "rei", "amazon", or type the retailer name (e.g. "Patagonia", "Backcountry"). "Other" if you don't remember.`;
   }
   const candidates = fuzzyMatchExisting(draft.brand, draft.itemName, deps.listExistingRows());
   if (candidates.length > 0) {
@@ -597,6 +642,15 @@ export async function continueAddgear(
       }
       step.draft.price = n;
     }
+    return await advanceFlow(chatId, step.draft, deps);
+  }
+
+  if (step.kind === 'awaiting-source') {
+    const normalized = normalizeSource(reply);
+    if (!normalized) {
+      return `Reply "rei", "amazon", a retailer name, or "Other" if unknown.`;
+    }
+    step.draft.purchaseSource = normalized;
     return await advanceFlow(chatId, step.draft, deps);
   }
 
@@ -714,8 +768,16 @@ export async function continueAddgear(
           updated.type = value as ItemType;
           break;
         }
+        case 'source': {
+          const normalized = normalizeSource(value);
+          if (!normalized) {
+            return `Couldn't read "${value}" as a source. Try "REI", "Amazon", or a retailer name.`;
+          }
+          updated.source = normalized;
+          break;
+        }
         default:
-          return `Unknown field "${field}". Try: brand, item, color, size, price, date, url, category, sub-category, domain, type. Or reply /confirm or /cancel.`;
+          return `Unknown field "${field}". Try: brand, item, color, size, price, date, url, category, sub-category, domain, type, source. Or reply /confirm or /cancel.`;
       }
       // Re-park so the pending action also reflects the patched row.
       return parkForConfirm(chatId, updated, deps);

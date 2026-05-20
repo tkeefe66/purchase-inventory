@@ -20,6 +20,7 @@ export const FIXTURE_THERMAREST: MasterRow = {
   reasoning: 'Sleeping pad for backpacking',
   notes: '',
   image: '',
+  entryMethod: 'email',
 };
 
 export const FIXTURE_SALOMON: MasterRow = {
@@ -42,6 +43,7 @@ export const FIXTURE_SALOMON: MasterRow = {
   reasoning: '',
   notes: '',
   image: '',
+  entryMethod: 'email',
 };
 
 export const FIXTURE_NO_BRAND: MasterRow = {
@@ -64,6 +66,7 @@ export const FIXTURE_NO_BRAND: MasterRow = {
   reasoning: '',
   notes: '',
   image: '',
+  entryMethod: 'email',
 };
 
 export const FIXTURE_RETIRED: MasterRow = {

@@ -7,7 +7,8 @@ import type { SupportedMediaType } from './integrations/image-storage.js';
  * Per-chat state for the /addgear capture flow.
  *
  * The flow walks chatId through:
- *   [awaiting-product-pick] -> awaiting-date -> awaiting-price -> [awaiting-dedup] -> awaiting-confirm
+ *   [awaiting-product-pick] -> awaiting-date -> awaiting-price ->
+ *   awaiting-source -> [awaiting-dedup] -> awaiting-confirm
  *
  * Each step holds a partial draft; awaiting-confirm holds a complete MasterRow.
  * On terminal success (write succeeds) or user /cancel, the entry is cleared.
@@ -33,12 +34,18 @@ export interface PartialDraft {
   subCategory: string;
   type: ItemType;
   reasoning: string;
+  /**
+   * Where the item was purchased — REI / Amazon / free-text retailer.
+   * Empty string until the user answers the source prompt.
+   */
+  purchaseSource: string;
 }
 
 export type AddgearStep =
   | { kind: 'awaiting-product-pick'; draft: PartialDraft; candidates: ProductCandidate[] }
   | { kind: 'awaiting-date'; draft: PartialDraft }
   | { kind: 'awaiting-price'; draft: PartialDraft }
+  | { kind: 'awaiting-source'; draft: PartialDraft }
   | { kind: 'awaiting-dedup'; draft: PartialDraft; candidates: FuzzyMatch[] }
   | { kind: 'awaiting-confirm'; row: MasterRow };
 

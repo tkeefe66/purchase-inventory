@@ -204,7 +204,7 @@ async function main(): Promise<void> {
       },
       extractFromPhoto: (bytes, caption) => extractFromPhoto(anthropic, bytes, caption),
       classify: (input) =>
-        classifyFn({ itemName: `${input.brand} ${input.itemName}`.trim(), source: 'Image' }),
+        classifyFn({ itemName: `${input.brand} ${input.itemName}`.trim(), source: 'Other' }),
       lookupProduct: (brand, itemName) => lookupProduct(anthropic, brand, itemName),
       fetchProductName: (url, brand) => fetchProductName(url, brand),
       fetchProductInfo: (url) => fetchProductInfo(anthropic, url),

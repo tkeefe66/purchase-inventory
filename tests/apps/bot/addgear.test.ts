@@ -1,7 +1,21 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AddgearStateStore } from '../../../lib/addgearState.js';
 import { PendingActionStore } from '../../../lib/pendingActions.js';
-import { startAddgear, continueAddgear, parseUserDate, extractDatePrefix, extractPrice, parseCaptionHints, type AddgearDeps } from '../../../apps/bot/commands/addgear.js';
+import { startAddgear, continueAddgear as continueAddgearRaw, parseUserDate, extractDatePrefix, extractPrice, parseCaptionHints, type AddgearDeps } from '../../../apps/bot/commands/addgear.js';
+
+/**
+ * Test wrapper around continueAddgear that auto-advances past the
+ * awaiting-source step by replying "Other" — pre-existing tests don't care
+ * about the source flow and shouldn't have to know about it. Source-specific
+ * tests use {@link continueAddgearRaw} directly.
+ */
+async function continueAddgear(chatId: string, text: string, deps: AddgearDeps): Promise<string | null> {
+  const reply = await continueAddgearRaw(chatId, text, deps);
+  if (deps.addgearState.peek(chatId)?.kind === 'awaiting-source') {
+    return await continueAddgearRaw(chatId, 'Other', deps);
+  }
+  return reply;
+}
 import type { PhotoExtraction } from '../../../lib/parsers/photo.js';
 import type { ProductCandidate } from '../../../lib/parsers/product-lookup.js';
 import type { Classification } from '../../../lib/classifier.js';
@@ -67,8 +81,15 @@ async function startAddgearSkippingPick(
   deps: AddgearDeps,
 ): Promise<string> {
   await startAddgear(chatId, photoFileId, caption, deps);
-  const reply = await continueAddgear(chatId, 'skip', deps);
-  return reply ?? '';
+  let reply = (await continueAddgear(chatId, 'skip', deps)) ?? '';
+  // The awaiting-source step (added 2026-05-19) interposes between the
+  // product-pick / date / price steps and the awaiting-confirm preview. Tests
+  // that just want to reach the preview shouldn't have to know about it —
+  // auto-reply with "Other" so the helper still returns the final preview.
+  if (deps.addgearState.peek(chatId)?.kind === 'awaiting-source') {
+    reply = (await continueAddgear(chatId, 'Other', deps)) ?? '';
+  }
+  return reply;
 }
 
 describe('startAddgear — vision extracts everything', () => {
@@ -99,7 +120,7 @@ describe('startAddgear — vision extracts everything', () => {
     expect(reply).toMatch(/^Size: M$/m);
     expect(reply).toMatch(/^Price: \$120$/m);
     expect(reply).toMatch(/^Date: 2018-01-01$/m);
-    expect(reply).toMatch(/^Source: Image$/m);
+    expect(reply).toMatch(/^Source: Other$/m);
     expect(reply).toMatch(/^Category: Hiking Gear$/m);
     expect(reply).toMatch(/^Sub-Category: Wind Shell$/m);
     expect(reply).toMatch(/^Domain: Outdoor$/m);
@@ -140,7 +161,7 @@ describe('startAddgear — missing price triggers prompt after date', () => {
     expect(step?.kind).toBe('awaiting-confirm');
     if (step?.kind === 'awaiting-confirm') {
       expect(((step as { row: { price: any } }).row.price)).toBe(120);
-      expect(((step as { row: { source: any } }).row.source)).toBe('Image');
+      expect(((step as { row: { source: any } }).row.source)).toBe('Other');
       expect(((step as { row: { orderId: any } }).row.orderId)).toMatch(/^IMG-20260514-/);
     }
   });
@@ -190,7 +211,7 @@ describe('continueAddgear — confirm, correct, cancel', () => {
     expect(deps.addgearState.peek('chat-1')?.kind).toBe('awaiting-confirm');
     const pending = deps.pendingActions.peek('chat-1');
     expect(pending).not.toBeNull();
-    expect(((pending && pending.type === 'log-append') ? ((pending as { row: { source: any } }).row.source) : undefined)).toBe('Image');
+    expect(((pending && pending.type === 'log-append') ? ((pending as { row: { source: any } }).row.source) : undefined)).toBe('Other');
     expect(((pending && pending.type === 'log-append') ? ((pending as { row: { brand: any } }).row.brand) : undefined)).toBe('Patagonia');
   });
 

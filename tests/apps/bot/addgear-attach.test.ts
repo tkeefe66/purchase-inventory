@@ -3,9 +3,19 @@ import { AddgearStateStore } from '../../../lib/addgearState.js';
 import { PendingActionStore } from '../../../lib/pendingActions.js';
 import {
   startAddgear,
-  continueAddgear,
+  continueAddgear as continueAddgearRaw,
   type AddgearDeps,
 } from '../../../apps/bot/commands/addgear.js';
+
+// Test wrapper that auto-advances past the awaiting-source step — tests in
+// this file don't care about source selection.
+async function continueAddgear(chatId: string, text: string, deps: AddgearDeps): Promise<string | null> {
+  const reply = await continueAddgearRaw(chatId, text, deps);
+  if (deps.addgearState.peek(chatId)?.kind === 'awaiting-source') {
+    return await continueAddgearRaw(chatId, 'Other', deps);
+  }
+  return reply;
+}
 import type { PhotoExtraction } from '../../../lib/parsers/photo.js';
 import type { Classification } from '../../../lib/classifier.js';
 

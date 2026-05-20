@@ -20,7 +20,7 @@ const FIXTURE_A6700: MasterRow = {
   domain: 'Photography',
   productUrl: 'https://amazon.com/dp/B0CC1234',
   type: 'Gear',
-  reasoning: '', notes: '', image: '',
+  reasoning: '', notes: '', image: '', entryMethod: 'email',
 };
 
 // ─── buildSystemPrompt ────────────────────────────────────────────────────

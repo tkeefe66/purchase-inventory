@@ -6,7 +6,7 @@ const SAMPLE_ROW: MasterRow = {
   year: '2026', date: '2026-05-14', category: 'Climbing', subCategory: 'Harness',
   brand: 'Black Diamond', itemName: 'Couloir Harness', color: '', size: 'M', qty: 1,
   price: 80, source: 'REI', orderId: '', status: 'active', domain: 'Outdoor',
-  productUrl: '', type: 'Gear', reasoning: '', notes: '', image: '',
+  productUrl: '', type: 'Gear', reasoning: '', notes: '', image: '', entryMethod: 'email',
 };
 
 describe('PendingActionStore', () => {

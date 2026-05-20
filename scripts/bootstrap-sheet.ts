@@ -22,6 +22,7 @@ const EXPECTED_HEADERS = [
   'Reasoning',
   'Notes',
   'Image',
+  'Entry Method',
 ];
 
 const STATUS_ENUM = [

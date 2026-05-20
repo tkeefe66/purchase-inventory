@@ -105,7 +105,12 @@ describe('KNOWN_SENDERS / PURCHASE_KEYWORDS', () => {
 });
 
 describe('SOURCE_VALUES', () => {
-  test('includes Image for photo-captured gear', () => {
-    expect(SOURCE_VALUES).toContain('Image');
+  test('includes the canonical retailers used as dropdown options', () => {
+    expect(SOURCE_VALUES).toContain('REI');
+    expect(SOURCE_VALUES).toContain('Amazon');
+    expect(SOURCE_VALUES).toContain('Other');
+  });
+  test('no longer includes "Image" — photo uploads now record the actual purchase source', () => {
+    expect((SOURCE_VALUES as readonly string[]).includes('Image')).toBe(false);
   });
 });

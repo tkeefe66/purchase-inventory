@@ -20,6 +20,7 @@ export const FIXTURE_SONY_A6700: MasterRow = {
   reasoning: 'APS-C mirrorless upgrade',
   notes: '',
   image: '',
+  entryMethod: 'email',
 };
 
 export const FIXTURE_SIGMA_18_50: MasterRow = {
@@ -42,6 +43,7 @@ export const FIXTURE_SIGMA_18_50: MasterRow = {
   reasoning: 'Fast walk-around zoom for a6700',
   notes: '',
   image: '',
+  entryMethod: 'email',
 };
 
 export const FIXTURE_ET8550: MasterRow = {
@@ -64,6 +66,7 @@ export const FIXTURE_ET8550: MasterRow = {
   reasoning: 'Fine art printing',
   notes: '',
   image: '',
+  entryMethod: 'email',
 };
 
 export const FIXTURE_LIGHTROOM: MasterRow = {
@@ -86,6 +89,7 @@ export const FIXTURE_LIGHTROOM: MasterRow = {
   reasoning: 'Primary editing workflow',
   notes: '',
   image: '',
+  entryMethod: 'email',
 };
 
 export const FIXTURE_BATTERIES: MasterRow = {
@@ -108,6 +112,7 @@ export const FIXTURE_BATTERIES: MasterRow = {
   reasoning: 'Spare batteries for a6700',
   notes: '',
   image: '',
+  entryMethod: 'email',
 };
 
 export const FIXTURE_PHOTO_RETIRED: MasterRow = {
@@ -137,6 +142,7 @@ export const FIXTURE_OUTDOOR_ACTIVE: MasterRow = {
   reasoning: '',
   notes: '',
   image: '',
+  entryMethod: 'email',
 };
 
 export const FIXTURE_KITCHEN_ACTIVE: MasterRow = {
@@ -159,6 +165,7 @@ export const FIXTURE_KITCHEN_ACTIVE: MasterRow = {
   reasoning: '',
   notes: '',
   image: '',
+  entryMethod: 'email',
 };
 
 export const FIXTURE_PHOTO_ALL: MasterRow[] = [

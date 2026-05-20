@@ -62,7 +62,7 @@ export async function extractLogDraft(
   }
   const requiredKeys = ['itemName', 'brand', 'price', 'source', 'date', 'category', 'subCategory', 'color', 'size', 'type'];
   if (!requiredKeys.every((k) => k in raw)) return null;
-  const source = SOURCE_VALUES.includes(raw.source as Source) ? (raw.source as Source) : 'Other';
+  const source = (SOURCE_VALUES as readonly string[]).includes(String(raw.source ?? '')) ? String(raw.source) : 'Other';
   const type = ITEM_TYPE_VALUES.includes(raw.type as ItemType) ? (raw.type as ItemType) : 'Gear';
   const date = typeof raw.date === 'string' && raw.date.length > 0 ? raw.date : todayIso;
   return {

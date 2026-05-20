@@ -115,7 +115,7 @@ describe('appendMasterRow', () => {
       year: '2026', date: '2026-05-14', category: '', subCategory: '',
       brand: 'BD', itemName: 'Couloir', color: '', size: '', qty: 1, price: 80,
       source: 'REI' as const, orderId: '', status: 'active' as const, domain: 'Outdoor' as const,
-      productUrl: '', type: 'Gear' as const, reasoning: '', notes: '', image: '',
+      productUrl: '', type: 'Gear' as const, reasoning: '', notes: '', image: '', entryMethod: 'email' as const,
     };
     const { rowIndex } = await appendMasterRow(fakeSheets, 'SHEET_ID', row);
     expect(rowIndex).toBe(5);
