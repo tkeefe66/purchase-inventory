@@ -9,6 +9,7 @@ import {
 import { computeStatuses, type ProgressEntry } from '../../../domains/photography/curriculum.js';
 import type { AssignmentRow, ProgressRow } from '../../../lib/photographySheets.js';
 import { Markdown } from '../../components/markdown';
+import { TopicActions } from './topic-actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -76,9 +77,6 @@ export default async function TopicPage({ params }: PageProps) {
   });
   const allPrereqsMet = prereqStatuses.every((p) => p.completed);
 
-  // Telegram deep-link via universal link (tg://msg?text=… works on iOS/Android)
-  const tgEncode = (s: string) => encodeURIComponent(s);
-
   return (
     <div className="relative overflow-hidden px-4 py-6 md:px-7">
       <div className="pointer-events-none absolute -right-20 -top-20 h-[280px] w-[280px] rounded-full bg-blob-gradient opacity-[0.18] blur-[40px]" />
@@ -100,37 +98,14 @@ export default async function TopicPage({ params }: PageProps) {
           <code className="rounded-chip bg-bg-surface px-2 py-1 text-[11px] text-text-muted">{topic.id}</code>
         </div>
 
-        <div className="mt-5 flex flex-wrap gap-2">
-          <a
-            href={`tg://msg?text=${tgEncode(`/learn ${topic.id}`)}`}
-            className="rounded-input bg-bg-surface border border-border-subtle px-3 py-2 text-[13px] text-text-primary hover:bg-chip-active"
-          >
-            📖 Read theory in Telegram
-          </a>
-          {activeOnThisTopic ? (
-            <a
-              href={`tg://msg?text=${tgEncode('/skip')}`}
-              className="rounded-input border border-border-subtle bg-bg-surface px-3 py-2 text-[13px] text-text-secondary hover:bg-chip-active hover:text-text-primary"
-              title="Skip the active assignment for this topic"
-            >
-              ⊘ Skip assignment
-            </a>
-          ) : allPrereqsMet ? (
-            <a
-              href={`tg://msg?text=${tgEncode(`/start ${topic.id}`)}`}
-              className="rounded-input bg-accent-gradient px-3 py-2 text-[13px] font-semibold text-text-primary shadow-accent-glow hover:brightness-110"
-            >
-              🚀 Start assignment
-            </a>
-          ) : (
-            <span
-              title="Prereqs not yet completed"
-              className="cursor-not-allowed rounded-input border border-dashed border-border-subtle px-3 py-2 text-[13px] text-text-muted"
-            >
-              🔒 Start assignment
-            </span>
-          )}
-        </div>
+        <TopicActions
+          topicId={topic.id}
+          topicName={topic.name}
+          hasActiveAssignment={Boolean(activeOnThisTopic)}
+          prereqsMet={allPrereqsMet}
+          {...(activeOnThisTopic ? { activeAssignmentText: activeOnThisTopic.assignmentText } : {})}
+          {...(activeOnThisTopic ? { activeAssignmentRubricJson: activeOnThisTopic.rubricJson } : {})}
+        />
 
         {/* Prereqs section */}
         {topic.prereqs.length > 0 && (
@@ -159,8 +134,7 @@ export default async function TopicPage({ params }: PageProps) {
           </h2>
           <Markdown text={topic.theorySeed} />
           <p className="mt-3 text-[11px] text-text-muted">
-            This is the scaffold the lesson is built from. Run <code className="rounded bg-bg-base px-1 py-0.5">/learn {topic.id}</code> in Telegram for the
-            Claude-expanded version grounded in your gear.
+            This is the scaffold the lesson is built from. <em>Read theory</em> above expands it with Claude, grounded in your gear.
           </p>
         </section>
 
@@ -171,7 +145,7 @@ export default async function TopicPage({ params }: PageProps) {
           </h2>
           <Markdown text={topic.assignmentSeed} />
           <p className="mt-3 text-[11px] text-text-muted">
-            <code className="rounded bg-bg-base px-1 py-0.5">/start {topic.id}</code> generates the actual assignment + rubric from this scaffold using Claude.
+            <em>Start assignment</em> above generates the actual rubric from this scaffold using Claude.
           </p>
         </section>
 
