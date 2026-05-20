@@ -1452,6 +1452,49 @@ Decision: do NOT add a separate `/image <itemId>` command. The existing `/addgea
 
 ---
 
+## 2026-05-19 — Split purchase Source from row Entry Method
+
+**Decision:** `Source` and "how the row got into the sheet" are now two separate columns:
+
+- **`Source`** keeps its original meaning — *where the item was purchased*. Type widens from the closed enum `'REI' | 'Amazon' | 'Other' | 'Image'` to plain `string` so `/addgear` can record actual retailers (Patagonia, Backcountry, Local Shop, etc.). `SOURCE_VALUES = ['REI', 'Amazon', 'Other']` is now just the canonical dropdown seed; `'Image'` is removed from it.
+- **`EntryMethod`** (new column U, "Entry Method" header) records *how* the row got created: `email` / `photo` / `manual` / `import`.
+
+Photo uploads (`/addgear`) now ask "Where did you buy it?" as a new `awaiting-source` step and stamp `entryMethod: 'photo'`. Email ingest stamps `entryMethod: 'email'`. `/log` stamps `manual`. The one-time historical CSV backfill is `import`.
+
+**Why:** Pre-2026-05-19, `/addgear`-uploaded rows had `source: 'Image'`, which conflated *where you bought it* with *how you logged it*. That broke "spend by retailer" rollups (Image isn't a retailer) and made it impossible for the agent to reason about real provenance. Splitting them is a one-time schema cost; the rest of the system gets cleaner.
+
+**How to apply:** Per-flow conventions:
+
+- `/addgear` (`apps/bot/commands/addgear.ts`) — adds `awaiting-source` step between price and dedup. URL host pre-fills the guess (rei.com → REI, amazon.com → Amazon); user can override. Always sets `entryMethod: 'photo'`.
+- Email ingest (`lib/router.ts`) — always `entryMethod: 'email'`.
+- `/log` (`apps/bot/handlers.ts`) — always `entryMethod: 'manual'`.
+- One-time backfill (`scripts/backfill-entry-method.ts`) — `npm run backfill-entry-method` (dry) / `-- --write`. Infers from orderId regex (`IMG-\d{8}-[a-f0-9]{6,}` → photo, `A\d{8,}` / `S\d+-T\d+` / `\d{3}-\d{7}-\d{7}` → email, else → import). Idempotent. Run on 2026-05-19 over 450 existing rows: 364 email / 4 photo / 82 import.
+- Web UI items table: `Source` filter switched from `EnumFilter` to `TextFilter` (the values now come from data, not a fixed enum). `Entry Method` is a new addable column with its own enum filter.
+
+If the source field is missing on a write path, audit it — the bot's `awaiting-source` step is the contract.
+
+---
+
+## 2026-05-19 — Photography topic page actions are in-app, not Telegram deep-links
+
+**Decision:** `/photography/[topicId]` drives the full assignment flow itself via modals + `POST /api/photography/{learn,start,skip,submit}`. The original Phase 7 design used `tg://msg?text=/start%20topic-id` deep-links that opened Telegram. Those are gone.
+
+**Why:** Telegram deep-links added friction (app switch, send message, switch back to read) and broke the affordance — clicking "Start assignment" should start the assignment, not compose a chat message. The web flow is now the first-class UX; Telegram remains available for power users.
+
+**How to apply:** The Telegram bot's slash commands are unchanged — `/learn`, `/start`, `/skip`, and photo submission all still work in Telegram. The web routes are additive and use the same underlying primitives (`expandAssignment`, `expandLesson`, `gradePhoto`) the bot calls. Both surfaces write to the same Photography Assignments + Photography Progress sheet tabs, so state stays consistent regardless of which one Tom uses.
+
+API contract:
+- `POST /api/photography/learn` body `{ topicId }` → `{ lesson }`. Bumps `theoryLastReadAt`.
+- `POST /api/photography/start` body `{ topicId }` → `{ assignmentId, topicId, topicName, assignmentText, rubric }`. 409 if an active assignment exists (the bot's one-active-at-a-time invariant holds).
+- `POST /api/photography/skip` → `{ ok, skippedTopicId, skippedTopicName }`. 404 if no active assignment.
+- `POST /api/photography/submit` multipart `image` + `caption` → `{ verdict, overallCritique, suggestedNextStep, perCriterion }`. JPEG / PNG / WebP / GIF only. ARW rejected (vision-unsupported). 20 MB cap.
+
+Assignments are NOT pre-built — every `/start` calls Sonnet on the topic's `assignmentSeed` to generate fresh text + rubric personalized to current inventory. The "Generating assignment…" 3-6s spinner is expected behavior, not a bug. See the 2026-05-19 expander-rules entry above for the time-agnostic / location-aware contract.
+
+If a future change extends the photography surface (e.g. `/next`, `/track`), prefer adding parallel web routes over adding more deep-links.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale
