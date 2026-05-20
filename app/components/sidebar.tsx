@@ -3,9 +3,19 @@ import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 
-const DOMAINS = [
+type SubNavItem = { href: string; label: string };
+
+const DOMAINS: Array<{ slug: string; label: string; active: boolean; subNav?: SubNavItem[] }> = [
   { slug: 'outdoor', label: 'Outdoor', active: true },
-  { slug: 'photography', label: 'Photography', active: true },
+  {
+    slug: 'photography',
+    label: 'Photography',
+    active: true,
+    subNav: [
+      { href: '/photography/assignments', label: 'Assignments' },
+      { href: '/?domain=photography', label: 'Items' },
+    ],
+  },
   { slug: 'kitchen', label: 'Kitchen', active: false },
 ];
 
@@ -40,7 +50,7 @@ export function Sidebar() {
         <BrandMark />
         <Section title="Domains" />
         {DOMAINS.map((d) => (
-          <DomainLink key={d.slug} {...d} onClick={() => setOpen(false)} />
+          <DomainGroup key={d.slug} {...d} onClick={() => setOpen(false)} />
         ))}
         <Section title="Everything" />
         <NavLink href="/" label="All items" onClick={() => setOpen(false)} clearDomain />
@@ -76,9 +86,15 @@ function Section({ title }: { title: string }) {
   );
 }
 
-function DomainLink({
-  slug, label, active, onClick,
-}: { slug: string; label: string; active: boolean; onClick: () => void }) {
+function DomainGroup({
+  slug, label, active, subNav, onClick,
+}: {
+  slug: string;
+  label: string;
+  active: boolean;
+  subNav?: SubNavItem[];
+  onClick: () => void;
+}) {
   const search = useSearchParams();
   const pathname = usePathname();
   const currentDomain = search.get('domain') ?? '';
@@ -86,27 +102,65 @@ function DomainLink({
   // Photography has a dedicated home (Skills page). Other domains link into
   // the filtered items table on the home page.
   const href = slug === 'photography' ? '/photography' : `/?domain=${slug}`;
-  const isActive = slug === 'photography'
-    ? pathname.startsWith('/photography')
+  // Section is "active" when the user is anywhere inside the domain — for
+  // Photography that includes the items table filtered to ?domain=photography.
+  const isSectionActive = slug === 'photography'
+    ? pathname.startsWith('/photography') || (pathname === '/' && currentDomain === 'photography')
+    : (pathname === '/' && currentDomain === slug);
+  // Parent link itself is "selected" only when exactly on the section's home.
+  const isParentSelected = slug === 'photography'
+    ? pathname === '/photography'
     : (pathname === '/' && currentDomain === slug);
 
+  return (
+    <>
+      <Link
+        href={href}
+        onClick={onClick}
+        className={`flex items-center gap-2 rounded-chip px-2 py-1.5 text-[13px] ${
+          isParentSelected
+            ? 'bg-chip-active font-semibold text-text-primary'
+            : 'text-text-secondary hover:text-text-primary'
+        }`}
+      >
+        <span
+          className={`h-[7px] w-[7px] rounded-full ${
+            isSectionActive ? 'bg-accent-gradient shadow-accent-glow' : 'bg-border-subtle'
+          }`}
+        />
+        {label}
+        {!active && <span className="ml-auto text-[10px] text-text-muted">—</span>}
+      </Link>
+      {isSectionActive && subNav && (
+        <div className="ml-[18px] border-l border-border-divider pl-2">
+          {subNav.map((item) => (
+            <SubNavLink key={item.href} {...item} onClick={onClick} />
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function SubNavLink({ href, label, onClick }: SubNavItem & { onClick: () => void }) {
+  const pathname = usePathname();
+  const search = useSearchParams();
+  const [hrefPath, hrefQuery] = href.split('?');
+  const currentDomain = search.get('domain') ?? '';
+  const hrefDomain = new URLSearchParams(hrefQuery ?? '').get('domain') ?? '';
+  const isActive = pathname === hrefPath
+    && (!hrefDomain || hrefDomain === currentDomain);
   return (
     <Link
       href={href}
       onClick={onClick}
-      className={`flex items-center gap-2 rounded-chip px-2 py-1.5 text-[13px] ${
+      className={`block rounded-chip px-2 py-1 text-[12px] ${
         isActive
           ? 'bg-chip-active font-semibold text-text-primary'
           : 'text-text-secondary hover:text-text-primary'
       }`}
     >
-      <span
-        className={`h-[7px] w-[7px] rounded-full ${
-          isActive ? 'bg-accent-gradient shadow-accent-glow' : 'bg-border-subtle'
-        }`}
-      />
       {label}
-      {!active && <span className="ml-auto text-[10px] text-text-muted">—</span>}
     </Link>
   );
 }

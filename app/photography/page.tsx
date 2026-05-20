@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { getPhotographyProgress, getPhotographyAssignments } from '../lib/photography-data';
 import {
   ALL_TOPICS,
@@ -85,26 +84,12 @@ export default async function PhotographyPage() {
           />
         </div>
 
-        <div className="mt-6 flex flex-wrap items-center gap-3">
-          <Link
-            href="/photography/assignments"
-            className="rounded-chip border border-border-subtle bg-bg-surface px-3 py-1.5 text-[12px] text-text-secondary hover:text-text-primary"
-          >
-            Assignment history →
-          </Link>
-          <Link
-            href="/?domain=photography"
-            className="rounded-chip border border-border-subtle bg-bg-surface px-3 py-1.5 text-[12px] text-text-secondary hover:text-text-primary"
-          >
-            Photography items →
-          </Link>
-          <div className="text-[12px] text-text-muted">
-            <Glyph status="completed" /> completed&nbsp;&nbsp;
-            <Glyph status="in-progress" /> in progress&nbsp;&nbsp;
-            <Glyph status="available" /> available&nbsp;&nbsp;
-            <Glyph status="locked" /> locked&nbsp;&nbsp;
-            <Glyph status="skipped" /> skipped
-          </div>
+        <div className="mt-6 text-[12px] text-text-muted">
+          <Glyph status="completed" /> completed&nbsp;&nbsp;
+          <Glyph status="in-progress" /> in progress&nbsp;&nbsp;
+          <Glyph status="available" /> available&nbsp;&nbsp;
+          <Glyph status="locked" /> locked&nbsp;&nbsp;
+          <Glyph status="skipped" /> skipped
         </div>
 
         <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
