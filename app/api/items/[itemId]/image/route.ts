@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import {
+  downloadAndSave,
   saveItemImage,
   type SupportedMediaType,
 } from '../../../../../lib/integrations/image-storage.js';
@@ -27,6 +28,16 @@ function readEnv(): {
   return { clientId, clientSecret, refreshToken, spreadsheetId };
 }
 
+/**
+ * Two write paths:
+ *   - form field `image` (Blob): user uploaded a file from the device. Bytes
+ *     saved to /data/images/<id>.<ext>; sheet's Image column gets the local
+ *     /images/<id>.<ext> path.
+ *   - form field `url`  (string): user pasted a URL of a product image
+ *     they found online. Bytes still downloaded to /data as a hedge against
+ *     URL rot, but the sheet's Image column gets the *source URL* — matching
+ *     the cron + backfill convention.
+ */
 export async function POST(
   req: Request,
   ctx: { params: Promise<{ itemId: string }> },
@@ -40,16 +51,35 @@ export async function POST(
     return NextResponse.json({ error: 'invalid form data' }, { status: 400 });
   }
 
+  const urlField = form.get('url');
   const file = form.get('image');
-  if (!(file instanceof Blob)) {
-    return NextResponse.json({ error: 'missing image field' }, { status: 400 });
-  }
 
-  const mediaType = (file.type || '') as SupportedMediaType;
-  const bytes = Buffer.from(await file.arrayBuffer());
-  const saved = await saveItemImage(itemId, bytes, mediaType);
-  if (!saved.ok) {
-    return NextResponse.json({ error: saved.error }, { status: 400 });
+  let imageRefForSheet: string;
+  if (typeof urlField === 'string' && urlField.trim().length > 0) {
+    const url = urlField.trim();
+    try {
+      new URL(url);
+    } catch {
+      return NextResponse.json({ error: 'invalid url' }, { status: 400 });
+    }
+    const saved = await downloadAndSave(itemId, url);
+    if (!saved.ok) {
+      return NextResponse.json({ error: saved.error }, { status: 400 });
+    }
+    imageRefForSheet = url;
+  } else if (file instanceof Blob) {
+    const mediaType = (file.type || '') as SupportedMediaType;
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const saved = await saveItemImage(itemId, bytes, mediaType);
+    if (!saved.ok) {
+      return NextResponse.json({ error: saved.error }, { status: 400 });
+    }
+    imageRefForSheet = saved.path;
+  } else {
+    return NextResponse.json(
+      { error: 'missing image or url field' },
+      { status: 400 },
+    );
   }
 
   let env: ReturnType<typeof readEnv>;
@@ -72,8 +102,8 @@ export async function POST(
   }
 
   await updateRowFields(sheets, env.spreadsheetId, [
-    { rowIndex: idx + 2, fields: { image: saved.path } },
+    { rowIndex: idx + 2, fields: { image: imageRefForSheet } },
   ]);
 
-  return NextResponse.json({ ok: true, path: saved.path });
+  return NextResponse.json({ ok: true, image: imageRefForSheet });
 }

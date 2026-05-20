@@ -120,15 +120,15 @@ function ImageBlock({ row }: { row: MasterRow }) {
   const router = useRouter();
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<'idle' | 'url'>('idle');
+  const [urlValue, setUrlValue] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
   const itemId = `${row.orderId}|${row.productUrl || row.itemName}`;
 
-  async function handleFile(file: File) {
+  async function postForm(fd: FormData) {
     setUploading(true);
     setError(null);
     try {
-      const fd = new FormData();
-      fd.append('image', file);
       const resp = await fetch(`/api/items/${encodeURIComponent(itemId)}/image`, {
         method: 'POST',
         body: fd,
@@ -137,6 +137,8 @@ function ImageBlock({ row }: { row: MasterRow }) {
         const j = (await resp.json().catch(() => ({}))) as { error?: string };
         throw new Error(j.error ?? `HTTP ${resp.status}`);
       }
+      setMode('idle');
+      setUrlValue('');
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'upload failed');
@@ -145,9 +147,22 @@ function ImageBlock({ row }: { row: MasterRow }) {
     }
   }
 
+  async function handleFile(file: File) {
+    const fd = new FormData();
+    fd.append('image', file);
+    await postForm(fd);
+  }
+
+  async function handleUrl() {
+    if (!urlValue.trim()) return;
+    const fd = new FormData();
+    fd.append('url', urlValue.trim());
+    await postForm(fd);
+  }
+
   return (
     <div
-      className="relative aspect-[4/3] w-full overflow-hidden border-b border-border-subtle bg-bg-base group"
+      className="relative aspect-[4/3] w-full flex-shrink-0 overflow-hidden border-b border-border-subtle bg-bg-base group"
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault();
@@ -158,14 +173,60 @@ function ImageBlock({ row }: { row: MasterRow }) {
       {row.image ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={row.image} alt={row.itemName} className="h-full w-full object-cover" />
-      ) : (
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          className="flex h-full w-full items-center justify-center border-2 border-dashed border-border-subtle text-[12px] text-text-muted hover:text-text-primary"
+      ) : mode === 'url' ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void handleUrl();
+          }}
+          className="flex h-full w-full flex-col items-center justify-center gap-2 border-2 border-dashed border-border-subtle px-4"
         >
-          + Add image
-        </button>
+          <input
+            type="url"
+            autoFocus
+            value={urlValue}
+            onChange={(e) => setUrlValue(e.target.value)}
+            placeholder="https://…/image.jpg"
+            className="w-full rounded-input border border-border-subtle bg-bg-base px-2 py-1.5 text-[12px] text-text-primary placeholder:text-text-muted focus:border-accent-from focus:outline-none"
+          />
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={uploading || urlValue.trim().length === 0}
+              className="rounded-input bg-accent-from px-3 py-1 text-[11px] font-medium text-white disabled:opacity-50"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMode('idle');
+                setUrlValue('');
+                setError(null);
+              }}
+              className="rounded-input border border-border-subtle px-3 py-1 text-[11px] text-text-muted hover:text-text-primary"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 border-2 border-dashed border-border-subtle">
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            className="text-[13px] text-text-muted hover:text-text-primary"
+          >
+            + Add image
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('url')}
+            className="text-[11px] text-text-muted underline hover:text-text-primary"
+          >
+            or paste a URL
+          </button>
+        </div>
       )}
       {row.image && (
         <button
@@ -178,7 +239,7 @@ function ImageBlock({ row }: { row: MasterRow }) {
       )}
       {uploading && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-[12px] text-white">
-          Uploading…
+          {mode === 'url' ? 'Fetching…' : 'Uploading…'}
         </div>
       )}
       {error && (
