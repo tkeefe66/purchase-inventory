@@ -253,7 +253,7 @@ function ImageBlock({ row }: { row: MasterRow }) {
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            disabled={rejecting}
+            disabled={uploading || rejecting}
             className="rounded-input bg-bg-surface/80 px-2 py-1 text-[11px] text-text-secondary disabled:opacity-50"
           >
             Replace
