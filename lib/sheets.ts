@@ -1042,6 +1042,74 @@ export async function appendMaintenanceAck(
 }
 
 // ---------------------------------------------------------------------------
+// Rejected Images tab
+// ---------------------------------------------------------------------------
+//
+// Append-only log of image URLs Tom has flagged as wrong via the web UI.
+// The web endpoint appends here AND clears the row's Image cell. A future
+// re-resolve job will consume this list to skip previously-rejected URLs
+// per row. That consumer is intentionally NOT built yet — this is capture
+// only (decided 2026-05-21).
+
+const REJECTED_IMAGES_TAB = 'Rejected Images';
+const REJECTED_IMAGES_HEADER = [
+  'Order ID',
+  'Product URL',
+  'Item Name',
+  'Rejected URL',
+  'Rejected At',
+  'Source Before',
+] as const;
+
+async function ensureRejectedImagesTab(sheets: SheetsClient, spreadsheetId: string): Promise<void> {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId });
+  const exists = (meta.data.sheets ?? []).some((s) => s.properties?.title === REJECTED_IMAGES_TAB);
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: { requests: [{ addSheet: { properties: { title: REJECTED_IMAGES_TAB } } }] },
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `'${REJECTED_IMAGES_TAB}'!A1`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [Array.from(REJECTED_IMAGES_HEADER)] },
+    });
+  }
+}
+
+export async function appendRejectedImage(
+  sheets: SheetsClient,
+  spreadsheetId: string,
+  entry: {
+    orderId: string;
+    productUrl: string;
+    itemName: string;
+    rejectedUrl: string;
+    rejectedAt: string;
+    sourceBefore: string;
+  },
+): Promise<void> {
+  await ensureRejectedImagesTab(sheets, spreadsheetId);
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: `'${REJECTED_IMAGES_TAB}'!A:F`,
+    valueInputOption: 'RAW',
+    insertDataOption: 'INSERT_ROWS',
+    requestBody: {
+      values: [[
+        entry.orderId,
+        entry.productUrl,
+        entry.itemName,
+        entry.rejectedUrl,
+        entry.rejectedAt,
+        entry.sourceBefore,
+      ]],
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Dispersed Sites tab — USFS + BLM + OSM walk-up / dispersed-camping mirror
 // ---------------------------------------------------------------------------
 //
