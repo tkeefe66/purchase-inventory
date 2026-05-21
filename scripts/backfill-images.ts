@@ -339,22 +339,25 @@ async function main(): Promise<void> {
   console.log(`Lookup phase done: ${lookupSuccess} updated, ${lookupFail} failed`);
 
   // -------------------------------------------------------------------
-  // Phase 3: Google Custom Search image search
+  // Phase 3: image search (Brave preferred; Google CSE legacy fallback)
   // -------------------------------------------------------------------
-  console.log('\nPhase 3: image search (Google Custom Search)...');
   let searchSuccess = 0;
   let searchFail = 0;
   const imageSearchConfig = readImageSearchEnv();
   if (!imageSearchConfig) {
-    console.log('  (skipped — GOOGLE_CSE_API_KEY and/or GOOGLE_CSE_ID not set)');
+    console.log('\nPhase 3: image search...');
+    console.log('  (skipped — no provider configured; set BRAVE_API_KEY)');
   } else {
+    const providerLabel =
+      imageSearchConfig.provider === 'brave' ? 'Brave' : 'Google CSE';
+    console.log(`\nPhase 3: image search (${providerLabel})...`);
     // Same gating as phase 2 — yes-flagged rows not yet won by an earlier phase.
     const stillMissingAfterPhase2 = yesRows.filter((r) => {
       if (r.image) return false;
       if (updatedIndices.has(rows.indexOf(r))) return false;
       return true;
     });
-    console.log(`  Candidates: ${stillMissingAfterPhase2.length} (Google CSE free tier = 100/day)`);
+    console.log(`  Candidates: ${stillMissingAfterPhase2.length}`);
 
     const searchUpdates: RowFieldsUpdate[] = [];
 

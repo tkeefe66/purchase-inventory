@@ -239,7 +239,7 @@ function looksLikeImageUrl(url: string): boolean {
  * that as "image search not configured" and skip without erroring.
  */
 export function readImageSearchEnv(): ImageSearchConfig | null {
-  const braveKey = process.env['BRAVE_SEARCH_API_KEY'];
+  const braveKey = process.env['BRAVE_API_KEY'] ?? process.env['BRAVE_SEARCH_API_KEY'];
   if (braveKey) return { provider: 'brave', apiKey: braveKey };
 
   const gKey = process.env['GOOGLE_CSE_API_KEY'];
