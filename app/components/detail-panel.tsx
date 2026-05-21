@@ -119,6 +119,7 @@ function PanelBody({ row, onClose }: { row: MasterRow; onClose: () => void }) {
 function ImageBlock({ row }: { row: MasterRow }) {
   const router = useRouter();
   const [uploading, setUploading] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<'idle' | 'url'>('idle');
   const [urlValue, setUrlValue] = useState('');
@@ -158,6 +159,25 @@ function ImageBlock({ row }: { row: MasterRow }) {
     const fd = new FormData();
     fd.append('url', urlValue.trim());
     await postForm(fd);
+  }
+
+  async function handleReject() {
+    setRejecting(true);
+    setError(null);
+    try {
+      const resp = await fetch(`/api/items/${encodeURIComponent(itemId)}/image/reject`, {
+        method: 'POST',
+      });
+      if (!resp.ok) {
+        const j = (await resp.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error ?? `HTTP ${resp.status}`);
+      }
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'reject failed');
+    } finally {
+      setRejecting(false);
+    }
   }
 
   return (
@@ -229,17 +249,28 @@ function ImageBlock({ row }: { row: MasterRow }) {
         </div>
       )}
       {row.image && (
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          className="absolute right-2 top-2 rounded-input bg-bg-surface/80 px-2 py-1 text-[11px] text-text-secondary opacity-0 transition group-hover:opacity-100"
-        >
-          Replace
-        </button>
+        <div className="absolute right-2 top-2 flex gap-1.5 opacity-0 transition group-hover:opacity-100">
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={rejecting}
+            className="rounded-input bg-bg-surface/80 px-2 py-1 text-[11px] text-text-secondary disabled:opacity-50"
+          >
+            Replace
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleReject()}
+            disabled={rejecting}
+            className="rounded-input bg-bg-surface/80 px-2 py-1 text-[11px] text-text-secondary hover:text-red-400 disabled:opacity-50"
+          >
+            ⚠ Wrong image
+          </button>
+        </div>
       )}
-      {uploading && (
+      {(uploading || rejecting) && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-[12px] text-white">
-          {mode === 'url' ? 'Fetching…' : 'Uploading…'}
+          {rejecting ? 'Marking…' : mode === 'url' ? 'Fetching…' : 'Uploading…'}
         </div>
       )}
       {error && (
