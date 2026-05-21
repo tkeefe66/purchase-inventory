@@ -26,7 +26,6 @@ import { parseReiEmail, parseReiReceiptEmail } from '../lib/parsers/rei.js';
 import { parseAmazonShipmentEmail, parseAmazonOrderEmail } from '../lib/parsers/amazon.js';
 import { downloadAndSave } from '../lib/integrations/image-storage.js';
 import { resolveImage } from '../lib/integrations/resolve-image.js';
-import { searchProductImage, readImageSearchEnv } from '../lib/integrations/image-search.js';
 import {
   buildHeaderMap,
   createSheetsClient,
@@ -338,61 +337,10 @@ async function main(): Promise<void> {
   if (lookupUpdates.length > 0) await flushBatch(sheets, env.spreadsheetId, lookupUpdates);
   console.log(`Lookup phase done: ${lookupSuccess} updated, ${lookupFail} failed`);
 
-  // -------------------------------------------------------------------
-  // Phase 3: image search (Brave preferred; Google CSE legacy fallback)
-  // -------------------------------------------------------------------
-  let searchSuccess = 0;
-  let searchFail = 0;
-  const imageSearchConfig = readImageSearchEnv();
-  if (!imageSearchConfig) {
-    console.log('\nPhase 3: image search...');
-    console.log('  (skipped — no provider configured; set BRAVE_API_KEY)');
-  } else {
-    const providerLabel =
-      imageSearchConfig.provider === 'brave' ? 'Brave' : 'Google CSE';
-    console.log(`\nPhase 3: image search (${providerLabel})...`);
-    // Same gating as phase 2 — yes-flagged rows not yet won by an earlier phase.
-    const stillMissingAfterPhase2 = yesRows.filter((r) => {
-      if (r.image) return false;
-      if (updatedIndices.has(rows.indexOf(r))) return false;
-      return true;
-    });
-    console.log(`  Candidates: ${stillMissingAfterPhase2.length}`);
+  // Phase 2 (resolveImage) now runs Brave then Sonnet internally — the
+  // earlier "Phase 3: standalone Brave call" is redundant and was removed.
 
-    const searchUpdates: RowFieldsUpdate[] = [];
-
-    for (const row of stillMissingAfterPhase2) {
-      const rowIndex = rows.indexOf(row) + 2;
-      const itemId = `${row.orderId || `row-${rowIndex}`}|${row.productUrl || row.itemName}`;
-      try {
-        const result = await searchProductImage(row.brand, row.itemName, imageSearchConfig);
-        if (!result) {
-          searchFail++;
-          continue;
-        }
-        // Storage hedge — bytes are best-effort; the URL gets recorded
-        // regardless so the web UI has something to render.
-        await downloadAndSave(itemId, result.url);
-        searchUpdates.push({ rowIndex, fields: { image: result.url } });
-        updatedIndices.add(rows.indexOf(row));
-        searchSuccess++;
-
-        if (searchUpdates.length >= BATCH_SIZE) {
-          await flushBatch(sheets, env.spreadsheetId, searchUpdates);
-          console.log(`  search phase: ${searchSuccess} ok / ${searchFail} fail so far`);
-        }
-      } catch (err) {
-        searchFail++;
-        console.warn(
-          `  [skip] "${row.itemName}": ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    }
-    if (searchUpdates.length > 0) await flushBatch(sheets, env.spreadsheetId, searchUpdates);
-    console.log(`Search phase done: ${searchSuccess} updated, ${searchFail} failed`);
-  }
-
-  const total = emailSuccess + lookupSuccess + searchSuccess;
+  const total = emailSuccess + lookupSuccess;
   console.log(`\nBackfill complete. Total: ${total} image(s) attached.`);
 }
 
