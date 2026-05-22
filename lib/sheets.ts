@@ -306,6 +306,7 @@ function buildRowValues(
   set('Type', r.type);
   set('Reasoning', r.reasoning);
   set('Notes', r.notes);
+  set('Image', r.image);
   set('Entry Method', r.entryMethod);
   return arr;
 }

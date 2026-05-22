@@ -260,13 +260,12 @@ async function main(): Promise<void> {
       const itemId = `${row.orderId}|${row.productUrl || row.itemName}`;
       const saved = await downloadAndSave(itemId, url);
       if (!saved.ok) {
-        emailFail++;
-        console.warn(`  [skip] ${row.orderId} "${row.itemName}": download failed (${saved.error})`);
-        continue;
+        console.warn(`  [download-failed] ${row.orderId} "${row.itemName}": ${saved.error} — writing URL anyway`);
       }
-      // Record the URL (not saved.path) so the sheet stays a thin metadata
-      // layer. Bytes on /data/images/ are a storage hedge for if/when the
-      // upstream URL rots — see lib/integrations/resolve-image.ts.
+      // Bytes on /data/images/ are a storage hedge; the URL is authoritative.
+      // REI's rei.com/skuimage/* CDN 403s non-browser fetches via Akamai, so
+      // downloadAndSave routinely fails — but the URL still works as <img src>
+      // in the web UI. Mirror resolveImage's posture: write the URL regardless.
       emailUpdates.push({ rowIndex, fields: { image: url } });
       updatedIndices.add(rows.indexOf(row));
       emailSuccess++;
