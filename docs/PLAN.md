@@ -799,14 +799,16 @@ These block specific tasks. Surface at session start so they don't surprise mid-
 
 ## Reliability
 
-### Sender-drift audit (shipped 2026-05-02)
+### Sender-drift audit (shipped 2026-05-02; cadence tightened 2026-05-24)
 
-A weekly Gmail audit runs every Sunday morning Mountain time, paired with the hourly cron (fires on the first tick of the day). It performs two broad searches across `amazon.com` / `rei.com` senders to detect:
+A weekly Gmail audit runs every Sunday at 9am Mountain time, piggybacking the hourly cron's 9am tick. It performs two broad searches across `amazon.com` / `rei.com` senders to detect:
 
 - **Check A — Sender drift:** purchase-shaped subjects from senders NOT in the ingest allowlist.
 - **Check B — Subject drift:** purchase-keyword subjects from allowlisted senders that do not match the expected subject patterns.
 
 Telegram alerts only fire when at least one email is flagged. The audit reads no state, writes nothing, applies no labels. Per-message Gmail fetch errors are counted and surfaced (audit does not abort on a single failure). Code: `apps/cron/audit.ts`. Allowlist + patterns: `lib/sources.ts`. Manual run: `npm run audit`.
+
+**Gate:** `shouldRunWeeklyAudit()` in `apps/cron/index.ts` checks `dayOfWeek === 'Sunday' && hour === 9` (Mountain time). The original gate was `hour < 12`, which fired 12 times every Sunday morning once the cron switched from twice-daily to hourly — see DECISIONS.md 2026-05-24.
 
 ---
 

@@ -1495,6 +1495,21 @@ If a future change extends the photography surface (e.g. `/next`, `/track`), pre
 
 ---
 
+## 2026-05-24 — Weekly sender-drift audit cadence tightened; REI pickup subjects added
+
+**Decision:** Two changes:
+
+1. `shouldRunWeeklyAudit()` in `apps/cron/index.ts` now gates on `hour === 9` Mountain time, not `hour < 12`. Audit fires once per week (Sun 9am MT), not 12 times every Sunday morning.
+2. `EXPECTED_SUBJECT_PATTERNS['rei-order']` in `lib/sources.ts` gained two patterns: `/Thanks for your order/i` and `/Your order is ready for pickup/i`. Both are real subject lines from `rei@notices.rei.com` for in-store-pickup confirmations.
+
+**Why (gate):** The original 2026-05-02 audit spec was written when the cron ran twice daily (6am + 6pm) — gating on "Sunday morning" trivially meant the 6am tick. When the cron switched to hourly (`0 * * * *`), the gate became `Sunday AND hour < 12`, which was true on 12 separate ticks. Tom got 12 identical Telegram drift alerts on Sun 2026-05-24 before noticing. Tightening to a specific hour matches the original "once a week" intent without adding state.
+
+**Why (subject patterns):** REI in-store-pickup orders generate two subject patterns that the existing allowlist didn't cover. They're legitimate REI mail from the allowlisted sender, so the audit kept flagging them as "subject drift." Adding the patterns silences the false positive without changing ingest behavior (these emails go through `parseReiEmail`, which keys off body content, not subject).
+
+**How to apply:** When adding more REI/Amazon email surfaces in the future, add the subject pattern to `EXPECTED_SUBJECT_PATTERNS` even if the parser already handles the body — otherwise the drift audit will flag it every week.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale
