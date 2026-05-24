@@ -224,7 +224,7 @@ function shouldRunWeeklyAudit(): boolean {
   const tz = process.env.TZ ?? 'America/Denver';
   const dayOfWeek = formatInTimeZone(new Date(), tz, 'EEEE');
   const hour = parseInt(formatInTimeZone(new Date(), tz, 'H'), 10);
-  return dayOfWeek === 'Sunday' && hour < 12;
+  return dayOfWeek === 'Sunday' && hour === 9;
 }
 
 main().catch((err: unknown) => {

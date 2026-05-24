@@ -78,6 +78,13 @@ describe('subjectMatchesExpected', () => {
   test('matches REI in-store eReceipt pattern', () => {
     expect(subjectMatchesExpected('rei-order', 'Your REI eReceipt - store purchase')).toBe(true);
   });
+  test('matches REI "Thanks for your order" pattern (in-store pickup confirmation)', () => {
+    expect(subjectMatchesExpected('rei-order', 'Thanks for your order! Wait to pick up. (#A400425670)')).toBe(true);
+    expect(subjectMatchesExpected('rei-order', 'Thanks for your order! (#A400237017)')).toBe(true);
+  });
+  test('matches REI "Your order is ready for pickup" pattern', () => {
+    expect(subjectMatchesExpected('rei-order', 'Your order is ready for pickup')).toBe(true);
+  });
   test('returns false for unrelated subject from allowlisted sender', () => {
     expect(subjectMatchesExpected('amazon-order', 'Action required: update your payment method')).toBe(false);
   });
