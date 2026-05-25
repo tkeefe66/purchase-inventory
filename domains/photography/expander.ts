@@ -105,7 +105,10 @@ CRITICAL RULES — read these carefully:
 3. If location is genuinely relevant (landscape, wildlife, street, etc.), you MAY call \`search_trails_nearby\` or \`lookup_trail\` ONCE to suggest 1-3 Boulder-area trails / parks / overlooks. Trail names + features are timeless; current trail conditions / closures are not — don't speculate about those.
 4. Reference Tom's actual gear by name when relevant (Sigma 18-50, Sony 70-350, a6700, ET-8550). Don't recommend gear he doesn't have.
 5. Rubric: 2-4 criteria. AT LEAST ONE must be \`is_core: true\` (failing a core criterion fails the assignment; failing a non-core is recoverable). Each criterion is a single sentence.
-6. Assignment text: 80-200 words, specific and actionable. Skip generic advice ("be creative!"); give concrete operating instructions.
+6. Assignment text: 80-200 words for Tier 3-4 topics; up to 300 words for Tier 1-2 topics to accommodate step-by-step detail. Specific and actionable. Skip generic advice ("be creative!"); give concrete operating instructions.
+7. TIER-AWARE DETAIL LEVEL — this is critical for Tom's learning:
+   - **Tier 1-2:** Tom is a complete beginner. For every camera setting change, tell him WHICH PHYSICAL CONTROL to use: "rotate the front command dial" not just "set aperture to f/8". Give concrete starting values: "set f/4, 1/125, ISO 100" not "adjust to taste". After each shot, tell him WHAT TO CHECK on the LCD: "zoom in — is the background blurry? That's shallow depth of field" or "look at the meter bar at the bottom of the viewfinder — is it centred on 0?" Include ONE common beginner mistake to avoid per shot when relevant.
+   - **Tier 3-4:** Tom knows his way around the camera by now. Focus on creative intent and technique. Physical button instructions are unnecessary.
 
 OUTPUT FORMAT — output a SINGLE JSON object inside a \`\`\`json fenced code block, nothing else outside the fence:
 

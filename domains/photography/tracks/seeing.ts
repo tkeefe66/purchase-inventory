@@ -72,11 +72,11 @@ Subjects can be anything — kitchen, walk around the block, anywhere. In the ca
 
 The agent has a \`get_sun_times\` tool to plan around golden / blue hour.`,
     assignmentSeed:
-      `Photograph the same subject (a tree, your front door, a person willing to sit for you, a still-life) at three different times of day in the same week:
+      `Photograph the same subject at three different times of day in the same week. The subject can be anything you pass daily — a tree, your front door, a window from inside, a mug on a table near a window. You don't need a special location; a single window in your house works if you shoot at different hours:
 
-1. **Mid-day**
-2. **Golden hour**
-3. **Blue hour**
+1. **Mid-day** (harsh overhead light)
+2. **Golden hour** (~1 hour before sunset — warm, low, side-lit)
+3. **Blue hour** (~30 minutes after sunset — cool, dim, ambient)
 
 Same composition, same focal length. Submit all three. Notice how the *same thing* photographs as three different images depending on light alone.
 
@@ -281,7 +281,7 @@ Submit the final edited landscape plus the original RAW.
 
 **Patience:** 90% of wildlife shooting is waiting; the keepers are 1 in 100.`,
     assignmentSeed:
-      `Find a wildlife subject — backyard birds, squirrels, dogs at a park, ducks at a pond, anything. Apply the recipe:
+      `Find any animal subject you can observe for 15+ minutes — backyard birds, squirrels, ducks at a pond, a friend's dog, a cat in a window, even fish in an aquarium. Apply the recipe:
 
 1. Sony **70-350**
 2. **S mode at 1/1000s**, auto-ISO
@@ -320,7 +320,7 @@ Shoot at least 30 frames. Cull to ONE keeper where the eye is sharp and the comp
 
 **Story:** capture personality — goofy ears, tongue out, eye expression — not just "dog running." A perfect-exposure shot of a tired dog beats a flawed shot of a joyful one *only if the tired one tells a story too*.`,
     assignmentSeed:
-      `Photograph any dog (yours, a neighbor's, a park stranger's with permission) in motion for 10 minutes. Apply the recipe:
+      `Photograph any fast-moving subject — a dog (yours, a neighbor's, a park stranger's with permission), a kid at a playground, a skateboarder, a squirrel — anything unpredictable and quick. Spend 10 minutes shooting. Apply the recipe:
 
 1. **Low angle**
 2. **AF-C + Animal**

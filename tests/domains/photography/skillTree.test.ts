@@ -10,8 +10,8 @@ import {
 } from '../../../domains/photography/skillTree.js';
 
 describe('skillTree — Operating Camera branch (Branch 1)', () => {
-  test('has 23 topics in operating-camera branch', () => {
-    expect(listByBranch('operating-camera')).toHaveLength(23);
+  test('has 24 topics in operating-camera branch', () => {
+    expect(listByBranch('operating-camera')).toHaveLength(24);
   });
 
   test('every topic has non-empty name, description, theorySeed, assignmentSeed', () => {
@@ -29,21 +29,27 @@ describe('skillTree — Operating Camera branch (Branch 1)', () => {
     }
   });
 
-  test('Tier counts match the outline (5/6/6/6 across operating-camera)', () => {
-    expect(listByTier('operating-camera', 1)).toHaveLength(5);
+  test('Tier counts match the outline (6/6/6/6 across operating-camera)', () => {
+    expect(listByTier('operating-camera', 1)).toHaveLength(6);
     expect(listByTier('operating-camera', 2)).toHaveLength(6);
     expect(listByTier('operating-camera', 3)).toHaveLength(6);
     expect(listByTier('operating-camera', 4)).toHaveLength(6);
   });
 
-  test('Tier 1 is the entry point — only exposure-triangle is rootless', () => {
+  test('Tier 1 entry point — only camera-orientation is rootless', () => {
     const tier1 = listByTier('operating-camera', 1);
     const rootless = tier1.filter((t) => t.prereqs.length === 0);
-    expect(rootless.map((t) => t.id)).toEqual(['operating-camera.exposure-triangle']);
+    expect(rootless.map((t) => t.id)).toEqual(['operating-camera.camera-orientation']);
   });
 
-  test('all Tier 1 topics depend on exposure-triangle (directly or by being the root)', () => {
+  test('exposure-triangle depends on camera-orientation', () => {
+    const et = getTopicById('operating-camera.exposure-triangle')!;
+    expect(et.prereqs).toContain('operating-camera.camera-orientation');
+  });
+
+  test('all Tier 1 topics (except camera-orientation and exposure-triangle) depend on exposure-triangle', () => {
     for (const t of listByTier('operating-camera', 1)) {
+      if (t.id === 'operating-camera.camera-orientation') continue;
       if (t.id === 'operating-camera.exposure-triangle') continue;
       expect(t.prereqs).toContain('operating-camera.exposure-triangle');
     }
@@ -180,7 +186,7 @@ describe('skillTree — Printing branch (Branch 4)', () => {
 
 describe('skillTree — total + per-branch totals', () => {
   test('total topic count across all four branches', () => {
-    expect(ALL_TOPICS.length).toBe(58);
+    expect(ALL_TOPICS.length).toBe(59);
   });
 
   test('every branch is non-empty', () => {

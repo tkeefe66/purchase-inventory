@@ -158,7 +158,7 @@ Submit a screenshot showing your filtered view of just 4-5 star frames, plus the
 
 **Rubric:**
 
-- Ratio of keepers to total is realistic (5-15% Picks, 1-2% 4-5 star) *(core)*
+- Ratio of keepers to total is realistic (5-30% Picks is normal at any level; the ratio tightens with experience) *(core)*
 - Actually used the keyboard shortcuts not the mouse *(core)*
 - No edits performed during culling pass *(non-core)*`,
   },
@@ -318,7 +318,7 @@ Workflow: get the image right in \`Basic\` + \`Tone Curve\` first, then use \`Co
 
 *Subtlety wins:* shifts of +5 to +15 in HSL are usually enough; Color Grading wheels at 20-30% saturation are usually enough. Heavy colour grading dates fast.`,
     assignmentSeed:
-      `Pick one image with a strong colour story (sunset, autumn leaves, a colourful market, a single-colour outfit). Apply:
+      `Pick any image from your library. Find ONE dominant colour in it — the blue of a sky, the green of a plant, the warm tone of a lamp-lit room, anything. Apply:
 
 1. One **HSL** shift on the dominant colour (push or pull its hue, sat, or luma by 10-30 to enhance the story)
 2. One **Color Grading** move (shadows toward one colour, highlights toward another, subtle)
@@ -351,7 +351,7 @@ The hot truth: this is what colour filters on B&W film used to do — Lightroom'
 
 After mixing, push **Contrast** harder than you would for colour (B&W rewards contrast). \`Tone Curve\` becomes critical too — a deep black point and clean white point matter more in B&W than colour. Avoid generic "B&W preset" → "Auto" mixes; they're bland.`,
     assignmentSeed:
-      `Take ONE colour image where you envision B&W (portrait, landscape with sky, architectural shot, object with strong form). Convert:
+      `Take ONE colour image with strong shapes, lines, or contrast — a portrait, a building, a landscape with dramatic sky, any object with bold form. You don't need to have "envisioned" it as B&W at capture; the point is to learn the conversion tools. Convert:
 
 1. Click **B&W** treatment
 2. Tune each **B&W Mix** slider for the result you want (darken the sky, brighten the face, drop the foliage)

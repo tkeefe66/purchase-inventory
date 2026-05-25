@@ -13,13 +13,49 @@ import type { Topic } from '../skillTree.js';
  * 70-350 where the topic specifically calls for reach.
  */
 export const OPERATING_CAMERA_TOPICS: readonly Topic[] = [
-  // ─── Tier 1 — Foundation (5) ────────────────────────────────────────────
+  // ─── Tier 1 — Foundation (6) ────────────────────────────────────────────
+  {
+    id: 'operating-camera.camera-orientation',
+    branch: 'operating-camera',
+    tier: 1,
+    name: 'Camera Orientation (Buttons, Dials, First Shot)',
+    prereqs: [],
+    description: 'Physical tour of the a6700 — finding the mode dial, command dials, shutter button, EVF, and LCD so you can operate the camera without looking at a manual.',
+    theorySeed:
+      `The a6700 has five controls you will use constantly:
+
+- **Mode dial** (top left) — turn it to switch between M (manual), A (aperture priority), S (shutter priority), and P (program). For now, find **M**.
+- **Front command dial** (below the shutter button) — controls aperture in M/A mode. Roll it with your index finger.
+- **Rear command dial** (top right thumb area) — controls shutter speed in M/S mode. Roll it with your thumb.
+- **Shutter button** — half-press to focus, full-press to take the photo.
+- **EVF / LCD** — the electronic viewfinder (hold the camera to your eye) and the rear screen show the same thing. The camera auto-switches between them via an eye sensor.
+
+Two more worth finding now: the **ISO button** (top plate, right side — press it and roll either dial to change ISO) and the **exposure meter** (a horizontal scale at the bottom of the EVF/LCD that shows how bright or dark your image will be — centre "0" means the camera thinks exposure is correct).`,
+    assignmentSeed:
+      `Pick up the a6700 with the Sigma 18-50 attached. Find each of these and confirm you can identify them by touch:
+
+1. **Mode dial** — turn it to **M**
+2. **Front command dial** — roll it and watch the aperture number (f/X.X) change on-screen
+3. **Rear command dial** — roll it and watch the shutter speed change
+4. **ISO button** — press it and roll a dial to change ISO
+5. **Shutter button** — half-press to hear/see the autofocus lock, then full-press
+
+Take **one photo of anything** — a wall, a lamp, your hand. The subject does not matter. What matters is: you found M mode, you see the three numbers on screen (aperture, shutter speed, ISO), and you took a shot.
+
+Submit the photo with a caption listing the three settings it was taken at (e.g., "f/5.6, 1/60, ISO 400").
+
+**Rubric:**
+
+- Photo taken in M mode *(core)*
+- Caption includes all three exposure settings *(core)*
+- Settings are plausible for the scene (not wildly over/under-exposed) *(non-core)*`,
+  },
   {
     id: 'operating-camera.exposure-triangle',
     branch: 'operating-camera',
     tier: 1,
     name: 'Exposure Triangle',
-    prereqs: [],
+    prereqs: ['operating-camera.camera-orientation'],
     description: 'How aperture, shutter speed, and ISO combine to produce a correctly exposed image — and the trade-offs each one forces.',
     theorySeed:
       `Three controls determine exposure:
@@ -32,13 +68,15 @@ The unit of light is the **stop**. Each stop doubles or halves exposure, and all
 
 The internalised lesson: these three are NOT independent. *Moving one corner of the triangle forces movement at another* to hold exposure constant.`,
     assignmentSeed:
-      `Without leaving the house, take three photographs of the **same subject** (a houseplant, mug, or window view) on the a6700 in manual mode:
+      `Without leaving the house, take three photographs of the **same subject** (a houseplant, mug, or window view) on the a6700 in M mode:
 
-1. One prioritising **depth of field**
-2. One prioritising **motion freeze**
-3. One prioritising **low ISO**
+1. **Depth of field priority** — set aperture to **f/4** (front command dial). Now adjust shutter speed (rear command dial) until the meter reads 0. Leave ISO at 100 if possible; raise it only if shutter speed drops below 1/60.
+2. **Motion freeze priority** — set shutter speed to **1/1000** (rear dial). Now open aperture (front dial) and raise ISO until the meter reads 0.
+3. **Low ISO priority** — set ISO to **100** (press ISO button + dial). Now use aperture and shutter speed to get the meter to 0.
 
-For each, write down all three settings and explain in one sentence which corner of the triangle was the priority and what was traded off.
+After each shot, check the LCD: does the image look roughly correct brightness? If it's too dark or bright, nudge the setting you're allowed to change.
+
+For each, write down all three settings and explain which corner of the triangle was the priority and what you traded off.
 
 **Rubric:**
 
@@ -161,10 +199,10 @@ Defaults:
     assignmentSeed:
       `Shoot one scene with deliberately challenging dynamic range — a bright window from inside a darker room — twice:
 
-1. Once as **JPEG only**
-2. Once as **RAW only**
+1. Once as **JPEG only** (Menu > Shooting > Image Quality > JPEG)
+2. Once as **RAW only** (same menu, select RAW)
 
-Import both into Lightroom. Push the JPEG to recover highlights and lift shadows; do the same to the RAW. Submit both processed versions side-by-side and write one sentence on the visible difference (banding, colour shift, noise in the JPEG).
+Import both into Lightroom. On each file, drag the **Shadows** slider to +100 and the **Highlights** slider to -100. Look at the dark areas you brightened: the JPEG will show colour banding, blotchiness, or muddy grey; the RAW will stay clean. Submit both processed versions side-by-side and write one sentence identifying WHERE the JPEG breaks down.
 
 **Rubric:**
 
@@ -293,13 +331,13 @@ Submit all six.
 
 The meter is calibrated for **18% grey**; *very white or very dark scenes will fool it unless you compensate*.`,
     assignmentSeed:
-      `Find a backlit scene — a window, a sunset doorway, anything where the bright background dominates. Photograph it three times with the same exposure mode and settings:
+      `Find a backlit scene — a window, a sunset doorway, anything where the bright background dominates. To change metering mode: Menu > Exposure/Color > Metering Mode (or assign it to a Fn slot for quick access). Photograph the scene three times in A mode at the same aperture:
 
-1. Once on **Multi** metering
-2. Once on **Centre-weighted**
-3. Once on **Spot** (with the AF point on the foreground subject)
+1. **Multi** metering — the camera averages the whole frame
+2. **Centre-weighted** — the camera prioritises the middle ~60%
+3. **Spot** — the camera reads only the tiny area around your AF point. Place the AF point on the foreground subject's face or surface.
 
-Submit all three plus a one-sentence note on which got the subject right, and why the others did not.
+Look at the three images on the LCD. The foreground subject will be a different brightness in each. Submit all three plus a one-sentence note on which got the subject right, and why the others failed.
 
 **Rubric:**
 
