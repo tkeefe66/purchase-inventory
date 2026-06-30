@@ -65,9 +65,9 @@ export function parseCaptionHints(captionAfterCommand: string): CaptionHints {
   // Try a $-prefixed price anywhere in the remaining text. Anchored bare-number
   // matching is too brittle when the price sits among other tokens, so we
   // specifically scan for the explicit $ form first.
-  const dollarMatch = remaining.match(/\$\s?(\d+(?:\.\d{1,2})?)\b/);
+  const dollarMatch = remaining.match(/\$\s?(\d[\d,]*(?:\.\d{1,2})?)\b/);
   if (dollarMatch) {
-    const n = Number(dollarMatch[1]);
+    const n = Number(dollarMatch[1].replace(/,/g, ''));
     if (Number.isFinite(n) && n >= 0) {
       out.price = n;
       remaining = remaining.replace(dollarMatch[0], '').trim();
@@ -215,12 +215,13 @@ export function extractDatePrefix(input: string): { date: string; rest: string }
 export function extractPrice(input: string): number | null {
   const trimmed = input.trim().replace(/^(?:for|at|paid|cost|price)\s+/i, '').trim();
   if (!trimmed) return null;
-  const withDollar = trimmed.match(/\$\s?(\d+(?:\.\d{1,2})?)/);
+  const cleaned = trimmed.replace(/,/g, '');
+  const withDollar = cleaned.match(/\$\s?(\d+(?:\.\d{1,2})?)/);
   if (withDollar) {
     const n = Number(withDollar[1]);
     return Number.isFinite(n) && n >= 0 ? n : null;
   }
-  const bare = trimmed.match(/^(\d+(?:\.\d{1,2})?)$/);
+  const bare = cleaned.match(/^(\d+(?:\.\d{1,2})?)$/);
   if (bare) {
     const n = Number(bare[1]);
     if (!Number.isFinite(n) || n < 0) return null;
@@ -258,12 +259,25 @@ function sourceFromUrl(url: string): string {
  * "back country" → "Back Country". An empty reply returns '' so callers can
  * re-prompt.
  */
+const SOURCE_ALIASES: Readonly<Record<string, string>> = {
+  rei: 'REI',
+  amazon: 'Amazon',
+  amzn: 'Amazon',
+  bestbuy: 'Best Buy',
+  'best buy': 'Best Buy',
+  backcountry: 'Backcountry',
+  patagonia: 'Patagonia',
+  walmart: 'Walmart',
+  target: 'Target',
+  costco: 'Costco',
+};
+
 export function normalizeSource(input: string): string {
   const s = input.trim();
   if (!s) return '';
   const lower = s.toLowerCase();
-  if (lower === 'rei') return 'REI';
-  if (lower === 'amazon' || lower === 'amzn') return 'Amazon';
+  const alias = SOURCE_ALIASES[lower];
+  if (alias) return alias;
   return s
     .split(/\s+/)
     .map((tok) => (tok.length === 0 ? tok : tok[0]!.toUpperCase() + tok.slice(1).toLowerCase()))

@@ -1,7 +1,7 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AddgearStateStore } from '../../../lib/addgearState.js';
 import { PendingActionStore } from '../../../lib/pendingActions.js';
-import { startAddgear, continueAddgear as continueAddgearRaw, parseUserDate, extractDatePrefix, extractPrice, parseCaptionHints, type AddgearDeps } from '../../../apps/bot/commands/addgear.js';
+import { startAddgear, continueAddgear as continueAddgearRaw, parseUserDate, extractDatePrefix, extractPrice, parseCaptionHints, normalizeSource, type AddgearDeps } from '../../../apps/bot/commands/addgear.js';
 
 /**
  * Test wrapper around continueAddgear that auto-advances past the
@@ -440,6 +440,10 @@ describe('extractDatePrefix + extractPrice', () => {
     expect(extractPrice('for $135.15')).toBe(135.15);
     expect(extractPrice('paid 120')).toBe(120);
     expect(extractPrice('$1500')).toBe(1500);
+    expect(extractPrice('$1,600')).toBe(1600);
+    expect(extractPrice('$1,599.99')).toBe(1599.99);
+    expect(extractPrice('1,200')).toBe(1200);
+    expect(extractPrice('for $2,400.50')).toBe(2400.50);
   });
 
   test('extractPrice rejects bare 4-digit years', () => {
@@ -450,6 +454,40 @@ describe('extractDatePrefix + extractPrice', () => {
   test('extractPrice rejects garbage', () => {
     expect(extractPrice('lol')).toBeNull();
     expect(extractPrice('')).toBeNull();
+  });
+});
+
+describe('normalizeSource', () => {
+  test('canonical aliases are case-insensitive', () => {
+    expect(normalizeSource('rei')).toBe('REI');
+    expect(normalizeSource('REI')).toBe('REI');
+    expect(normalizeSource('amazon')).toBe('Amazon');
+    expect(normalizeSource('AMZN')).toBe('Amazon');
+  });
+
+  test('bestbuy and best buy both resolve to Best Buy', () => {
+    expect(normalizeSource('bestbuy')).toBe('Best Buy');
+    expect(normalizeSource('Bestbuy')).toBe('Best Buy');
+    expect(normalizeSource('BestBuy')).toBe('Best Buy');
+    expect(normalizeSource('best buy')).toBe('Best Buy');
+    expect(normalizeSource('Best Buy')).toBe('Best Buy');
+  });
+
+  test('other known retailers normalize', () => {
+    expect(normalizeSource('backcountry')).toBe('Backcountry');
+    expect(normalizeSource('patagonia')).toBe('Patagonia');
+    expect(normalizeSource('walmart')).toBe('Walmart');
+    expect(normalizeSource('costco')).toBe('Costco');
+  });
+
+  test('unknown retailers get title-cased', () => {
+    expect(normalizeSource('home depot')).toBe('Home Depot');
+    expect(normalizeSource('DICKS SPORTING GOODS')).toBe('Dicks Sporting Goods');
+  });
+
+  test('empty input returns empty', () => {
+    expect(normalizeSource('')).toBe('');
+    expect(normalizeSource('  ')).toBe('');
   });
 });
 
