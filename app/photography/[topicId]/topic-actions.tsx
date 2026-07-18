@@ -35,7 +35,7 @@ interface GradeResponse {
 interface ErrorState {
   headline: string;
   technical: string;
-  code?: string;
+  code?: string | undefined;
 }
 
 const LEARN_TIMEOUT_MS = 45_000;
@@ -54,7 +54,7 @@ const ARW_RE = /image\/x-(sony-)?arw|image\/arw|\.arw$/i;
  */
 class ApiError extends Error {
   status: number;
-  code?: string;
+  code?: string | undefined;
   constructor(status: number, code?: string) {
     super(code ?? `http_${status}`);
     this.status = status;
@@ -64,10 +64,10 @@ class ApiError extends Error {
 
 /** Distinguishes a user-initiated Cancel from a client-side submit timeout — both abort the same fetch. */
 class UserCancelled extends Error {
-  name = 'UserCancelled';
+  override name = 'UserCancelled';
 }
 class SubmitTimeout extends Error {
-  name = 'SubmitTimeout';
+  override name = 'SubmitTimeout';
 }
 
 async function throwIfNotOk(r: Response): Promise<void> {
@@ -131,14 +131,14 @@ function describeError(e: unknown): ErrorState {
 /** Client-side mirror of the checks in api/photography/submit/route.ts, run before upload. */
 function validateSubmitFile(file: File): string | null {
   if (ARW_RE.test(file.type) || ARW_RE.test(file.name)) {
-    return ERROR_COPY.arw_rejected;
+    return ERROR_COPY.arw_rejected!;
   }
   const looksAccepted = file.type ? ACCEPTED_MIME_RE.test(file.type) : ACCEPTED_EXT_RE.test(file.name);
   if (!looksAccepted) {
-    return ERROR_COPY.unsupported_mime;
+    return ERROR_COPY.unsupported_mime!;
   }
   if (file.size === 0) {
-    return ERROR_COPY.empty_image;
+    return ERROR_COPY.empty_image!;
   }
   if (file.size > MAX_SUBMIT_BYTES) {
     return `That photo is ${(file.size / (1024 * 1024)).toFixed(1)}MB — 20MB max. Export a smaller version and try again.`;
@@ -262,7 +262,7 @@ export function TopicActions({
         });
       } catch {
         setError({
-          headline: ERROR_COPY.corrupted_rubric,
+          headline: ERROR_COPY.corrupted_rubric!,
           technical: 'JSON.parse failed on activeAssignmentRubricJson',
           code: 'corrupted_rubric',
         });
