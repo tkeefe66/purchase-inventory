@@ -29,6 +29,120 @@ interface GradeResponse {
   perCriterion: Array<{ criterion: string; result: 'pass' | 'partial' | 'fail'; reason: string }>;
 }
 
+interface ErrorState {
+  headline: string;
+  technical: string;
+  code?: string;
+}
+
+const LEARN_TIMEOUT_MS = 45_000;
+const START_TIMEOUT_MS = 45_000;
+const SKIP_TIMEOUT_MS = 15_000;
+const SUBMIT_TIMEOUT_MS = 90_000; // vision grading is the slowest call in the app
+
+const MAX_SUBMIT_BYTES = 20 * 1024 * 1024; // matches api/photography/submit's cap
+const ACCEPTED_MIME_RE = /^image\/(jpeg|png|webp|gif)$/i;
+const ACCEPTED_EXT_RE = /\.(jpe?g|png|webp|gif)$/i;
+const ARW_RE = /image\/x-(sony-)?arw|image\/arw|\.arw$/i;
+
+/**
+ * Thrown for any non-ok API response so every catch block can build error
+ * copy from a single {status, code} shape instead of re-deriving it inline.
+ */
+class ApiError extends Error {
+  status: number;
+  code?: string;
+  constructor(status: number, code?: string) {
+    super(code ?? `http_${status}`);
+    this.status = status;
+    this.code = code;
+  }
+}
+
+/** Distinguishes a user-initiated Cancel from a client-side submit timeout — both abort the same fetch. */
+class UserCancelled extends Error {
+  name = 'UserCancelled';
+}
+class SubmitTimeout extends Error {
+  name = 'SubmitTimeout';
+}
+
+async function throwIfNotOk(r: Response): Promise<void> {
+  if (r.ok) return;
+  const body = (await r.json().catch(() => ({}))) as { error?: string };
+  throw new ApiError(r.status, body.error);
+}
+
+// Plain-language copy per error code, mirrored from app/api/photography/*/route.ts.
+const ERROR_COPY: Record<string, string> = {
+  invalid_json: 'That request got garbled on the way out. Try again.',
+  invalid_multipart: 'That upload didn’t come through correctly. Pick the photo again and resubmit.',
+  missing_topicId: 'That request got garbled on the way out. Try again.',
+  missing_image: 'Pick a photo before submitting.',
+  empty_image: 'That file looks empty — pick a different photo.',
+  image_too_large: 'That photo is too large (20MB max). Export a smaller version and try again.',
+  arw_rejected: 'RAW (.ARW) files aren’t supported yet — export a JPEG, PNG, WebP, or GIF and try again.',
+  unsupported_mime: 'That file type isn’t supported — use JPEG, PNG, WebP, or GIF.',
+  unknown_topic: 'This topic couldn’t be found — it may have been renamed. Go back to the Skills page.',
+  no_active_assignment: 'This assignment isn’t active anymore — it may already have been graded or skipped elsewhere.',
+  corrupted_rubric: 'The saved rubric for this assignment is corrupted and can’t be graded.',
+  grader_failed: 'Grading failed on our end — the vision model didn’t return a usable result. Your photo and caption are still here.',
+  expander_failed: 'Generating this didn’t work on our end. Try again in a moment.',
+};
+
+function messageForStatus(status: number): string {
+  if (status === 429) return 'Too many requests right now — wait a moment and try again.';
+  if (status >= 500) return 'Something went wrong on our end. Try again in a moment.';
+  if (status >= 400) return 'That request couldn’t be completed. Try again.';
+  return 'Something went wrong. Try again.';
+}
+
+function describeError(e: unknown): ErrorState {
+  if (e instanceof ApiError) {
+    return {
+      headline: ERROR_COPY[e.code ?? ''] ?? messageForStatus(e.status),
+      technical: `${e.code ?? 'no error code'} (HTTP ${e.status})`,
+      code: e.code,
+    };
+  }
+  if (e instanceof SubmitTimeout || (e instanceof DOMException && e.name === 'TimeoutError')) {
+    return {
+      headline: 'That took too long and timed out. Try again.',
+      technical: 'client-side timeout',
+      code: 'timeout',
+    };
+  }
+  if (e instanceof TypeError) {
+    return {
+      headline: 'Couldn’t reach the server — check your connection and try again.',
+      technical: e.message,
+      code: 'network_error',
+    };
+  }
+  if (e instanceof Error) {
+    return { headline: 'Something went wrong. Try again.', technical: e.message };
+  }
+  return { headline: 'Something went wrong. Try again.', technical: 'unknown_error' };
+}
+
+/** Client-side mirror of the checks in api/photography/submit/route.ts, run before upload. */
+function validateSubmitFile(file: File): string | null {
+  if (ARW_RE.test(file.type) || ARW_RE.test(file.name)) {
+    return ERROR_COPY.arw_rejected;
+  }
+  const looksAccepted = file.type ? ACCEPTED_MIME_RE.test(file.type) : ACCEPTED_EXT_RE.test(file.name);
+  if (!looksAccepted) {
+    return ERROR_COPY.unsupported_mime;
+  }
+  if (file.size === 0) {
+    return ERROR_COPY.empty_image;
+  }
+  if (file.size > MAX_SUBMIT_BYTES) {
+    return `That photo is ${(file.size / (1024 * 1024)).toFixed(1)}MB — 20MB max. Export a smaller version and try again.`;
+  }
+  return null;
+}
+
 /**
  * Action bar for the topic detail page. Owns modal state for the in-app Learn /
  * Start / Submit / Skip flows. The server component above us has already
@@ -60,32 +174,68 @@ export function TopicActions({
   const [gradeResult, setGradeResult] = useState<GradeResponse | null>(null);
 
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ErrorState | null>(null);
 
   function closeAll() {
     setMode('closed');
     setError(null);
   }
 
-  async function onLearnClick(): Promise<void> {
-    setMode('learn');
-    setError(null);
-    if (learnText) return; // re-open cached
+  async function runLearn(): Promise<void> {
     setLoading(true);
+    setError(null);
     try {
       const r = await fetch('/api/photography/learn', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ topicId }),
+        signal: AbortSignal.timeout(LEARN_TIMEOUT_MS),
       });
-      if (!r.ok) {
-        const body = await r.json().catch(() => ({})) as { error?: string };
-        throw new Error(body.error ?? `HTTP ${r.status}`);
-      }
-      const data = await r.json() as { lesson: string };
+      await throwIfNotOk(r);
+      const data = (await r.json()) as { lesson: string };
       setLearnText(data.lesson);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'unknown_error');
+      setError(describeError(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function onLearnClick(): Promise<void> {
+    setMode('learn');
+    setError(null);
+    if (learnText) return; // re-open cached
+    await runLearn();
+  }
+
+  async function runStart(): Promise<void> {
+    setLoading(true);
+    setError(null);
+    try {
+      const r = await fetch('/api/photography/start', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ topicId }),
+        signal: AbortSignal.timeout(START_TIMEOUT_MS),
+      });
+      if (!r.ok) {
+        const body = (await r.json().catch(() => ({}))) as { error?: string; activeTopicName?: string };
+        if (body.error === 'active_assignment_exists') {
+          setError({
+            headline: `You already have an active assignment on ${body.activeTopicName ?? 'another topic'}. Skip it to start a new one.`,
+            technical: 'active_assignment_exists (HTTP 409)',
+            code: 'active_assignment_exists',
+          });
+          return;
+        }
+        throw new ApiError(r.status, body.error);
+      }
+      const data = (await r.json()) as StartResponse;
+      setStartResult(data);
+      // Refresh server data (assignment-history section etc.) once the modal closes.
+      router.refresh();
+    } catch (e) {
+      setError(describeError(e));
     } finally {
       setLoading(false);
     }
@@ -108,51 +258,32 @@ export function TopicActions({
           rubric: JSON.parse(activeAssignmentRubricJson) as RubricCriterion[],
         });
       } catch {
-        setError('Existing assignment rubric is malformed — try /skip + start fresh.');
+        setError({
+          headline: ERROR_COPY.corrupted_rubric,
+          technical: 'JSON.parse failed on activeAssignmentRubricJson',
+          code: 'corrupted_rubric',
+        });
       }
       return;
     }
-    setLoading(true);
-    try {
-      const r = await fetch('/api/photography/start', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ topicId }),
-      });
-      if (!r.ok) {
-        const body = await r.json().catch(() => ({})) as { error?: string; activeTopicName?: string };
-        if (body.error === 'active_assignment_exists') {
-          setError(`Already have an active assignment: ${body.activeTopicName}. Skip it first.`);
-          return;
-        }
-        throw new Error(body.error ?? `HTTP ${r.status}`);
-      }
-      const data = await r.json() as StartResponse;
-      setStartResult(data);
-      // Refresh server data (assignment-history section etc.) once the modal closes.
-      router.refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'unknown_error');
-    } finally {
-      setLoading(false);
-    }
+    await runStart();
   }
 
   async function onSkipConfirm(): Promise<void> {
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch('/api/photography/skip', { method: 'POST' });
-      if (!r.ok) {
-        const body = await r.json().catch(() => ({})) as { error?: string };
-        throw new Error(body.error ?? `HTTP ${r.status}`);
-      }
+      const r = await fetch('/api/photography/skip', {
+        method: 'POST',
+        signal: AbortSignal.timeout(SKIP_TIMEOUT_MS),
+      });
+      await throwIfNotOk(r);
       setMode('closed');
       // Clear cached state so reopening Start later kicks off a fresh expansion.
       setStartResult(null);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'unknown_error');
+      setError(describeError(e));
     } finally {
       setLoading(false);
     }
@@ -162,6 +293,9 @@ export function TopicActions({
     setMode('submit');
     setError(null);
   }
+
+  const startErrorIsSkippable = error?.code === 'corrupted_rubric' || error?.code === 'active_assignment_exists';
+  const skipErrorIsStale = error?.code === 'no_active_assignment';
 
   return (
     <>
@@ -212,14 +346,20 @@ export function TopicActions({
       {/* Learn modal */}
       <Modal open={mode === 'learn'} onClose={closeAll} title={`Theory — ${topicName}`} maxWidthClass="max-w-3xl">
         {loading && <LoadingBlock label="Expanding lesson…" />}
-        {error && <ErrorBlock message={error} />}
+        {error && <ErrorBlock error={error} onRetry={runLearn} retryLabel="Try again" />}
         {!loading && !error && learnText && <Markdown text={learnText} />}
       </Modal>
 
       {/* Start / current-assignment modal */}
       <Modal open={mode === 'start'} onClose={closeAll} title={`Assignment — ${topicName}`} maxWidthClass="max-w-3xl">
         {loading && <LoadingBlock label="Generating assignment…" />}
-        {error && <ErrorBlock message={error} />}
+        {error && (
+          <ErrorBlock
+            error={error}
+            onRetry={startErrorIsSkippable ? () => setMode('skip') : runStart}
+            retryLabel={startErrorIsSkippable ? 'Skip assignment' : 'Try again'}
+          />
+        )}
         {!loading && !error && startResult && (
           <>
             <section className="mb-4">
@@ -266,6 +406,7 @@ export function TopicActions({
       <SubmitModal
         open={mode === 'submit'}
         onClose={closeAll}
+        onSkipInstead={() => setMode('skip')}
         topicName={topicName}
         onGraded={(g) => {
           setGradeResult(g);
@@ -277,9 +418,17 @@ export function TopicActions({
       {/* Skip confirm modal */}
       <Modal open={mode === 'skip'} onClose={closeAll} title="Skip assignment?" maxWidthClass="max-w-md">
         <p className="text-[13px] text-text-secondary">
-          Skips your active assignment on this topic. The topic stays available — you can /start it again later.
+          Skips your active assignment on this topic. The topic stays available — start it again anytime from this page.
         </p>
-        {error && <div className="mt-3"><ErrorBlock message={error} /></div>}
+        {error && (
+          <div className="mt-3">
+            <ErrorBlock
+              error={error}
+              onRetry={skipErrorIsStale ? () => { closeAll(); router.refresh(); } : onSkipConfirm}
+              retryLabel={skipErrorIsStale ? 'Refresh' : 'Try again'}
+            />
+          </div>
+        )}
         <div className="mt-4 flex gap-2">
           <button
             type="button"
@@ -303,40 +452,63 @@ export function TopicActions({
 }
 
 function SubmitModal({
-  open, onClose, topicName, onGraded, result,
+  open, onClose, onSkipInstead, topicName, onGraded, result,
 }: {
   open: boolean;
   onClose: () => void;
+  onSkipInstead: () => void;
   topicName: string;
   onGraded: (g: GradeResponse) => void;
   result: GradeResponse | null;
 }) {
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const controllerRef = useRef<AbortController | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [caption, setCaption] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ErrorState | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
 
   function onFileChange(e: React.ChangeEvent<HTMLInputElement>): void {
     const f = e.target.files?.[0];
-    if (!f) {
-      setPreviewUrl(null);
-      return;
-    }
     // Revoke previous preview to avoid leaking object URLs.
     if (previewUrl) URL.revokeObjectURL(previewUrl);
+    if (!f) {
+      setPreviewUrl(null);
+      setFileError(null);
+      return;
+    }
+    const msg = validateSubmitFile(f);
+    if (msg) {
+      setPreviewUrl(null);
+      setFileError(msg);
+      e.target.value = ''; // clear the invalid selection so it can't be submitted
+      return;
+    }
+    setFileError(null);
     setPreviewUrl(URL.createObjectURL(f));
   }
 
-  async function onSubmit(e: React.FormEvent): Promise<void> {
-    e.preventDefault();
+  function onCancelGrading(): void {
+    controllerRef.current?.abort(new UserCancelled());
+  }
+
+  async function runSubmit(): Promise<void> {
     const file = fileRef.current?.files?.[0];
     if (!file) {
-      setError('Pick a photo to submit.');
+      setError({ headline: 'Pick a photo to submit.', technical: 'missing_image (client)' });
       return;
     }
-    setLoading(true);
+    const validationMsg = validateSubmitFile(file);
+    if (validationMsg) {
+      setFileError(validationMsg);
+      return;
+    }
     setError(null);
+    setLoading(true);
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    const timeoutId = setTimeout(() => controller.abort(new SubmitTimeout()), SUBMIT_TIMEOUT_MS);
     try {
       const form = new FormData();
       form.set('image', file);
@@ -344,19 +516,30 @@ function SubmitModal({
       const r = await fetch('/api/photography/submit', {
         method: 'POST',
         body: form,
+        signal: controller.signal,
       });
-      if (!r.ok) {
-        const body = await r.json().catch(() => ({})) as { error?: string };
-        throw new Error(body.error ?? `HTTP ${r.status}`);
-      }
-      const data = await r.json() as GradeResponse;
+      await throwIfNotOk(r);
+      const data = (await r.json()) as GradeResponse;
       onGraded(data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'unknown_error');
+      if (e instanceof UserCancelled) {
+        // Silent — photo + caption stay exactly as the user left them.
+      } else {
+        setError(describeError(e));
+      }
     } finally {
+      clearTimeout(timeoutId);
+      controllerRef.current = null;
       setLoading(false);
     }
   }
+
+  async function onSubmit(e: React.FormEvent): Promise<void> {
+    e.preventDefault();
+    await runSubmit();
+  }
+
+  const skippableSubmitError = error?.code === 'corrupted_rubric' || error?.code === 'no_active_assignment';
 
   return (
     <Modal open={open} onClose={onClose} title={`Submit photo — ${topicName}`} maxWidthClass="max-w-2xl">
@@ -375,6 +558,8 @@ function SubmitModal({
               required
               className="block w-full rounded-input border border-border-subtle bg-bg-base p-2 text-[12px] text-text-secondary file:mr-3 file:rounded file:border-0 file:bg-bg-surface file:px-2 file:py-1 file:text-[12px] file:text-text-primary"
             />
+            {fileError && <p className="mt-1 text-[12px] text-delta-down">{fileError}</p>}
+            <p className="mt-1 text-[11px] text-text-muted">JPEG, PNG, WebP, or GIF · up to 20MB. RAW (.ARW) isn’t supported yet.</p>
           </div>
           {previewUrl && (
             // eslint-disable-next-line @next/next/no-img-element
@@ -397,20 +582,26 @@ function SubmitModal({
               className="block w-full rounded-input border border-border-subtle bg-bg-base p-2 text-[12px] text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent-from"
             />
           </div>
-          {error && <ErrorBlock message={error} />}
+          {loading && <LoadingBlock label="Grading — this can take up to a minute…" />}
+          {error && (
+            <ErrorBlock
+              error={error}
+              onRetry={skippableSubmitError ? onSkipInstead : () => { void runSubmit(); }}
+              retryLabel={skippableSubmitError ? 'Skip assignment instead' : 'Try again'}
+            />
+          )}
           <div className="flex gap-2">
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || Boolean(fileError)}
               className="rounded-input bg-accent-gradient px-3 py-2 text-[13px] font-semibold text-text-primary shadow-accent-glow hover:brightness-110 disabled:opacity-60"
             >
               {loading ? 'Grading…' : 'Submit for grading'}
             </button>
             <button
               type="button"
-              onClick={onClose}
-              disabled={loading}
-              className="rounded-input border border-border-subtle bg-bg-surface px-3 py-2 text-[13px] text-text-secondary hover:text-text-primary disabled:opacity-60"
+              onClick={loading ? onCancelGrading : onClose}
+              className="rounded-input border border-border-subtle bg-bg-surface px-3 py-2 text-[13px] text-text-secondary hover:text-text-primary"
             >
               Cancel
             </button>
@@ -479,16 +670,37 @@ function GradeResultView({ result, onClose }: { result: GradeResponse; onClose: 
 function LoadingBlock({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-2 py-6 text-[13px] text-text-muted">
-      <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-accent-from" />
+      <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-accent-from motion-reduce:animate-none" />
       {label}
     </div>
   );
 }
 
-function ErrorBlock({ message }: { message: string }) {
+function ErrorBlock({
+  error,
+  onRetry,
+  retryLabel = 'Try again',
+}: {
+  error: ErrorState;
+  onRetry?: () => void;
+  retryLabel?: string;
+}) {
   return (
-    <div className="rounded-input border border-delta-down/40 bg-delta-down/10 p-2 text-[12px] text-delta-down">
-      {message}
+    <div role="alert" className="rounded-input border border-delta-down/40 bg-delta-down/10 p-2 text-[12px] text-delta-down">
+      <p>{error.headline}</p>
+      <details className="mt-1">
+        <summary className="cursor-pointer select-none text-[11px] text-delta-down/80">Technical details</summary>
+        <p className="mt-1 text-[11px] text-delta-down/70">{error.technical}</p>
+      </details>
+      {onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-2 rounded-input border border-delta-down/40 bg-bg-surface px-2 py-1 text-[12px] font-semibold text-text-primary hover:bg-chip-active"
+        >
+          {retryLabel}
+        </button>
+      )}
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { getPhotographyProgress, getPhotographyAssignments } from '../lib/photography-data';
 import {
   ALL_TOPICS,
@@ -47,6 +48,7 @@ export default async function PhotographyPage() {
   const totalInProg = ALL_TOPICS.filter((t) => statusesMap.get(t.id) === 'in-progress').length;
   const active = assignments.find((a) => a.status === 'active' || a.status === 'submitted');
   const next = pickNextTopic(entries);
+  const isFirstRun = totalDone === 0 && totalInProg === 0;
 
   // Convert Map → plain object so the client component can serialize it.
   const statusesObj: Record<string, ProgressStatus> = {};
@@ -66,9 +68,26 @@ export default async function PhotographyPage() {
       <div className="relative">
         <div className="text-[11px] uppercase tracking-[0.05em] text-text-muted">Photography</div>
         <h1 className="mt-1 text-[26px] font-bold tracking-[-0.02em] text-text-primary">Skills</h1>
-        <p className="text-[13px] text-text-secondary">
-          {totalDone} of {ALL_TOPICS.length} topics completed · {totalInProg} in progress
-        </p>
+        {isFirstRun ? (
+          <div className="mt-3 rounded-kpi border border-border-subtle bg-bg-surface p-4 shadow-card">
+            <p className="text-[13px] text-text-secondary">
+              This is your photography curriculum — {ALL_TOPICS.length} topics across shooting, seeing, editing, and
+              printing, built around your gear. Start with{' '}
+              {next ? (
+                <Link href={`/photography/${next.id}`} className="font-semibold text-text-primary hover:text-text-secondary">
+                  {next.name}
+                </Link>
+              ) : (
+                'a topic below'
+              )}{' '}
+              — the rest unlocks as you go.
+            </p>
+          </div>
+        ) : (
+          <p className="text-[13px] text-text-secondary">
+            {totalDone} of {ALL_TOPICS.length} topics completed · {totalInProg} in progress
+          </p>
+        )}
 
         <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
           <KpiCard label="Completed" value={`${totalDone} / ${ALL_TOPICS.length}`} />

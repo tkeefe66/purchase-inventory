@@ -83,7 +83,11 @@ export default async function AssignmentsPage({ searchParams }: PageProps) {
         <div className="mt-6 space-y-3">
           {sorted.length === 0 ? (
             <div className="rounded-kpi border border-dashed border-border-subtle bg-bg-surface p-6 text-center text-[13px] text-text-muted">
-              No assignments yet. Run <code className="rounded-chip bg-bg-base px-1.5 py-0.5">/start &lt;topic-id&gt;</code> in Telegram.
+              No assignments yet.{' '}
+              <Link href="/photography" className="text-text-primary hover:text-text-secondary">
+                Browse the Skills grid
+              </Link>{' '}
+              and open a topic to start your first assignment.
             </div>
           ) : (
             sorted.map((a) => <AssignmentCard key={a.id} assignment={a} />)
