@@ -9,6 +9,7 @@ import {
 import { computeStatuses, type ProgressEntry } from '../../../domains/photography/curriculum.js';
 import type { AssignmentRow, ProgressRow } from '../../../lib/photographySheets.js';
 import { Markdown } from '../../components/markdown';
+import { assignmentLabel, sortCriteriaPassFirst } from '../../lib/photography-verdicts';
 import { TopicActions } from './topic-actions';
 
 export const dynamic = 'force-dynamic';
@@ -93,9 +94,8 @@ export default async function TopicPage({ params }: PageProps) {
         <h1 className="mt-1 text-[26px] font-bold tracking-[-0.02em] text-text-primary">{topic.name}</h1>
         <p className="text-[13px] text-text-secondary">{topic.description}</p>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="mt-3 flex flex-wrap items-center gap-2" title={topic.id}>
           <StatusPill status={status} />
-          <code className="rounded-chip bg-bg-surface px-2 py-1 text-[11px] text-text-muted">{topic.id}</code>
         </div>
 
         <TopicActions
@@ -117,35 +117,34 @@ export default async function TopicPage({ params }: PageProps) {
               {prereqStatuses.map((p) => (
                 <li key={p.id} className="flex items-center gap-2 text-[13px]">
                   <StatusGlyph status={p.status} />
-                  <Link href={`/photography/${p.id}`} className="text-text-secondary hover:text-text-primary">
+                  <Link href={`/photography/${p.id}`} title={p.id} className="text-text-secondary hover:text-text-primary">
                     {p.name}
                   </Link>
-                  <code className="ml-1 text-[10px] text-text-muted">{p.id}</code>
                 </li>
               ))}
             </ul>
           </section>
         )}
 
-        {/* Theory seed (read-only preview; full lesson via /learn in Telegram) */}
+        {/* Theory preview (read-only; full lesson via Read theory) */}
         <section className="mt-4 rounded-kpi border border-border-subtle bg-bg-surface p-4 shadow-card">
           <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-text-muted">
-            Theory seed
+            Theory preview
           </h2>
           <Markdown text={topic.theorySeed} />
           <p className="mt-3 text-[11px] text-text-muted">
-            This is the scaffold the lesson is built from. <em>Read theory</em> above expands it with Claude, grounded in your gear.
+            A preview only — <em>Read theory</em> above expands this into the full lesson, grounded in your gear.
           </p>
         </section>
 
-        {/* Assignment seed */}
+        {/* Assignment preview */}
         <section className="mt-4 rounded-kpi border border-border-subtle bg-bg-surface p-4 shadow-card">
           <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-text-muted">
-            Assignment seed
+            Assignment preview
           </h2>
           <Markdown text={topic.assignmentSeed} />
           <p className="mt-3 text-[11px] text-text-muted">
-            <em>Start assignment</em> above generates the actual rubric from this scaffold using Claude.
+            A preview only — <em>Start assignment</em> above turns this into a full rubric.
           </p>
         </section>
 
@@ -206,8 +205,8 @@ function AssignmentSummary({ assignment }: { assignment: AssignmentRow }) {
     <details className="group">
       <summary className="cursor-pointer list-none">
         <div className="flex items-center gap-2 text-[13px]">
-          <span className={`font-semibold uppercase tracking-wide ${verdictColor}`}>
-            {assignment.aiVerdict || assignment.status}
+          <span className={`font-semibold ${verdictColor}`}>
+            {assignmentLabel(assignment.status, assignment.aiVerdict)}
           </span>
           <span className="text-text-muted">·</span>
           <span className="text-text-secondary">{dateLabel}</span>
@@ -251,7 +250,7 @@ function PerCriterionList({ json }: { json: string }) {
     <div>
       <div className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Per criterion</div>
       <ul className="mt-1 space-y-1">
-        {items.map((c, i) => {
+        {sortCriteriaPassFirst(items).map((c, i) => {
           const glyph = c.result === 'pass' ? '✓' : c.result === 'partial' ? '~' : '✗';
           const cls = c.result === 'pass' ? 'text-delta-up' : c.result === 'partial' ? 'text-text-secondary' : 'text-delta-down';
           return (

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { getPhotographyAssignments } from '../../lib/photography-data';
 import { getTopicById } from '../../../domains/photography/skillTree.js';
 import type { AssignmentRow, AssignmentStatus } from '../../../lib/photographySheets.js';
+import { ASSIGNMENT_STATUS_LABELS, sortCriteriaPassFirst } from '../../lib/photography-verdicts';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,11 +12,11 @@ interface PageProps {
 
 const STATUS_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
   { value: '',             label: 'All' },
-  { value: 'active',       label: 'Active' },
-  { value: 'submitted',    label: 'Submitted' },
-  { value: 'passed',       label: 'Passed' },
-  { value: 'did_not_pass', label: 'Did not pass' },
-  { value: 'skipped',      label: 'Skipped' },
+  { value: 'active',       label: ASSIGNMENT_STATUS_LABELS.active },
+  { value: 'submitted',    label: ASSIGNMENT_STATUS_LABELS.submitted },
+  { value: 'passed',       label: ASSIGNMENT_STATUS_LABELS.passed },
+  { value: 'did_not_pass', label: ASSIGNMENT_STATUS_LABELS.did_not_pass },
+  { value: 'skipped',      label: ASSIGNMENT_STATUS_LABELS.skipped },
 ];
 
 export default async function AssignmentsPage({ searchParams }: PageProps) {
@@ -55,7 +56,7 @@ export default async function AssignmentsPage({ searchParams }: PageProps) {
         <h1 className="mt-1 text-[26px] font-bold tracking-[-0.02em] text-text-primary">Assignments</h1>
         <p className="text-[13px] text-text-secondary">
           {allAssignments.length} total ·{' '}
-          {counts.passed} passed · {counts.did_not_pass} did not pass · {counts.active + counts.submitted} open · {counts.skipped} skipped
+          {counts.passed} passed · {counts.did_not_pass} not yet passed · {counts.active + counts.submitted} open · {counts.skipped} skipped
         </p>
 
         {/* Status filter chips */}
@@ -172,12 +173,12 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function StatusBadge({ status }: { status: AssignmentStatus }) {
   const map: Record<AssignmentStatus, { label: string; cls: string }> = {
-    proposed:     { label: 'Proposed',     cls: 'bg-bg-base text-text-muted border border-border-subtle' },
-    active:       { label: 'Active',       cls: 'bg-chip-active text-text-primary' },
-    submitted:    { label: 'Submitted',    cls: 'bg-chip-active text-text-primary' },
-    passed:       { label: '✓ Passed',     cls: 'bg-delta-up/15 text-delta-up' },
-    did_not_pass: { label: '✗ Did not pass', cls: 'bg-delta-down/15 text-delta-down' },
-    skipped:      { label: '⊘ Skipped',    cls: 'bg-bg-base text-text-muted border border-border-subtle' },
+    proposed:     { label: ASSIGNMENT_STATUS_LABELS.proposed,     cls: 'bg-bg-base text-text-muted border border-border-subtle' },
+    active:       { label: ASSIGNMENT_STATUS_LABELS.active,       cls: 'bg-chip-active text-text-primary' },
+    submitted:    { label: ASSIGNMENT_STATUS_LABELS.submitted,    cls: 'bg-chip-active text-text-primary' },
+    passed:       { label: `✓ ${ASSIGNMENT_STATUS_LABELS.passed}`, cls: 'bg-delta-up/15 text-delta-up' },
+    did_not_pass: { label: ASSIGNMENT_STATUS_LABELS.did_not_pass, cls: 'bg-delta-down/15 text-delta-down' },
+    skipped:      { label: ASSIGNMENT_STATUS_LABELS.skipped,      cls: 'bg-bg-base text-text-muted border border-border-subtle' },
   };
   const entry = map[status];
   return <span className={`rounded-chip px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${entry.cls}`}>{entry.label}</span>;
@@ -194,7 +195,7 @@ function PerCriterionList({ json }: { json: string }) {
   return (
     <Section title="Per criterion">
       <ul className="space-y-1">
-        {items.map((c, i) => {
+        {sortCriteriaPassFirst(items).map((c, i) => {
           const glyph = c.result === 'pass' ? '✓' : c.result === 'partial' ? '~' : '✗';
           const cls = c.result === 'pass' ? 'text-delta-up' : c.result === 'partial' ? 'text-text-secondary' : 'text-delta-down';
           return (

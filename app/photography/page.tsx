@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { getPhotographyProgress, getPhotographyAssignments } from '../lib/photography-data';
 import {
   ALL_TOPICS,
+  getTopicById,
   type BranchId,
 } from '../../domains/photography/skillTree.js';
 import {
@@ -47,6 +48,7 @@ export default async function PhotographyPage() {
   const totalDone = ALL_TOPICS.filter((t) => statusesMap.get(t.id) === 'completed').length;
   const totalInProg = ALL_TOPICS.filter((t) => statusesMap.get(t.id) === 'in-progress').length;
   const active = assignments.find((a) => a.status === 'active' || a.status === 'submitted');
+  const activeTopic = active ? getTopicById(active.topicId) : null;
   const next = pickNextTopic(entries);
   const isFirstRun = totalDone === 0 && totalInProg === 0;
 
@@ -93,7 +95,7 @@ export default async function PhotographyPage() {
           <KpiCard label="Completed" value={`${totalDone} / ${ALL_TOPICS.length}`} />
           <KpiCard
             label="Active"
-            value={active ? 'In progress' : 'None'}
+            value={active ? (activeTopic?.name ?? 'In progress') : 'Nothing active'}
             {...(active ? { href: `/photography/${active.topicId}` } : {})}
           />
           <KpiCard
@@ -104,11 +106,11 @@ export default async function PhotographyPage() {
         </div>
 
         <div className="mt-6 text-[12px] text-text-muted">
-          <Glyph status="completed" /> completed&nbsp;&nbsp;
-          <Glyph status="in-progress" /> in progress&nbsp;&nbsp;
-          <Glyph status="available" /> available&nbsp;&nbsp;
-          <Glyph status="locked" /> locked&nbsp;&nbsp;
-          <Glyph status="skipped" /> skipped
+          <Glyph status="completed" /> Completed&nbsp;&nbsp;
+          <Glyph status="in-progress" /> In progress&nbsp;&nbsp;
+          <Glyph status="available" /> Available&nbsp;&nbsp;
+          <Glyph status="locked" /> Locked&nbsp;&nbsp;
+          <Glyph status="skipped" /> Skipped
         </div>
 
         <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">

@@ -3,6 +3,7 @@ import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Modal } from '../../components/modal';
 import { Markdown } from '../../components/markdown';
+import { VERDICT_LABELS, sortCriteriaPassFirst } from '../../lib/photography-verdicts';
 
 type Mode = 'closed' | 'learn' | 'start' | 'submit' | 'skip';
 
@@ -436,7 +437,7 @@ export function TopicActions({
             onClick={onSkipConfirm}
             className="rounded-input bg-bg-surface border border-border-subtle px-3 py-2 text-[13px] text-text-primary hover:bg-chip-active disabled:opacity-60"
           >
-            {loading ? 'Skipping…' : 'Skip it'}
+            {loading ? 'Skipping…' : 'Skip assignment'}
           </button>
           <button
             type="button"
@@ -625,7 +626,7 @@ function GradeResultView({ result, onClose }: { result: GradeResponse; onClose: 
             : 'border-delta-down/40 bg-delta-down/10 text-delta-down'
         }`}
       >
-        {pass ? '✓ Pass' : '✗ Did not pass'}
+        {pass ? `✓ ${VERDICT_LABELS.pass}` : VERDICT_LABELS.did_not_pass}
       </div>
       {result.overallCritique && (
         <section>
@@ -637,7 +638,7 @@ function GradeResultView({ result, onClose }: { result: GradeResponse; onClose: 
         <section>
           <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-text-muted">Per criterion</div>
           <ul className="space-y-1">
-            {result.perCriterion.map((c, i) => {
+            {sortCriteriaPassFirst(result.perCriterion).map((c, i) => {
               const glyph = c.result === 'pass' ? '✓' : c.result === 'partial' ? '~' : '✗';
               const cls = c.result === 'pass' ? 'text-delta-up' : c.result === 'partial' ? 'text-text-secondary' : 'text-delta-down';
               return (
