@@ -66,8 +66,9 @@ export function parseCaptionHints(captionAfterCommand: string): CaptionHints {
   // matching is too brittle when the price sits among other tokens, so we
   // specifically scan for the explicit $ form first.
   const dollarMatch = remaining.match(/\$\s?(\d[\d,]*(?:\.\d{1,2})?)\b/);
-  if (dollarMatch) {
-    const n = Number(dollarMatch[1].replace(/,/g, ''));
+  const dollarDigits = dollarMatch?.[1];
+  if (dollarMatch && dollarDigits) {
+    const n = Number(dollarDigits.replace(/,/g, ''));
     if (Number.isFinite(n) && n >= 0) {
       out.price = n;
       remaining = remaining.replace(dollarMatch[0], '').trim();
