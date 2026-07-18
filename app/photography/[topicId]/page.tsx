@@ -10,15 +10,17 @@ import { computeStatuses, type ProgressEntry } from '../../../domains/photograph
 import type { AssignmentRow, ProgressRow } from '../../../lib/photographySheets.js';
 import { Markdown } from '../../components/markdown';
 import { assignmentLabel, sortCriteriaPassFirst } from '../../lib/photography-verdicts';
+import { StatusGlyph, STATUS_LABEL } from '../../components/status-glyph';
+import { CameraIcon, EyeIcon, EditIcon, PrinterIcon, CheckIcon, PlayIcon, CircleIcon, LockIcon, SlashIcon } from '../../components/icons';
 import { TopicActions } from './topic-actions';
 
 export const dynamic = 'force-dynamic';
 
-const BRANCH_LABELS: Record<BranchId, { emoji: string; name: string }> = {
-  'operating-camera': { emoji: '🎥', name: 'Operating Camera' },
-  'seeing':           { emoji: '👁',  name: 'Seeing' },
-  'editing':          { emoji: '✏️', name: 'Editing' },
-  'printing':         { emoji: '🖨', name: 'Printing' },
+const BRANCH_LABELS: Record<BranchId, { icon: React.ReactNode; name: string }> = {
+  'operating-camera': { icon: <CameraIcon size={14} />, name: 'Operating Camera' },
+  'seeing':           { icon: <EyeIcon size={14} />,    name: 'Seeing' },
+  'editing':          { icon: <EditIcon size={14} />,   name: 'Editing' },
+  'printing':         { icon: <PrinterIcon size={14} />, name: 'Printing' },
 };
 
 const TIER_LABELS: Record<Tier, string> = {
@@ -31,6 +33,11 @@ const TIER_LABELS: Record<Tier, string> = {
 interface PageProps {
   params: { topicId: string };
 }
+
+// Shared treatment for the section headers below the fold — sentence case,
+// medium weight, no eyebrow scaffolding. The page keeps exactly one true
+// eyebrow ("Photography", above the title).
+const SECTION_HEADING_CLASS = 'mb-2 text-[13px] font-medium text-text-secondary';
 
 function toEntries(rows: readonly ProgressRow[]): Map<string, ProgressEntry> {
   const m = new Map<string, ProgressEntry>();
@@ -79,20 +86,21 @@ export default async function TopicPage({ params }: PageProps) {
   const allPrereqsMet = prereqStatuses.every((p) => p.completed);
 
   return (
-    <div className="relative overflow-hidden px-4 py-6 md:px-7">
-      <div className="pointer-events-none absolute -right-20 -top-20 h-[280px] w-[280px] rounded-full bg-blob-gradient opacity-[0.18] blur-[40px]" />
-      <div className="relative max-w-4xl">
+    <div className="px-4 py-6 md:px-7">
+      <div className="max-w-4xl">
         <Link
           href="/photography"
           className="inline-flex items-center gap-1 rounded-chip border border-border-subtle bg-bg-surface px-2.5 py-1 text-[12px] text-text-secondary hover:text-text-primary"
         >
           ← Skills
         </Link>
-        <div className="mt-3 text-[11px] uppercase tracking-[0.05em] text-text-muted">
-          {branchLabel.emoji} {branchLabel.name}{' · '}Tier {topic.tier}
-        </div>
+        <div className="mt-3 text-[11px] uppercase tracking-[0.05em] text-text-muted">Photography</div>
         <h1 className="mt-1 text-[26px] font-bold tracking-[-0.02em] text-text-primary">{topic.name}</h1>
-        <p className="text-[13px] text-text-secondary">{topic.description}</p>
+        <div className="mt-1 flex items-center gap-1.5 text-[13px] text-text-secondary">
+          <span className="text-accent-from" aria-hidden="true">{branchLabel.icon}</span>
+          {branchLabel.name} · Tier {topic.tier}
+        </div>
+        <p className="mt-2 text-[13px] text-text-secondary">{topic.description}</p>
 
         <div className="mt-3 flex flex-wrap items-center gap-2" title={topic.id}>
           <StatusPill status={status} />
@@ -110,13 +118,13 @@ export default async function TopicPage({ params }: PageProps) {
         {/* Prereqs section */}
         {topic.prereqs.length > 0 && (
           <section className="mt-6 rounded-kpi border border-border-subtle bg-bg-surface p-4 shadow-card">
-            <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-text-muted">
+            <h2 className={SECTION_HEADING_CLASS}>
               Prereqs ({prereqStatuses.filter((p) => p.completed).length} of {prereqStatuses.length} complete)
             </h2>
             <ul className="space-y-1">
               {prereqStatuses.map((p) => (
                 <li key={p.id} className="flex items-center gap-2 text-[13px]">
-                  <StatusGlyph status={p.status} />
+                  <StatusGlyph status={p.status} label />
                   <Link href={`/photography/${p.id}`} title={p.id} className="text-text-secondary hover:text-text-primary">
                     {p.name}
                   </Link>
@@ -128,9 +136,7 @@ export default async function TopicPage({ params }: PageProps) {
 
         {/* Theory preview (read-only; full lesson via Read theory) */}
         <section className="mt-4 rounded-kpi border border-border-subtle bg-bg-surface p-4 shadow-card">
-          <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-text-muted">
-            Theory preview
-          </h2>
+          <h2 className={SECTION_HEADING_CLASS}>Theory preview</h2>
           <Markdown text={topic.theorySeed} />
           <p className="mt-3 text-[11px] text-text-muted">
             A preview only — <em>Read theory</em> above expands this into the full lesson, grounded in your gear.
@@ -139,9 +145,7 @@ export default async function TopicPage({ params }: PageProps) {
 
         {/* Assignment preview */}
         <section className="mt-4 rounded-kpi border border-border-subtle bg-bg-surface p-4 shadow-card">
-          <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-text-muted">
-            Assignment preview
-          </h2>
+          <h2 className={SECTION_HEADING_CLASS}>Assignment preview</h2>
           <Markdown text={topic.assignmentSeed} />
           <p className="mt-3 text-[11px] text-text-muted">
             A preview only — <em>Start assignment</em> above turns this into a full rubric.
@@ -150,9 +154,7 @@ export default async function TopicPage({ params }: PageProps) {
 
         {/* Assignment history for this topic */}
         <section className="mt-4 rounded-kpi border border-border-subtle bg-bg-surface p-4 shadow-card">
-          <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-text-muted">
-            Assignment history ({myAssignments.length})
-          </h2>
+          <h2 className={SECTION_HEADING_CLASS}>Assignment history ({myAssignments.length})</h2>
           {myAssignments.length === 0 ? (
             <p className="text-[12px] text-text-muted">No assignments for this topic yet.</p>
           ) : (
@@ -170,28 +172,30 @@ export default async function TopicPage({ params }: PageProps) {
   );
 }
 
-function StatusPill({ status }: { status: ProgressEntry['status'] }) {
-  const map: Record<ProgressEntry['status'], { label: string; cls: string }> = {
-    completed:     { label: '✓ Completed',  cls: 'bg-delta-up/15 text-delta-up' },
-    'in-progress': { label: '▶ In progress', cls: 'bg-chip-active text-text-primary' },
-    available:     { label: '○ Available',   cls: 'bg-bg-surface text-text-secondary border border-border-subtle' },
-    locked:        { label: '🔒 Locked',     cls: 'bg-bg-surface text-text-muted border border-dashed border-border-subtle' },
-    skipped:       { label: '⊘ Skipped',     cls: 'bg-bg-surface text-text-muted border border-border-subtle' },
-  };
-  const entry = map[status];
-  return <span className={`rounded-chip px-2 py-1 text-[11px] font-semibold ${entry.cls}`}>{entry.label}</span>;
-}
+const STATUS_PILL_ICON: Record<ProgressEntry['status'], typeof CheckIcon> = {
+  completed: CheckIcon,
+  'in-progress': PlayIcon,
+  available: CircleIcon,
+  locked: LockIcon,
+  skipped: SlashIcon,
+};
 
-function StatusGlyph({ status }: { status: ProgressEntry['status'] }) {
-  const map: Record<ProgressEntry['status'], { glyph: string; cls: string }> = {
-    completed:     { glyph: '✓', cls: 'text-delta-up' },
-    'in-progress': { glyph: '▶', cls: 'text-text-primary' },
-    available:     { glyph: '○', cls: 'text-text-secondary' },
-    locked:        { glyph: '🔒', cls: 'opacity-60' },
-    skipped:       { glyph: '⊘', cls: 'text-text-muted' },
-  };
-  const entry = map[status];
-  return <span className={`inline-block w-3 text-center text-[12px] ${entry.cls}`}>{entry.glyph}</span>;
+const STATUS_PILL_CLASS: Record<ProgressEntry['status'], string> = {
+  completed: 'bg-delta-up/15 text-delta-up',
+  'in-progress': 'bg-chip-active text-text-primary',
+  available: 'bg-bg-surface text-text-secondary border border-border-subtle',
+  locked: 'bg-bg-surface text-text-muted border border-dashed border-border-subtle',
+  skipped: 'bg-bg-surface text-text-muted border border-border-subtle',
+};
+
+function StatusPill({ status }: { status: ProgressEntry['status'] }) {
+  const Icon = STATUS_PILL_ICON[status];
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-chip px-2 py-1 text-[11px] font-semibold ${STATUS_PILL_CLASS[status]}`}>
+      <Icon size={12} />
+      {STATUS_LABEL[status]}
+    </span>
+  );
 }
 
 function AssignmentSummary({ assignment }: { assignment: AssignmentRow }) {
@@ -220,13 +224,13 @@ function AssignmentSummary({ assignment }: { assignment: AssignmentRow }) {
       <div className="mt-2 space-y-2 text-[12px] text-text-secondary">
         {assignment.assignmentText && (
           <div>
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Assignment</div>
+            <div className={SECTION_HEADING_CLASS}>Assignment</div>
             <p className="whitespace-pre-wrap">{assignment.assignmentText}</p>
           </div>
         )}
         {assignment.aiCritique && (
           <div>
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Critique</div>
+            <div className={SECTION_HEADING_CLASS}>Critique</div>
             <p className="whitespace-pre-wrap">{assignment.aiCritique}</p>
           </div>
         )}
@@ -248,7 +252,7 @@ function PerCriterionList({ json }: { json: string }) {
   if (!Array.isArray(items) || items.length === 0) return null;
   return (
     <div>
-      <div className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Per criterion</div>
+      <div className={SECTION_HEADING_CLASS}>Per criterion</div>
       <ul className="mt-1 space-y-1">
         {sortCriteriaPassFirst(items).map((c, i) => {
           const glyph = c.result === 'pass' ? '✓' : c.result === 'partial' ? '~' : '✗';

@@ -4,24 +4,28 @@ import {
   ALL_TOPICS,
   getTopicById,
   type BranchId,
+  type Topic,
 } from '../../domains/photography/skillTree.js';
 import {
   computeStatuses,
   pickNextTopic,
   type ProgressEntry,
 } from '../../domains/photography/curriculum.js';
-import type { ProgressRow, ProgressStatus } from '../../lib/photographySheets.js';
-import { KpiCard } from '../components/kpi-card';
+import type { AssignmentRow, ProgressRow, ProgressStatus } from '../../lib/photographySheets.js';
 import { BranchSection } from '../components/branch-section';
+import { StatusGlyph, STATUS_LABEL } from '../components/status-glyph';
+import { CameraIcon, EyeIcon, EditIcon, PrinterIcon, PlayIcon, CheckIcon } from '../components/icons';
 
 export const dynamic = 'force-dynamic';
 
-const BRANCH_LABELS: Record<BranchId, { emoji: string; name: string; subtitle: string }> = {
-  'operating-camera': { emoji: '🎥', name: 'Operating Camera', subtitle: 'Confident control of the a6700' },
-  'seeing':           { emoji: '👁',  name: 'Seeing',           subtitle: 'Make photos that are about something' },
-  'editing':          { emoji: '✏️', name: 'Editing',          subtitle: 'Lightroom Classic, RAW → finished' },
-  'printing':         { emoji: '🖨', name: 'Printing',         subtitle: 'Epson ET-8550 to wall prints' },
+const BRANCH_LABELS: Record<BranchId, { icon: React.ReactNode; name: string; subtitle: string }> = {
+  'operating-camera': { icon: <CameraIcon size={16} />, name: 'Operating Camera', subtitle: 'Confident control of the a6700' },
+  'seeing':           { icon: <EyeIcon size={16} />,    name: 'Seeing',           subtitle: 'Make photos that are about something' },
+  'editing':          { icon: <EditIcon size={16} />,   name: 'Editing',          subtitle: 'Lightroom Classic, RAW → finished' },
+  'printing':         { icon: <PrinterIcon size={16} />, name: 'Printing',        subtitle: 'Epson ET-8550 to wall prints' },
 };
+
+const STATUS_LEGEND: ProgressStatus[] = ['completed', 'in-progress', 'available', 'locked', 'skipped'];
 
 function toEntries(rows: readonly ProgressRow[]): Map<string, ProgressEntry> {
   const m = new Map<string, ProgressEntry>();
@@ -64,79 +68,123 @@ export default async function PhotographyPage() {
     ?? (next?.branch ?? 'operating-camera');
 
   return (
-    <div className="relative overflow-hidden px-4 py-6 md:px-7">
-      <div className="pointer-events-none absolute -right-20 -top-20 h-[280px] w-[280px] rounded-full bg-blob-gradient opacity-[0.18] blur-[40px]" />
+    <div className="px-4 py-6 md:px-7">
+      <div className="text-[11px] uppercase tracking-[0.05em] text-text-muted">Photography</div>
+      <h1 className="mt-1 text-[26px] font-bold tracking-[-0.02em] text-text-primary">Skills</h1>
 
-      <div className="relative">
-        <div className="text-[11px] uppercase tracking-[0.05em] text-text-muted">Photography</div>
-        <h1 className="mt-1 text-[26px] font-bold tracking-[-0.02em] text-text-primary">Skills</h1>
-        {isFirstRun ? (
-          <div className="mt-3 rounded-kpi border border-border-subtle bg-bg-surface p-4 shadow-card">
-            <p className="text-[13px] text-text-secondary">
-              This is your photography curriculum — {ALL_TOPICS.length} topics across shooting, seeing, editing, and
-              printing, built around your gear. Start with{' '}
-              {next ? (
-                <Link href={`/photography/${next.id}`} className="font-semibold text-text-primary hover:text-text-secondary">
-                  {next.name}
-                </Link>
-              ) : (
-                'a topic below'
-              )}{' '}
-              — the rest unlocks as you go.
-            </p>
-          </div>
-        ) : (
-          <p className="text-[13px] text-text-secondary">
-            {totalDone} of {ALL_TOPICS.length} topics completed · {totalInProg} in progress
-          </p>
-        )}
+      <NextMoveCard
+        active={active ?? null}
+        activeTopic={activeTopic ?? null}
+        next={next}
+        isFirstRun={isFirstRun}
+      />
+      <p className="mt-2.5 text-[13px] text-text-secondary">
+        {totalDone} of {ALL_TOPICS.length} topics completed · {totalInProg} in progress
+      </p>
 
-        <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-          <KpiCard label="Completed" value={`${totalDone} / ${ALL_TOPICS.length}`} />
-          <KpiCard
-            label="Active"
-            value={active ? (activeTopic?.name ?? 'In progress') : 'Nothing active'}
-            {...(active ? { href: `/photography/${active.topicId}` } : {})}
+      <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px] text-text-muted">
+        {STATUS_LEGEND.map((s) => (
+          <span key={s} className="inline-flex items-center gap-1.5">
+            <StatusGlyph status={s} />
+            {STATUS_LABEL[s]}
+          </span>
+        ))}
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+        {(['operating-camera', 'seeing', 'editing', 'printing'] as BranchId[]).map((branch) => (
+          <BranchSection
+            key={branch}
+            branch={branch}
+            label={BRANCH_LABELS[branch]}
+            statuses={statusesObj}
+            defaultOpen={branch === defaultOpenBranch}
           />
-          <KpiCard
-            label="Suggested next"
-            value={next?.name ?? '—'}
-            {...(next ? { href: `/photography/${next.id}` } : {})}
-          />
-        </div>
-
-        <div className="mt-6 text-[12px] text-text-muted">
-          <Glyph status="completed" /> Completed&nbsp;&nbsp;
-          <Glyph status="in-progress" /> In progress&nbsp;&nbsp;
-          <Glyph status="available" /> Available&nbsp;&nbsp;
-          <Glyph status="locked" /> Locked&nbsp;&nbsp;
-          <Glyph status="skipped" /> Skipped
-        </div>
-
-        <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
-          {(['operating-camera', 'seeing', 'editing', 'printing'] as BranchId[]).map((branch) => (
-            <BranchSection
-              key={branch}
-              branch={branch}
-              label={BRANCH_LABELS[branch]}
-              statuses={statusesObj}
-              defaultOpen={branch === defaultOpenBranch}
-            />
-          ))}
-        </div>
+        ))}
       </div>
     </div>
   );
 }
 
-function Glyph({ status }: { status: ProgressStatus }) {
-  const map: Record<ProgressStatus, { glyph: string; cls: string }> = {
-    completed:     { glyph: '✓', cls: 'text-delta-up' },
-    'in-progress': { glyph: '▶', cls: 'text-text-primary' },
-    available:     { glyph: '○', cls: 'text-text-secondary' },
-    locked:        { glyph: '🔒', cls: 'opacity-60' },
-    skipped:       { glyph: '⊘', cls: 'text-text-muted line-through' },
-  };
-  const entry = map[status];
-  return <span className={`inline-block w-3 text-center text-[12px] ${entry.cls}`}>{entry.glyph}</span>;
+function NextMoveCard({
+  active,
+  activeTopic,
+  next,
+  isFirstRun,
+}: {
+  active: AssignmentRow | null;
+  activeTopic: Topic | null;
+  next: Topic | null;
+  isFirstRun: boolean;
+}) {
+  if (active && activeTopic) {
+    return (
+      <NextMoveCardShell
+        href={`/photography/${activeTopic.id}`}
+        icon={<PlayIcon size={20} className="text-text-primary" />}
+        eyebrow="Finish what you started"
+        topicName={activeTopic.name}
+        reason={`${BRANCH_LABELS[activeTopic.branch].name} · assignment in progress`}
+      />
+    );
+  }
+  if (next) {
+    return (
+      <NextMoveCardShell
+        href={`/photography/${next.id}`}
+        icon={BRANCH_LABELS[next.branch].icon}
+        eyebrow={isFirstRun ? 'Start here' : 'Up next'}
+        topicName={next.name}
+        reason={isFirstRun ? 'Your first assignment — the rest unlocks as you go.' : 'Picks up where you left off.'}
+      />
+    );
+  }
+  return (
+    <div className="mt-3 flex items-center gap-3 rounded-kpi border border-border-subtle bg-bg-surface p-4 shadow-card">
+      <span className="flex h-10 w-10 flex-none items-center justify-center rounded-input bg-delta-up/15 text-delta-up">
+        <CheckIcon size={20} />
+      </span>
+      <p className="text-[13px] text-text-secondary">
+        Every unlocked topic is complete. Check back once new topics open up, or revisit one for a fresh assignment.
+      </p>
+    </div>
+  );
+}
+
+function NextMoveCardShell({
+  href,
+  icon,
+  eyebrow,
+  topicName,
+  reason,
+}: {
+  href: string;
+  icon: React.ReactNode;
+  eyebrow: string;
+  topicName: string;
+  reason: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="group mt-3 flex items-center gap-3.5 rounded-kpi border border-border-subtle bg-bg-surface p-4 shadow-card transition hover:border-accent-from/50"
+    >
+      <span className="flex h-10 w-10 flex-none items-center justify-center rounded-input bg-chip-active text-accent-from" aria-hidden="true">
+        {icon}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-[11px] font-medium text-text-secondary">{eyebrow}</div>
+        <div className="truncate text-[18px] font-bold tracking-[-0.01em] text-text-primary" title={topicName}>
+          {topicName}
+        </div>
+        <div className="truncate text-[12px] text-text-muted">{reason}</div>
+      </div>
+      <span
+        className="flex-none text-text-muted transition group-hover:translate-x-0.5 group-hover:text-text-primary motion-reduce:group-hover:translate-x-0"
+        aria-hidden="true"
+      >
+        →
+      </span>
+    </Link>
+  );
 }

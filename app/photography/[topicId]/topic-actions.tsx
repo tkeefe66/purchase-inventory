@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { Modal } from '../../components/modal';
 import { Markdown } from '../../components/markdown';
 import { VERDICT_LABELS, sortCriteriaPassFirst } from '../../lib/photography-verdicts';
+import { BookOpenIcon, PlayIcon, UploadIcon, SkipForwardIcon, LockIcon, CheckIcon } from '../../components/icons';
 
 type Mode = 'closed' | 'learn' | 'start' | 'submit' | 'skip';
 
@@ -304,42 +305,42 @@ export function TopicActions({
         <button
           type="button"
           onClick={onLearnClick}
-          className="rounded-input bg-bg-surface border border-border-subtle px-3 py-2 text-[13px] text-text-primary hover:bg-chip-active"
+          className="inline-flex items-center gap-1.5 rounded-input bg-bg-surface border border-border-subtle px-3 py-2 text-[13px] text-text-primary hover:bg-chip-active"
         >
-          📖 Read theory
+          <BookOpenIcon size={15} /> Read theory
         </button>
         {hasActiveAssignment ? (
           <>
             <button
               type="button"
               onClick={onStartClick}
-              className="rounded-input bg-accent-gradient px-3 py-2 text-[13px] font-semibold text-text-primary shadow-accent-glow hover:brightness-110"
+              className="inline-flex items-center gap-1.5 rounded-input bg-accent-gradient px-3 py-2 text-[13px] font-semibold text-text-primary shadow-accent-glow hover:brightness-110"
             >
-              📤 Submit photo
+              <UploadIcon size={15} /> Submit photo
             </button>
             <button
               type="button"
               onClick={() => setMode('skip')}
-              className="rounded-input border border-border-subtle bg-bg-surface px-3 py-2 text-[13px] text-text-secondary hover:bg-chip-active hover:text-text-primary"
+              className="inline-flex items-center gap-1.5 rounded-input border border-border-subtle bg-bg-surface px-3 py-2 text-[13px] text-text-secondary hover:bg-chip-active hover:text-text-primary"
               title="Skip the active assignment for this topic"
             >
-              ⊘ Skip assignment
+              <SkipForwardIcon size={15} /> Skip assignment
             </button>
           </>
         ) : prereqsMet ? (
           <button
             type="button"
             onClick={onStartClick}
-            className="rounded-input bg-accent-gradient px-3 py-2 text-[13px] font-semibold text-text-primary shadow-accent-glow hover:brightness-110"
+            className="inline-flex items-center gap-1.5 rounded-input bg-accent-gradient px-3 py-2 text-[13px] font-semibold text-text-primary shadow-accent-glow hover:brightness-110"
           >
-            🚀 Start assignment
+            <PlayIcon size={15} /> Start assignment
           </button>
         ) : (
           <span
             title="Prereqs not yet completed"
-            className="cursor-not-allowed rounded-input border border-dashed border-border-subtle px-3 py-2 text-[13px] text-text-muted"
+            className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-input border border-dashed border-border-subtle px-3 py-2 text-[13px] text-text-muted"
           >
-            🔒 Start assignment
+            <LockIcon size={15} /> Start assignment
           </span>
         )}
       </div>
@@ -387,9 +388,9 @@ export function TopicActions({
               <button
                 type="button"
                 onClick={openSubmitFromStart}
-                className="rounded-input bg-accent-gradient px-3 py-2 text-[13px] font-semibold text-text-primary shadow-accent-glow hover:brightness-110"
+                className="inline-flex items-center gap-1.5 rounded-input bg-accent-gradient px-3 py-2 text-[13px] font-semibold text-text-primary shadow-accent-glow hover:brightness-110"
               >
-                📤 Submit photo
+                <UploadIcon size={15} /> Submit photo
               </button>
               <button
                 type="button"
@@ -620,13 +621,14 @@ function GradeResultView({ result, onClose }: { result: GradeResponse; onClose: 
   return (
     <div className="space-y-3">
       <div
-        className={`rounded-card border px-3 py-2 text-[14px] font-semibold ${
+        className={`flex items-center gap-1.5 rounded-card border px-3 py-2 text-[14px] font-semibold ${
           pass
             ? 'border-delta-up/40 bg-delta-up/10 text-delta-up'
             : 'border-delta-down/40 bg-delta-down/10 text-delta-down'
         }`}
       >
-        {pass ? `✓ ${VERDICT_LABELS.pass}` : VERDICT_LABELS.did_not_pass}
+        {pass && <CheckIcon size={16} />}
+        {pass ? VERDICT_LABELS.pass : VERDICT_LABELS.did_not_pass}
       </div>
       {result.overallCritique && (
         <section>

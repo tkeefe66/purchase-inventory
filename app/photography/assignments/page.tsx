@@ -3,6 +3,7 @@ import { getPhotographyAssignments } from '../../lib/photography-data';
 import { getTopicById } from '../../../domains/photography/skillTree.js';
 import type { AssignmentRow, AssignmentStatus } from '../../../lib/photographySheets.js';
 import { ASSIGNMENT_STATUS_LABELS, sortCriteriaPassFirst } from '../../lib/photography-verdicts';
+import { CheckIcon } from '../../components/icons';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,9 +44,8 @@ export default async function AssignmentsPage({ searchParams }: PageProps) {
   };
 
   return (
-    <div className="relative overflow-hidden px-4 py-6 md:px-7">
-      <div className="pointer-events-none absolute -right-20 -top-20 h-[280px] w-[280px] rounded-full bg-blob-gradient opacity-[0.18] blur-[40px]" />
-      <div className="relative">
+    <div className="px-4 py-6 md:px-7">
+      <div>
         <Link
           href="/photography"
           className="inline-flex items-center gap-1 rounded-chip border border-border-subtle bg-bg-surface px-2.5 py-1 text-[12px] text-text-secondary hover:text-text-primary"
@@ -172,16 +172,21 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function StatusBadge({ status }: { status: AssignmentStatus }) {
-  const map: Record<AssignmentStatus, { label: string; cls: string }> = {
+  const map: Record<AssignmentStatus, { label: string; cls: string; showCheck?: boolean }> = {
     proposed:     { label: ASSIGNMENT_STATUS_LABELS.proposed,     cls: 'bg-bg-base text-text-muted border border-border-subtle' },
     active:       { label: ASSIGNMENT_STATUS_LABELS.active,       cls: 'bg-chip-active text-text-primary' },
     submitted:    { label: ASSIGNMENT_STATUS_LABELS.submitted,    cls: 'bg-chip-active text-text-primary' },
-    passed:       { label: `✓ ${ASSIGNMENT_STATUS_LABELS.passed}`, cls: 'bg-delta-up/15 text-delta-up' },
+    passed:       { label: ASSIGNMENT_STATUS_LABELS.passed,       cls: 'bg-delta-up/15 text-delta-up', showCheck: true },
     did_not_pass: { label: ASSIGNMENT_STATUS_LABELS.did_not_pass, cls: 'bg-delta-down/15 text-delta-down' },
     skipped:      { label: ASSIGNMENT_STATUS_LABELS.skipped,      cls: 'bg-bg-base text-text-muted border border-border-subtle' },
   };
   const entry = map[status];
-  return <span className={`rounded-chip px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${entry.cls}`}>{entry.label}</span>;
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-chip px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${entry.cls}`}>
+      {entry.showCheck && <CheckIcon size={10} />}
+      {entry.label}
+    </span>
+  );
 }
 
 function PerCriterionList({ json }: { json: string }) {
