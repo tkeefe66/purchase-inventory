@@ -56,3 +56,34 @@ html, body {
   margin: 0.5em 0;
   color: #a09cb8;
 }
+
+/* Shared reveal transition: state changes (grade result landing, a branch
+   section expanding) fade + rise in. No exit animation — content that
+   unmounts just disappears, which keeps this safe to use anywhere a block
+   mounts conditionally. */
+@keyframes fade-rise-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-rise {
+  animation: fade-rise-in 200ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-rise { animation: none; }
+}
+
+/* Grading wait state: calm indeterminate sweep across a track, not a spinner.
+   Pauses to a static bar under reduced motion instead of looping. */
+@keyframes grading-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(280%); }
+}
+.grading-sweep {
+  animation: grading-sweep 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .grading-sweep {
+    animation: none;
+    transform: none;
+  }
+}

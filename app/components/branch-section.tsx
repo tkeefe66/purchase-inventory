@@ -62,7 +62,7 @@ export function BranchSection({ branch, label, statuses, defaultOpen = true }: P
       </button>
 
       {open && (
-        <div className="mt-3">
+        <div className="mt-3 animate-fade-rise">
           {([1, 2, 3, 4] as Tier[]).map((tier) => {
             const tierTopics = listByTier(branch, tier);
             if (tierTopics.length === 0) return null;

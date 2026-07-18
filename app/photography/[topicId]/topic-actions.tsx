@@ -414,6 +414,7 @@ export function TopicActions({
           setGradeResult(g);
           router.refresh();
         }}
+        onRetrySubmission={() => setGradeResult(null)}
         result={gradeResult}
       />
 
@@ -454,13 +455,15 @@ export function TopicActions({
 }
 
 function SubmitModal({
-  open, onClose, onSkipInstead, topicName, onGraded, result,
+  open, onClose, onSkipInstead, topicName, onGraded, onRetrySubmission, result,
 }: {
   open: boolean;
   onClose: () => void;
   onSkipInstead: () => void;
   topicName: string;
   onGraded: (g: GradeResponse) => void;
+  /** Clears the cached grade result so the form re-mounts blank for another attempt. */
+  onRetrySubmission: () => void;
   result: GradeResponse | null;
 }) {
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -493,6 +496,20 @@ function SubmitModal({
 
   function onCancelGrading(): void {
     controllerRef.current?.abort(new UserCancelled());
+  }
+
+  function resetForm(): void {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    setCaption('');
+    setFileError(null);
+    setError(null);
+    if (fileRef.current) fileRef.current.value = '';
+  }
+
+  function handleTryAgain(): void {
+    resetForm();
+    onRetrySubmission();
   }
 
   async function runSubmit(): Promise<void> {
@@ -584,7 +601,7 @@ function SubmitModal({
               className="block w-full rounded-input border border-border-subtle bg-bg-base p-2 text-[12px] text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent-from"
             />
           </div>
-          {loading && <LoadingBlock label="Grading — this can take up to a minute…" />}
+          {loading && <GradingWaitBlock />}
           {error && (
             <ErrorBlock
               error={error}
@@ -610,62 +627,159 @@ function SubmitModal({
           </div>
         </form>
       ) : (
-        <GradeResultView result={result} onClose={onClose} />
+        <GradeResultView result={result} onClose={onClose} onTryAgain={handleTryAgain} />
       )}
     </Modal>
   );
 }
 
-function GradeResultView({ result, onClose }: { result: GradeResponse; onClose: () => void }) {
-  const pass = result.verdict === 'pass';
+function GradeResultView({
+  result,
+  onClose,
+  onTryAgain,
+}: {
+  result: GradeResponse;
+  onClose: () => void;
+  onTryAgain: () => void;
+}) {
+  return (
+    <div className="animate-fade-rise space-y-3">
+      {result.verdict === 'pass' ? (
+        <PassCelebration result={result} onClose={onClose} />
+      ) : (
+        <NotYetResult result={result} onClose={onClose} onTryAgain={onTryAgain} />
+      )}
+    </div>
+  );
+}
+
+/** Criterion list shared by both verdict states — pass-first, coaching framing. */
+function CriterionList({ items }: { items: GradeResponse['perCriterion'] }) {
+  return (
+    <section>
+      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-text-muted">Per criterion</div>
+      <ul className="space-y-1">
+        {sortCriteriaPassFirst(items).map((c, i) => {
+          const glyph = c.result === 'pass' ? '✓' : c.result === 'partial' ? '~' : '✗';
+          const cls = c.result === 'pass' ? 'text-delta-up' : c.result === 'partial' ? 'text-text-secondary' : 'text-delta-down';
+          return (
+            <li key={i} className="flex gap-2 text-[12px]">
+              <span className={`w-3 text-center ${cls}`}>{glyph}</span>
+              <span><strong>{c.criterion}</strong>{c.reason ? ` — ${c.reason}` : ''}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+/**
+ * Pass state — a win, not confetti. One accent-tinted card (the same
+ * chip-active/accent vocabulary used for selection state elsewhere in the
+ * app), a momentum line, and the suggested next step promoted into its own
+ * highlighted card since it's the most useful thing on the screen right now.
+ */
+function PassCelebration({ result, onClose }: { result: GradeResponse; onClose: () => void }) {
   return (
     <div className="space-y-3">
-      <div
-        className={`flex items-center gap-1.5 rounded-card border px-3 py-2 text-[14px] font-semibold ${
-          pass
-            ? 'border-delta-up/40 bg-delta-up/10 text-delta-up'
-            : 'border-delta-down/40 bg-delta-down/10 text-delta-down'
-        }`}
-      >
-        {pass && <CheckIcon size={16} />}
-        {pass ? VERDICT_LABELS.pass : VERDICT_LABELS.did_not_pass}
+      <div className="flex items-start gap-3 rounded-card border border-chip-active-border bg-chip-active p-4">
+        <span className="flex h-9 w-9 flex-none items-center justify-center rounded-input bg-accent-gradient text-text-primary shadow-accent-glow">
+          <CheckIcon size={18} />
+        </span>
+        <div>
+          <div className="text-[16px] font-bold tracking-[-0.01em] text-text-primary">{VERDICT_LABELS.pass}</div>
+          <p className="mt-0.5 text-[12px] text-chip-active-text">That completes {result.topicName}.</p>
+        </div>
       </div>
+
       {result.overallCritique && (
         <section>
           <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-text-muted">Critique</div>
           <p className="whitespace-pre-wrap text-[13px] text-text-secondary">{result.overallCritique}</p>
         </section>
       )}
-      {result.perCriterion.length > 0 && (
-        <section>
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-text-muted">Per criterion</div>
-          <ul className="space-y-1">
-            {sortCriteriaPassFirst(result.perCriterion).map((c, i) => {
-              const glyph = c.result === 'pass' ? '✓' : c.result === 'partial' ? '~' : '✗';
-              const cls = c.result === 'pass' ? 'text-delta-up' : c.result === 'partial' ? 'text-text-secondary' : 'text-delta-down';
-              return (
-                <li key={i} className="flex gap-2 text-[12px]">
-                  <span className={`w-3 text-center ${cls}`}>{glyph}</span>
-                  <span><strong>{c.criterion}</strong>{c.reason ? ` — ${c.reason}` : ''}</span>
-                </li>
-              );
-            })}
-          </ul>
+
+      {result.perCriterion.length > 0 && <CriterionList items={result.perCriterion} />}
+
+      {result.suggestedNextStep && (
+        <section className="rounded-input border border-chip-active-border bg-bg-base p-3">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-accent-from">Next up</div>
+          <p className="text-[13px] text-text-primary">{result.suggestedNextStep}</p>
         </section>
       )}
+
+      <button
+        type="button"
+        onClick={onClose}
+        className="rounded-input bg-accent-gradient px-3 py-2 text-[13px] font-semibold text-text-primary shadow-accent-glow hover:brightness-110"
+      >
+        Done
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Not-yet state — calmer than a failure. Neutral border (no alarm red on the
+ * overall banner; per-criterion glyphs below still use delta-down so the
+ * detail stays legible), leads with whichever criterion landed best, and a
+ * clear Try again affordance since that's the entire point of showing up here.
+ */
+function NotYetResult({
+  result,
+  onClose,
+  onTryAgain,
+}: {
+  result: GradeResponse;
+  onClose: () => void;
+  onTryAgain: () => void;
+}) {
+  const strongest = sortCriteriaPassFirst(result.perCriterion)[0];
+  return (
+    <div className="space-y-3">
+      <div className="rounded-card border border-border-subtle bg-bg-base p-4">
+        <div className="text-[16px] font-bold tracking-[-0.01em] text-text-primary">{VERDICT_LABELS.did_not_pass}</div>
+        {strongest && (
+          <p className="mt-1 text-[12px] text-text-secondary">
+            Strongest so far: <strong className="text-text-primary">{strongest.criterion}</strong>
+            {strongest.reason ? ` — ${strongest.reason}` : ''}
+          </p>
+        )}
+      </div>
+
+      {result.overallCritique && (
+        <section>
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-text-muted">Critique</div>
+          <p className="whitespace-pre-wrap text-[13px] text-text-secondary">{result.overallCritique}</p>
+        </section>
+      )}
+
+      {result.perCriterion.length > 0 && <CriterionList items={result.perCriterion} />}
+
       {result.suggestedNextStep && (
         <section>
           <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-text-muted">Next step</div>
           <p className="text-[13px] text-text-secondary">{result.suggestedNextStep}</p>
         </section>
       )}
-      <button
-        type="button"
-        onClick={onClose}
-        className="rounded-input border border-border-subtle bg-bg-surface px-3 py-2 text-[13px] text-text-secondary hover:text-text-primary"
-      >
-        Done
-      </button>
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={onTryAgain}
+          className="rounded-input bg-accent-gradient px-3 py-2 text-[13px] font-semibold text-text-primary shadow-accent-glow hover:brightness-110"
+        >
+          Try again
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-input border border-border-subtle bg-bg-surface px-3 py-2 text-[13px] text-text-secondary hover:text-text-primary"
+        >
+          Close
+        </button>
+      </div>
     </div>
   );
 }
@@ -675,6 +789,31 @@ function LoadingBlock({ label }: { label: string }) {
     <div className="flex items-center gap-2 py-6 text-[13px] text-text-muted">
       <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-accent-from motion-reduce:animate-none" />
       {label}
+    </div>
+  );
+}
+
+/**
+ * Grading wait state — the one genuinely slow call in the app (vision
+ * grading, up to ~90s). Sets a time expectation instead of a bare pulse dot,
+ * shows a calm indeterminate sweep instead of a spinner, and reassures that
+ * cancelling/resubmitting is always fine so there's no pressure to nail the
+ * upload in one try.
+ */
+function GradingWaitBlock() {
+  return (
+    <div className="rounded-input border border-border-subtle bg-bg-base p-4">
+      <p className="text-[13px] font-medium text-text-primary">Reading your photo — usually 15–30 seconds</p>
+      <div
+        className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-bg-surface-raised"
+        role="progressbar"
+        aria-label="Grading in progress"
+      >
+        <div className="grading-sweep h-full w-1/3 rounded-full bg-accent-gradient" />
+      </div>
+      <p className="mt-3 text-[12px] text-text-muted">
+        Occasionally takes up to a minute for a detailed rubric. Resubmitting is always fine, so there’s no pressure to get it right on the first try.
+      </p>
     </div>
   );
 }
