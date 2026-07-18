@@ -97,7 +97,7 @@ function TopicChip({ topic, status }: { topic: Topic; status: ProgressStatus }) 
     <li>
       <Link
         href={`/photography/${topic.id}`}
-        className={`flex items-center gap-2 rounded-chip border border-border-subtle px-2.5 py-1.5 text-[13px] transition ${
+        className={`relative flex items-center gap-2 rounded-chip border border-border-subtle px-2.5 py-1.5 text-[13px] transition after:absolute after:-inset-y-2 after:-inset-x-1 after:content-[''] ${
           locked
             ? 'border-dashed text-text-muted hover:text-text-secondary'
             : 'text-text-secondary hover:bg-chip-active hover:text-text-primary'

@@ -5,6 +5,7 @@ import { Modal } from '../../components/modal';
 import { Markdown } from '../../components/markdown';
 import { VERDICT_LABELS, sortCriteriaPassFirst } from '../../lib/photography-verdicts';
 import { BookOpenIcon, PlayIcon, UploadIcon, SkipForwardIcon, LockIcon, CheckIcon } from '../../components/icons';
+import { PerCriterionList } from '../../components/per-criterion-list';
 
 type Mode = 'closed' | 'learn' | 'start' | 'submit' | 'skip';
 
@@ -336,12 +337,17 @@ export function TopicActions({
             <PlayIcon size={15} /> Start assignment
           </button>
         ) : (
-          <span
-            title="Prereqs not yet completed"
-            className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-input border border-dashed border-border-subtle px-3 py-2 text-[13px] text-text-muted"
-          >
-            <LockIcon size={15} /> Start assignment
-          </span>
+          <div className="inline-flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled
+              aria-disabled="true"
+              className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-input border border-dashed border-border-subtle px-3 py-2 text-[13px] text-text-muted"
+            >
+              <LockIcon size={15} /> Start assignment
+            </button>
+            <span className="text-[12px] text-text-muted">Prereqs not yet completed</span>
+          </div>
         )}
       </div>
 
@@ -653,27 +659,6 @@ function GradeResultView({
   );
 }
 
-/** Criterion list shared by both verdict states — pass-first, coaching framing. */
-function CriterionList({ items }: { items: GradeResponse['perCriterion'] }) {
-  return (
-    <section>
-      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-text-muted">Per criterion</div>
-      <ul className="space-y-1">
-        {sortCriteriaPassFirst(items).map((c, i) => {
-          const glyph = c.result === 'pass' ? '✓' : c.result === 'partial' ? '~' : '✗';
-          const cls = c.result === 'pass' ? 'text-delta-up' : c.result === 'partial' ? 'text-text-secondary' : 'text-delta-down';
-          return (
-            <li key={i} className="flex gap-2 text-[12px]">
-              <span className={`w-3 text-center ${cls}`}>{glyph}</span>
-              <span><strong>{c.criterion}</strong>{c.reason ? ` — ${c.reason}` : ''}</span>
-            </li>
-          );
-        })}
-      </ul>
-    </section>
-  );
-}
-
 /**
  * Pass state — a win, not confetti. One accent-tinted card (the same
  * chip-active/accent vocabulary used for selection state elsewhere in the
@@ -700,7 +685,7 @@ function PassCelebration({ result, onClose }: { result: GradeResponse; onClose: 
         </section>
       )}
 
-      {result.perCriterion.length > 0 && <CriterionList items={result.perCriterion} />}
+      {result.perCriterion.length > 0 && <PerCriterionList items={result.perCriterion} />}
 
       {result.suggestedNextStep && (
         <section className="rounded-input border border-chip-active-border bg-bg-base p-3">
@@ -755,7 +740,7 @@ function NotYetResult({
         </section>
       )}
 
-      {result.perCriterion.length > 0 && <CriterionList items={result.perCriterion} />}
+      {result.perCriterion.length > 0 && <PerCriterionList items={result.perCriterion} />}
 
       {result.suggestedNextStep && (
         <section>

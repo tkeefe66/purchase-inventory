@@ -131,3 +131,21 @@ export function SlashIcon({ size = 16, className }: IconProps) {
     </svg>
   );
 }
+
+/** Criterion-result icon — fail. */
+export function XIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...shared} width={size} height={size} className={className} aria-hidden="true">
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  );
+}
+
+/** Criterion-result icon — partial. */
+export function DashIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...shared} width={size} height={size} className={className} aria-hidden="true">
+      <path d="M5.5 12h13" />
+    </svg>
+  );
+}

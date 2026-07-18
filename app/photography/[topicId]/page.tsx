@@ -9,9 +9,10 @@ import {
 import { computeStatuses, type ProgressEntry } from '../../../domains/photography/curriculum.js';
 import type { AssignmentRow, ProgressRow } from '../../../lib/photographySheets.js';
 import { Markdown } from '../../components/markdown';
-import { assignmentLabel, sortCriteriaPassFirst } from '../../lib/photography-verdicts';
-import { StatusGlyph, STATUS_LABEL } from '../../components/status-glyph';
-import { CameraIcon, EyeIcon, EditIcon, PrinterIcon, CheckIcon, PlayIcon, CircleIcon, LockIcon, SlashIcon } from '../../components/icons';
+import { assignmentLabel } from '../../lib/photography-verdicts';
+import { StatusGlyph, STATUS_LABEL, STATUS_ICON } from '../../components/status-glyph';
+import { CameraIcon, EyeIcon, EditIcon, PrinterIcon } from '../../components/icons';
+import { PerCriterionList, parsePerCriterionJson } from '../../components/per-criterion-list';
 import { TopicActions } from './topic-actions';
 
 export const dynamic = 'force-dynamic';
@@ -90,12 +91,14 @@ export default async function TopicPage({ params }: PageProps) {
       <div className="max-w-4xl">
         <Link
           href="/photography"
-          className="inline-flex items-center gap-1 rounded-chip border border-border-subtle bg-bg-surface px-2.5 py-1 text-[12px] text-text-secondary hover:text-text-primary"
+          className="relative inline-flex items-center gap-1 rounded-chip border border-border-subtle bg-bg-surface px-2.5 py-1 text-[12px] text-text-secondary after:absolute after:-inset-2.5 after:content-[''] hover:text-text-primary"
         >
           ← Skills
         </Link>
         <div className="mt-3 text-[11px] uppercase tracking-[0.05em] text-text-muted">Photography</div>
-        <h1 className="mt-1 text-[26px] font-bold tracking-[-0.02em] text-text-primary">{topic.name}</h1>
+        <h1 className="mt-1 truncate text-[26px] font-bold tracking-[-0.02em] text-text-primary" title={topic.name}>
+          {topic.name}
+        </h1>
         <div className="mt-1 flex items-center gap-1.5 text-[13px] text-text-secondary">
           <span className="text-accent-from" aria-hidden="true">{branchLabel.icon}</span>
           {branchLabel.name} · Tier {topic.tier}
@@ -172,14 +175,6 @@ export default async function TopicPage({ params }: PageProps) {
   );
 }
 
-const STATUS_PILL_ICON: Record<ProgressEntry['status'], typeof CheckIcon> = {
-  completed: CheckIcon,
-  'in-progress': PlayIcon,
-  available: CircleIcon,
-  locked: LockIcon,
-  skipped: SlashIcon,
-};
-
 const STATUS_PILL_CLASS: Record<ProgressEntry['status'], string> = {
   completed: 'bg-delta-up/15 text-delta-up',
   'in-progress': 'bg-chip-active text-text-primary',
@@ -189,7 +184,7 @@ const STATUS_PILL_CLASS: Record<ProgressEntry['status'], string> = {
 };
 
 function StatusPill({ status }: { status: ProgressEntry['status'] }) {
-  const Icon = STATUS_PILL_ICON[status];
+  const Icon = STATUS_ICON[status];
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-chip px-2 py-1 text-[11px] font-semibold ${STATUS_PILL_CLASS[status]}`}>
       <Icon size={12} />
@@ -235,36 +230,12 @@ function AssignmentSummary({ assignment }: { assignment: AssignmentRow }) {
           </div>
         )}
         {assignment.perCriterionJson && (
-          <PerCriterionList json={assignment.perCriterionJson} />
+          <PerCriterionList
+            items={parsePerCriterionJson(assignment.perCriterionJson)}
+            headingClassName={SECTION_HEADING_CLASS}
+          />
         )}
       </div>
     </details>
-  );
-}
-
-function PerCriterionList({ json }: { json: string }) {
-  let items: Array<{ criterion: string; result: string; reason?: string }>;
-  try {
-    items = JSON.parse(json) as Array<{ criterion: string; result: string; reason?: string }>;
-  } catch {
-    return null;
-  }
-  if (!Array.isArray(items) || items.length === 0) return null;
-  return (
-    <div>
-      <div className={SECTION_HEADING_CLASS}>Per criterion</div>
-      <ul className="mt-1 space-y-1">
-        {sortCriteriaPassFirst(items).map((c, i) => {
-          const glyph = c.result === 'pass' ? '✓' : c.result === 'partial' ? '~' : '✗';
-          const cls = c.result === 'pass' ? 'text-delta-up' : c.result === 'partial' ? 'text-text-secondary' : 'text-delta-down';
-          return (
-            <li key={i} className="flex gap-2">
-              <span className={`w-3 text-center ${cls}`}>{glyph}</span>
-              <span><strong>{c.criterion}</strong>{c.reason ? ` — ${c.reason}` : ''}</span>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
   );
 }

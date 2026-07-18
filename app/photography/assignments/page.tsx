@@ -2,8 +2,9 @@ import Link from 'next/link';
 import { getPhotographyAssignments } from '../../lib/photography-data';
 import { getTopicById } from '../../../domains/photography/skillTree.js';
 import type { AssignmentRow, AssignmentStatus } from '../../../lib/photographySheets.js';
-import { ASSIGNMENT_STATUS_LABELS, sortCriteriaPassFirst } from '../../lib/photography-verdicts';
+import { ASSIGNMENT_STATUS_LABELS } from '../../lib/photography-verdicts';
 import { CheckIcon } from '../../components/icons';
+import { PerCriterionList, parsePerCriterionJson } from '../../components/per-criterion-list';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,12 +49,12 @@ export default async function AssignmentsPage({ searchParams }: PageProps) {
       <div>
         <Link
           href="/photography"
-          className="inline-flex items-center gap-1 rounded-chip border border-border-subtle bg-bg-surface px-2.5 py-1 text-[12px] text-text-secondary hover:text-text-primary"
+          className="relative inline-flex items-center gap-1 rounded-chip border border-border-subtle bg-bg-surface px-2.5 py-1 text-[12px] text-text-secondary after:absolute after:-inset-2.5 after:content-[''] hover:text-text-primary"
         >
           ← Skills
         </Link>
         <div className="mt-3 text-[11px] uppercase tracking-[0.05em] text-text-muted">Photography</div>
-        <h1 className="mt-1 text-[26px] font-bold tracking-[-0.02em] text-text-primary">Assignments</h1>
+        <h1 className="mt-1 text-balance text-[26px] font-bold tracking-[-0.02em] text-text-primary">Assignments</h1>
         <p className="text-[13px] text-text-secondary">
           {allAssignments.length} total ·{' '}
           {counts.passed} passed · {counts.did_not_pass} not yet passed · {counts.active + counts.submitted} open · {counts.skipped} skipped
@@ -68,7 +69,7 @@ export default async function AssignmentsPage({ searchParams }: PageProps) {
               <Link
                 key={opt.value || 'all'}
                 href={opt.value ? `/photography/assignments?status=${opt.value}` : '/photography/assignments'}
-                className={`rounded-chip border px-2.5 py-1 text-[12px] transition ${
+                className={`relative rounded-chip border px-2.5 py-1 text-[12px] transition after:absolute after:-inset-2.5 after:content-[''] ${
                   isActive
                     ? 'border-border-subtle bg-chip-active font-semibold text-text-primary'
                     : 'border-border-subtle bg-bg-surface text-text-secondary hover:text-text-primary'
@@ -155,7 +156,9 @@ function AssignmentCard({ assignment }: { assignment: AssignmentRow }) {
               <p className="whitespace-pre-wrap text-text-secondary">{assignment.aiCritique}</p>
             </Section>
           )}
-          {assignment.perCriterionJson && <PerCriterionList json={assignment.perCriterionJson} />}
+          {assignment.perCriterionJson && (
+            <PerCriterionList items={parsePerCriterionJson(assignment.perCriterionJson)} />
+          )}
         </div>
       </details>
     </article>
@@ -186,32 +189,6 @@ function StatusBadge({ status }: { status: AssignmentStatus }) {
       {entry.showCheck && <CheckIcon size={10} />}
       {entry.label}
     </span>
-  );
-}
-
-function PerCriterionList({ json }: { json: string }) {
-  let items: Array<{ criterion: string; result: string; reason?: string }>;
-  try {
-    items = JSON.parse(json) as Array<{ criterion: string; result: string; reason?: string }>;
-  } catch {
-    return null;
-  }
-  if (!Array.isArray(items) || items.length === 0) return null;
-  return (
-    <Section title="Per criterion">
-      <ul className="space-y-1">
-        {sortCriteriaPassFirst(items).map((c, i) => {
-          const glyph = c.result === 'pass' ? '✓' : c.result === 'partial' ? '~' : '✗';
-          const cls = c.result === 'pass' ? 'text-delta-up' : c.result === 'partial' ? 'text-text-secondary' : 'text-delta-down';
-          return (
-            <li key={i} className="flex gap-2">
-              <span className={`w-3 text-center ${cls}`}>{glyph}</span>
-              <span className="text-text-secondary"><strong>{c.criterion}</strong>{c.reason ? ` — ${c.reason}` : ''}</span>
-            </li>
-          );
-        })}
-      </ul>
-    </Section>
   );
 }
 

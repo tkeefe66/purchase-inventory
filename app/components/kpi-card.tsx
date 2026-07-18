@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 interface Props {
   label: string;
   value: string;
@@ -19,9 +21,9 @@ export function KpiCard({ label, value, delta, href }: Props) {
   );
   if (href) {
     return (
-      <a href={href} className="block transition hover:brightness-110">
+      <Link href={href} className="block transition hover:brightness-110">
         {content}
-      </a>
+      </Link>
     );
   }
   return content;

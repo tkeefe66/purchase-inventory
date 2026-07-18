@@ -70,7 +70,7 @@ export default async function PhotographyPage() {
   return (
     <div className="px-4 py-6 md:px-7">
       <div className="text-[11px] uppercase tracking-[0.05em] text-text-muted">Photography</div>
-      <h1 className="mt-1 text-[26px] font-bold tracking-[-0.02em] text-text-primary">Skills</h1>
+      <h1 className="mt-1 text-balance text-[26px] font-bold tracking-[-0.02em] text-text-primary">Skills</h1>
 
       <NextMoveCard
         active={active ?? null}

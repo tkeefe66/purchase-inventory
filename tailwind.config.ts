@@ -19,7 +19,8 @@ const config: Config = {
           primary: '#fafafa',
           body: '#e2e0eb',
           secondary: '#a09cb8',
-          muted: '#6b6786',
+          // 5.7:1 on bg-surface (#16142a) — was #6b6786 at ~3.3:1, below WCAG AA.
+          muted: '#928ea9',
         },
         accent: {
           from: '#a78bfa',

@@ -1,7 +1,7 @@
 import type { ProgressStatus } from '../../lib/photographySheets.js';
 import { CheckIcon, PlayIcon, CircleIcon, LockIcon, SlashIcon } from './icons';
 
-const STATUS_ICON: Record<ProgressStatus, typeof CheckIcon> = {
+export const STATUS_ICON: Record<ProgressStatus, typeof CheckIcon> = {
   completed: CheckIcon,
   'in-progress': PlayIcon,
   available: CircleIcon,
