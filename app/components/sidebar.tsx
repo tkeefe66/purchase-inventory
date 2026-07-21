@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
+import { PhotoBrainNavItem } from './photo-brain-drawer';
 
 type SubNavItem = { href: string; label: string };
 
@@ -136,6 +137,7 @@ function DomainGroup({
           {subNav.map((item) => (
             <SubNavLink key={item.href} {...item} onClick={onClick} />
           ))}
+          {slug === 'photography' && <PhotoBrainNavItem onNavigate={onClick} />}
         </div>
       )}
     </>
