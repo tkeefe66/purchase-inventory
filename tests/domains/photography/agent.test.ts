@@ -80,6 +80,31 @@ describe('buildSystemPrompt', () => {
     // One-shot rule
     expect(onboarding).toMatch(/never re-run.*intake/i);
   });
+
+  test("default surface is byte-identical to explicit 'telegram'", () => {
+    const a = buildSystemPrompt({ compactViewText: 'x', progressSummary: 'y' });
+    const b = buildSystemPrompt({ compactViewText: 'x', progressSummary: 'y', surface: 'telegram' });
+    expect(b).toEqual(a);
+  });
+
+  test('web surface swaps slash commands for topic-page buttons', () => {
+    const blocks = buildSystemPrompt({ compactViewText: 'x', progressSummary: 'y', surface: 'web' });
+    expect(blocks).toHaveLength(5);
+    const all = blocks.map((b) => b.text).join('\n');
+    expect(all).not.toMatch(/`\/(start|learn|skip|outdoor)/);
+    expect(all).not.toContain('Telegram renders Markdown');
+    expect(all).toContain('Start');
+    expect(all).toMatch(/Learn/);
+    expect(all).toMatch(/button/i);
+  });
+
+  test('web surface keeps the shared persona, scope rules, and intake', () => {
+    const blocks = buildSystemPrompt({ compactViewText: 'x', progressSummary: 'y', surface: 'web' });
+    expect(blocks[0]!.text).toContain('a6700');
+    expect(blocks[2]!.text).toMatch(/no free-form photo critique/i);
+    expect(blocks[3]!.text).toContain('get_sun_times');
+    expect(blocks[4]!.text).toMatch(/3-question intake/i);
+  });
 });
 
 // ─── buildProgressSummary ─────────────────────────────────────────────────
