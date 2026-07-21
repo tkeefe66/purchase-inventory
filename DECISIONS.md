@@ -1510,6 +1510,23 @@ If a future change extends the photography surface (e.g. `/next`, `/track`), pre
 
 ---
 
+## 2026-07-20 — Photo Brain web chat: one shared agent, surface-parameterized
+
+**Decision:** The web dashboard gets a conversational surface for the photography agent — a slide-over drawer ("Photo Brain") available anywhere in the photography section, backed by `GET/POST/DELETE /api/photography/chat`. It is the SAME `PhotographyAgent` the Telegram bot uses, parameterized by `surface: 'telegram' | 'web'` — not a fork. Supporting decisions:
+
+1. **Shared agent, not a web fork.** `buildSystemPrompt(surface)` swaps only surface-specific text (Telegram: slash commands; web: "use the Learn / Start / Skip / Submit buttons"). Telegram prompt text stayed byte-identical through the refactor (guarded by an equality test).
+2. **Converse-only on web.** No mutation tools in chat; the agent directs Tom to the topic-page buttons. Same rationale as the bot's slash-command-only state changes: Tom always explicitly confirms state transitions.
+3. **Page-context injection.** The drawer sends the `topicId` of the page being viewed; the server validates it against the skill tree and injects a per-turn, uncached system block ("Tom is viewing Panning…"). Never persisted to history, so stale context can't pollute later turns.
+4. **In-memory conversation, key `'web'`, 30-min idle TTL.** Same `ConversationStore` semantics as Telegram; a deploy/restart starts a fresh chat. Deliberately NOT durable and NOT shared with the Telegram conversation.
+5. **Cost controls added to the shared agent (both surfaces benefit):** request history trimmed to last 30 messages; a message-level `cache_control` breakpoint so tool-loop iterations re-read the prior prefix at 0.1× price; the system breakpoint moved from the volatile inventory block to the last static block so all five system blocks ride the cache.
+6. **One turn at a time.** `PhotoBrainChatService` (domains/photography/chatService.ts) enforces a busy guard (409 `busy`), 4000-char message cap (400 `invalid_message`), other failures 502 `agent_error`.
+
+**Why:** The web app is where the assignment flow lives since the 2026-05-19 in-app-actions decision; asking "is f/8 right for this assignment?" shouldn't require switching to Telegram. One brain across surfaces means prompt/tool improvements land everywhere and behavior can't drift. In-memory storage matched Telegram's existing semantics at zero plumbing cost for a single-user app.
+
+**How to apply:** Web wiring lives in `app/lib/photo-brain.ts` (globalThis singleton constructing the agent with `surface: 'web'`). Adding a chat surface for a future domain: reuse the pattern — domain `chatService`, thin singleton, thin route. **Deploy note:** the Web Railway service needs `PIRATE_WEATHER_API_KEY` (added 2026-07-20; bot/cron already had it). Known accepted risk: assistant markdown renders through the app's unsanitized `Markdown` component — same as topic theory; single-user + Basic Auth. Decoupling side-effect: `domains/photography/agent.ts` no longer imports from `apps/bot` (structural `InventorySnapshotProvider`/`AgentStats` interfaces instead); `domains/outdoor` still does — align it if it ever grows a second surface.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale
