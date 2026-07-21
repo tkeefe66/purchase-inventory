@@ -65,13 +65,13 @@ describe('TOOL_SCHEMAS + SERVER_TOOLS', () => {
 });
 
 describe('createTools — list_topics', () => {
-  test('returns all 58 topics with status="locked"/"available" computed', async () => {
+  test('returns all 59 topics with status="locked"/"available" computed', async () => {
     const tools = createTools(makeDeps());
     const out = await tools.list_topics({});
-    expect(out.total).toBe(58);
+    expect(out.total).toBe(59);
     // Tier-1 rootless are available; deep tier topics are locked
-    const exposureTriangle = out.topics.find((t) => t.id === 'operating-camera.exposure-triangle');
-    expect(exposureTriangle?.status).toBe('available');
+    const cameraOrientation = out.topics.find((t) => t.id === 'operating-camera.camera-orientation');
+    expect(cameraOrientation?.status).toBe('available');
     const focusModes = out.topics.find((t) => t.id === 'operating-camera.focus-modes');
     expect(focusModes?.status).toBe('locked');
   });

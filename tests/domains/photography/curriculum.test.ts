@@ -31,12 +31,14 @@ describe('computeStatuses', () => {
   test('with empty progress: only rootless topics are available; everything else locked', () => {
     const statuses = computeStatuses(new Map());
     // Each branch has exactly one rootless topic (validated elsewhere); they should be available
-    expect(statuses.get('operating-camera.exposure-triangle')).toBe('available');
+    expect(statuses.get('operating-camera.camera-orientation')).toBe('available');
     expect(statuses.get('seeing.composition-fundamentals')).toBe('available');
     expect(statuses.get('seeing.light-quality')).toBe('available');
     expect(statuses.get('seeing.subject-and-story')).toBe('available');
     expect(statuses.get('editing.lightroom-classic-setup')).toBe('available');
     expect(statuses.get('printing.color-management-basics')).toBe('available');
+    // exposure-triangle now depends on camera-orientation, so it's locked until that completes
+    expect(statuses.get('operating-camera.exposure-triangle')).toBe('locked');
     // A deep tier-3 topic should be locked
     expect(statuses.get('operating-camera.focus-modes')).toBe('locked');
     expect(statuses.get('editing.export-for-print')).toBe('locked');
@@ -75,7 +77,7 @@ describe('computeStatuses', () => {
 
 describe('checkPrereqs', () => {
   test('returns ok for a topic with no prereqs', () => {
-    expect(checkPrereqs('operating-camera.exposure-triangle', new Map())).toEqual({ ok: true });
+    expect(checkPrereqs('operating-camera.camera-orientation', new Map())).toEqual({ ok: true });
   });
 
   test('returns missing list when prereqs not satisfied', () => {

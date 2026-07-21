@@ -154,7 +154,7 @@ export const TOOL_SCHEMAS = [
   {
     name: 'list_topics',
     description:
-      "List photography curriculum topics, optionally filtered by branch ('operating-camera' | 'seeing' | 'editing' | 'printing'), tier (1-4), or status. Use to answer 'what should I learn next?', 'what's left in Operating Camera?', 'what topics involve light?' Includes computed status (locked / available / in-progress / completed / skipped) per topic. Use sparingly — don't dump all 58 topics at once.",
+      "List photography curriculum topics, optionally filtered by branch ('operating-camera' | 'seeing' | 'editing' | 'printing'), tier (1-4), or status. Use to answer 'what should I learn next?', 'what's left in Operating Camera?', 'what topics involve light?' Includes computed status (locked / available / in-progress / completed / skipped) per topic. Use sparingly — don't dump all 59 topics at once.",
     input_schema: {
       type: 'object',
       properties: {

@@ -58,7 +58,7 @@ export interface SystemPromptInput {
   /** Compact view of Tom\'s active photography inventory, embedded into the prompt. */
   compactViewText: string;
   /** One-line curriculum state summary, e.g.
-   *  "Curriculum state: 0 completed, 0 in progress, 58 available — FRESH USER, run intake." */
+   *  "Curriculum state: 0 completed, 0 in progress, 59 available — FRESH USER, run intake." */
   progressSummary: string;
   /** Which surface this conversation renders on. Default 'telegram'. */
   surface?: AgentSurface;
@@ -124,7 +124,7 @@ function buildToolGuidance(theoryAlternative: string): string {
 
   - **get_active_assignment()** — when Tom asks "what am I working on?" or you need context about his current assignment for targeted advice.
 
-  - **list_topics(branch?, tier?, status?)** — when Tom asks "what should I learn next?" or wants to browse. Use sparingly — return 3-8 relevant topics in your reply, not all 58.
+  - **list_topics(branch?, tier?, status?)** — when Tom asks "what should I learn next?" or wants to browse. Use sparingly — return 3-8 relevant topics in your reply, not all 59.
 
   - **get_topic_theory(topic_id)** — only when Tom specifically wants a deep dive on one topic in conversation. ${theoryAlternative}
 

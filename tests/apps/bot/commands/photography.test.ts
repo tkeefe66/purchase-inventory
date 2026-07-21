@@ -110,9 +110,9 @@ describe('parseDurationToTopicCount', () => {
 
 // ─── formatSkills ──────────────────────────────────────────────────────────
 describe('formatSkills', () => {
-  test('shows 0 / 58 done on an empty progress', () => {
+  test('shows 0 / 59 done on an empty progress', () => {
     const out = formatSkills(new Map(), null);
-    expect(out).toMatch(/0 \/ 58 done/);
+    expect(out).toMatch(/0 \/ 59 done/);
     expect(out).toContain('Operating Camera');
     expect(out).toContain('Seeing');
     expect(out).toContain('Editing');
@@ -260,7 +260,7 @@ describe('handlePhotographyCommand', () => {
       getActiveAssignment: vi.fn(async () => null),
     });
     const out = await handlePhotographyCommand({ name: 'skills', args: '' }, deps);
-    expect(out).toMatch(/1 \/ 58 done/);
+    expect(out).toMatch(/1 \/ 59 done/);
     expect(deps.readProgress).toHaveBeenCalledTimes(1);
     expect(deps.getActiveAssignment).toHaveBeenCalledTimes(1);
   });
