@@ -39,13 +39,13 @@ describe('buildSystemPrompt', () => {
     expect(blocks[4]!.text).toContain('Onboarding');
   });
 
-  test('marks the inventory+progress block with cache_control: ephemeral', () => {
+  test('marks the last static block with cache_control: ephemeral', () => {
     const blocks = buildSystemPrompt({ compactViewText: 'x', progressSummary: EMPTY_SUMMARY });
-    expect(blocks[1]!.cache_control).toEqual({ type: 'ephemeral' });
+    expect(blocks[4]!.cache_control).toEqual({ type: 'ephemeral' });
     expect(blocks[0]!.cache_control).toBeUndefined();
+    expect(blocks[1]!.cache_control).toBeUndefined();
     expect(blocks[2]!.cache_control).toBeUndefined();
     expect(blocks[3]!.cache_control).toBeUndefined();
-    expect(blocks[4]!.cache_control).toBeUndefined();
   });
 
   test('persona explicitly references Tom\'s gear', () => {
@@ -406,5 +406,72 @@ describe('page-context injection', () => {
     expect(history).toHaveLength(2);
     expect(history[0]!.content).toBe('hello');
     expect(history[1]!.content).toBe('ok');
+  });
+});
+
+describe('cost controls', () => {
+  const OK_RESPONSE = {
+    content: [{ type: 'text' as const, text: 'ok' }],
+    stop_reason: 'end_turn' as const,
+    usage: { input_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 1, output_tokens: 1 },
+  };
+
+  test('sends at most the last 30 history messages (plus the new user turn)', async () => {
+    const anthropic = makeFakeAnthropic([OK_RESPONSE]);
+    const { agent, cache, conversations } = makeAgent(anthropic);
+    await cache.refresh();
+    for (let i = 0; i < 20; i += 1) {
+      conversations.append('web', { role: 'user', content: `q${i}` });
+      conversations.append('web', { role: 'assistant', content: `a${i}` });
+    }
+    await agent.handleMessage('web', 'latest question');
+    const call = (anthropic.messages.create as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      messages: Array<{ role: string; content: unknown }>;
+    };
+    expect(call.messages).toHaveLength(31);
+    expect(call.messages[0]!.role).toBe('user');
+    // Oldest surviving pair is q5/a5 (40 stored, last 30 kept). History
+    // messages stay plain strings — only the final message is normalized
+    // to block form by the breakpoint helper.
+    expect(call.messages[0]!.content).toBe('q5');
+  });
+
+  test('marks the last block of the last message with cache_control', async () => {
+    const anthropic = makeFakeAnthropic([OK_RESPONSE]);
+    const { agent, cache } = makeAgent(anthropic);
+    await cache.refresh();
+    await agent.handleMessage('web', 'hi');
+    const call = (anthropic.messages.create as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      messages: Array<{ content: Array<{ cache_control?: unknown }> }>;
+    };
+    const lastMsg = call.messages[call.messages.length - 1]!;
+    const lastBlock = lastMsg.content[lastMsg.content.length - 1]!;
+    expect(lastBlock.cache_control).toEqual({ type: 'ephemeral' });
+  });
+
+  test('earlier messages carry no cache_control (single message breakpoint)', async () => {
+    const anthropic = makeFakeAnthropic([OK_RESPONSE]);
+    const { agent, cache, conversations } = makeAgent(anthropic);
+    await cache.refresh();
+    conversations.append('web', { role: 'user', content: 'old q' });
+    conversations.append('web', { role: 'assistant', content: 'old a' });
+    await agent.handleMessage('web', 'new q');
+    const call = (anthropic.messages.create as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      messages: Array<{ content: unknown }>;
+    };
+    const flagged = call.messages.filter((m) =>
+      Array.isArray(m.content) && (m.content as Array<{ cache_control?: unknown }>).some((b) => b.cache_control),
+    );
+    expect(flagged).toHaveLength(1);
+  });
+
+  test('does not mutate stored conversation content when adding breakpoints', async () => {
+    const anthropic = makeFakeAnthropic([OK_RESPONSE]);
+    const { agent, cache, conversations } = makeAgent(anthropic);
+    await cache.refresh();
+    await agent.handleMessage('web', 'first');
+    await agent.handleMessage('web', 'second');
+    const history = conversations.get('web');
+    expect(history.every((m) => typeof m.content === 'string')).toBe(true);
   });
 });

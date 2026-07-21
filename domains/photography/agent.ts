@@ -185,11 +185,14 @@ export function buildSystemPrompt(input: SystemPromptInput): SystemBlock[] {
     {
       type: 'text',
       text: `Tom\'s active photography inventory:\n${input.compactViewText}\n\n${input.progressSummary}`,
-      cache_control: { type: 'ephemeral' },
     },
     { type: 'text', text: web ? SCOPE_GUARDRAILS_WEB : SCOPE_GUARDRAILS },
     { type: 'text', text: web ? TOOL_GUIDANCE_WEB : TOOL_GUIDANCE },
-    { type: 'text', text: web ? ONBOARDING_RULES_WEB : ONBOARDING_RULES },
+    {
+      type: 'text',
+      text: web ? ONBOARDING_RULES_WEB : ONBOARDING_RULES,
+      cache_control: { type: 'ephemeral' },
+    },
   ];
 }
 
@@ -232,6 +235,7 @@ export function buildProgressSummary(
 
 const MAX_TOKENS = 1024;
 const MAX_TOOL_LOOPS = 8;
+export const MAX_HISTORY_MESSAGES = 30;
 
 export interface PhotographyAgentOptions {
   cache: InventorySnapshotProvider;
@@ -249,6 +253,28 @@ export interface HandleMessageOptions {
 }
 
 type AnthropicMessage = { role: 'user' | 'assistant'; content: unknown };
+
+type ContentBlock = { type: string; [key: string]: unknown };
+
+/**
+ * Return a shallow-copied messages array whose final content block carries a
+ * cache breakpoint, so tool-loop iterations re-read the whole prior prefix
+ * (system + history + earlier tool turns) from cache instead of re-billing it.
+ * The last message before any API call is always a user turn (fresh text or
+ * tool_results) — both block types accept cache_control. Originals are never
+ * mutated, so stored history stays plain.
+ */
+function withMessageCacheBreakpoint(messages: AnthropicMessage[]): AnthropicMessage[] {
+  const last = messages[messages.length - 1];
+  if (!last) return messages;
+  const blocks: ContentBlock[] =
+    typeof last.content === 'string'
+      ? [{ type: 'text', text: last.content }]
+      : (last.content as ContentBlock[]).map((b) => ({ ...b }));
+  const lastBlock = blocks[blocks.length - 1];
+  if (lastBlock) lastBlock['cache_control'] = { type: 'ephemeral' };
+  return [...messages.slice(0, -1), { role: last.role, content: blocks }];
+}
 
 export class PhotographyAgent {
   private readonly tools: ToolHandlers;
@@ -280,7 +306,10 @@ export class PhotographyAgent {
         text: `Current page context: Tom is viewing the topic page for "${opts.viewingTopic.name}" (${opts.viewingTopic.id}). When he says "this assignment" or "this topic", he most likely means this one.`,
       });
     }
-    const history = this.opts.conversations.get(chatId);
+    let history = this.opts.conversations.get(chatId).slice(-MAX_HISTORY_MESSAGES);
+    // Anthropic requires the first message to be a user turn; if the trim cut
+    // a pair in half, drop the leading assistant message.
+    if (history[0]?.role === 'assistant') history = history.slice(1);
     const messages: AnthropicMessage[] = [
       ...history.map((m) => ({ role: m.role, content: m.content })),
       { role: 'user', content: userText },
@@ -356,7 +385,7 @@ export class PhotographyAgent {
     const baseArgs = {
       max_tokens: MAX_TOKENS,
       system,
-      messages: messages as Anthropic.Messages.MessageParam[],
+      messages: withMessageCacheBreakpoint(messages) as Anthropic.Messages.MessageParam[],
       tools: [...TOOL_SCHEMAS, ...SERVER_TOOLS] as unknown as Anthropic.Messages.Tool[],
     };
     const chain = [AGENT_PRIMARY_MODEL, ...AGENT_FALLBACK_MODELS];
