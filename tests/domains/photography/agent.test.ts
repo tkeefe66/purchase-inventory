@@ -361,3 +361,50 @@ describe('PhotographyAgent.handleMessage', () => {
     expect(inventoryBlock).toContain('active assignment: operating-camera.aperture-priority');
   });
 });
+
+describe('page-context injection', () => {
+  const OK_RESPONSE = {
+    content: [{ type: 'text' as const, text: 'ok' }],
+    stop_reason: 'end_turn' as const,
+    usage: { input_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 1, output_tokens: 1 },
+  };
+
+  test('appends an uncached system block naming the viewed topic', async () => {
+    const anthropic = makeFakeAnthropic([OK_RESPONSE]);
+    const { agent, cache } = makeAgent(anthropic);
+    await cache.refresh();
+    await agent.handleMessage('web', 'what is this assignment asking for?', {
+      viewingTopic: { id: 'operating-camera.panning', name: 'Panning' },
+    });
+    const call = (anthropic.messages.create as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      system: Array<{ text: string; cache_control?: unknown }>;
+    };
+    expect(call.system).toHaveLength(6);
+    const ctx = call.system[5]!;
+    expect(ctx.text).toContain('Panning');
+    expect(ctx.text).toContain('operating-camera.panning');
+    expect(ctx.cache_control).toBeUndefined();
+  });
+
+  test('omits the context block when no viewingTopic is passed', async () => {
+    const anthropic = makeFakeAnthropic([OK_RESPONSE]);
+    const { agent, cache } = makeAgent(anthropic);
+    await cache.refresh();
+    await agent.handleMessage('web', 'hi');
+    const call = (anthropic.messages.create as ReturnType<typeof vi.fn>).mock.calls[0]![0] as { system: unknown[] };
+    expect(call.system).toHaveLength(5);
+  });
+
+  test('page context never lands in conversation history', async () => {
+    const anthropic = makeFakeAnthropic([OK_RESPONSE]);
+    const { agent, cache, conversations } = makeAgent(anthropic);
+    await cache.refresh();
+    await agent.handleMessage('web', 'hello', {
+      viewingTopic: { id: 'operating-camera.panning', name: 'Panning' },
+    });
+    const history = conversations.get('web');
+    expect(history).toHaveLength(2);
+    expect(history[0]!.content).toBe('hello');
+    expect(history[1]!.content).toBe('ok');
+  });
+});

@@ -243,6 +243,11 @@ export interface PhotographyAgentOptions {
   surface?: AgentSurface;
 }
 
+export interface HandleMessageOptions {
+  /** Topic page the user is currently viewing in the web UI, if any. */
+  viewingTopic?: { id: string; name: string };
+}
+
 type AnthropicMessage = { role: 'user' | 'assistant'; content: unknown };
 
 export class PhotographyAgent {
@@ -252,7 +257,7 @@ export class PhotographyAgent {
     this.tools = createTools(opts.toolDeps);
   }
 
-  async handleMessage(chatId: string, userText: string): Promise<string> {
+  async handleMessage(chatId: string, userText: string, opts: HandleMessageOptions = {}): Promise<string> {
     const compactViewText = serializeCompact(
       filterToActivePhotography(this.opts.cache.getSnapshot()),
     ).text;
@@ -269,6 +274,12 @@ export class PhotographyAgent {
       progressSummary,
       surface: this.opts.surface ?? 'telegram',
     });
+    if (opts.viewingTopic) {
+      system.push({
+        type: 'text',
+        text: `Current page context: Tom is viewing the topic page for "${opts.viewingTopic.name}" (${opts.viewingTopic.id}). When he says "this assignment" or "this topic", he most likely means this one.`,
+      });
+    }
     const history = this.opts.conversations.get(chatId);
     const messages: AnthropicMessage[] = [
       ...history.map((m) => ({ role: m.role, content: m.content })),
