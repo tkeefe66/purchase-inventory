@@ -12,9 +12,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import type { InventoryCache } from '../../apps/bot/inventoryCache.js';
 import { ConversationStore } from '../../lib/conversations.js';
-import { Stats } from '../../apps/bot/stats.js';
 import { callWithRetry } from '../../lib/anthropic-retry.js';
 import { AGENT_PRIMARY_MODEL, AGENT_FALLBACK_MODELS } from '../../lib/models.js';
 import {
@@ -35,6 +33,22 @@ import { serializeCompact } from './serialize.js';
 import { ALL_TOPICS } from './skillTree.js';
 import { computeStatuses, type ProgressEntry } from './curriculum.js';
 import type { ProgressRow } from '../../lib/photographySheets.js';
+import type { MasterRow } from '../../lib/types.js';
+
+export interface InventorySnapshotProvider {
+  getSnapshot(): readonly MasterRow[];
+}
+
+export interface AgentQueryMetrics {
+  systemPromptTokens: number;
+  cacheHit: boolean;
+  firstTokenMs: number;
+  totalResponseMs: number;
+}
+
+export interface AgentStats {
+  recordQuery(m: AgentQueryMetrics): void;
+}
 
 // ─── System prompt ────────────────────────────────────────────────────────
 
@@ -170,9 +184,9 @@ const MAX_TOKENS = 1024;
 const MAX_TOOL_LOOPS = 8;
 
 export interface PhotographyAgentOptions {
-  cache: InventoryCache;
+  cache: InventorySnapshotProvider;
   conversations: ConversationStore;
-  stats: Stats;
+  stats: AgentStats;
   anthropic: Anthropic;
   toolDeps: ToolDeps;
 }
