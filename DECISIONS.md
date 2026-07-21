@@ -1512,7 +1512,7 @@ If a future change extends the photography surface (e.g. `/next`, `/track`), pre
 
 ## 2026-07-20 — Photo Brain web chat: one shared agent, surface-parameterized
 
-**Decision:** The web dashboard gets a conversational surface for the photography agent — a slide-over drawer ("Photo Brain") available anywhere in the photography section, backed by `GET/POST/DELETE /api/photography/chat`. It is the SAME `PhotographyAgent` the Telegram bot uses, parameterized by `surface: 'telegram' | 'web'` — not a fork. Supporting decisions:
+**Decision:** The web dashboard gets a conversational surface for the photography agent — a slide-over drawer ("Photo Brain") available anywhere in the photography section, opened from a floating bottom-right chat button (`PhotoBrainFab`; revised same day from the original sidebar sub-nav entry), backed by `GET/POST/DELETE /api/photography/chat`. It is the SAME `PhotographyAgent` the Telegram bot uses, parameterized by `surface: 'telegram' | 'web'` — not a fork. Supporting decisions:
 
 1. **Shared agent, not a web fork.** `buildSystemPrompt(surface)` swaps only surface-specific text (Telegram: slash commands; web: "use the Learn / Start / Skip / Submit buttons"). Telegram prompt text stayed byte-identical through the refactor (guarded by an equality test).
 2. **Converse-only on web.** No mutation tools in chat; the agent directs Tom to the topic-page buttons. Same rationale as the bot's slash-command-only state changes: Tom always explicitly confirms state transitions.

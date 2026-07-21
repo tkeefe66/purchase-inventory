@@ -17,7 +17,7 @@ Includes two cost-control fixes to the shared agent loop (history trim + message
 | Scope | One global conversation across the photography section, context-aware of the topic page being viewed |
 | Persistence | Server in-memory `ConversationStore` (30-min idle TTL, keyed `'web'`); restart/deploy starts a fresh chat — same behavior as Telegram |
 | Delivery | Single-shot POST + typing indicator; no streaming |
-| UI shape | Right-side slide-over drawer, opened from a "Photo Brain" button in the photography sub-nav |
+| UI shape | Right-side slide-over drawer. Originally opened from a "Photo Brain" button in the photography sub-nav; **revised same day post-ship to a floating bottom-right chat button** (`PhotoBrainFab`), visible only in the photography section |
 | Agent powers | Converse only. Reads everything (tools below); mutations stay in the existing Learn/Start/Skip/Submit modals — agent directs users to the buttons |
 | Architecture | Approach 1: shared `PhotographyAgent`, parameterized by surface (`'telegram' | 'web'`) — no fork, no generic agent-core extraction (deferred, YAGNI) |
 | Model | Opus 4.7 primary with existing Sonnet/Haiku 529 fallback — same brain as Telegram; not downgrading web chat to Sonnet (quality is the product; volume is one user; caching fixes remove most waste) |
@@ -87,7 +87,7 @@ Logging: request received (message length, topicId), model used + tool calls mad
 
 ### 4. UI
 
-**`PhotoBrainButton` + `PhotoBrainDrawer`** — one client component pair mounted in the photography section (sub-nav already renders only inside `/photography/*`, so placement is free; button and drawer live in one client component so no cross-component state plumbing is needed).
+**`PhotoBrainButton` + `PhotoBrainDrawer`** — one client component pair mounted in the photography section (sub-nav already renders only inside `/photography/*`, so placement is free; button and drawer live in one client component so no cross-component state plumbing is needed). *(Post-ship revision, same day: the launcher is now `PhotoBrainFab`, a floating bottom-right chat button mounted in the root layout, shown only in the photography section. Drawer unchanged.)*
 
 Drawer (right-side slide-over, page behind stays visible and dimmed):
 

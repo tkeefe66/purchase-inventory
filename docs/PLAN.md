@@ -709,8 +709,8 @@ Railway service for `apps/web/`, separate from cron and bot.
 
 The second-domain build. Photography is a full curriculum + grading + agent platform, not just a router target. See **DECISIONS.md 2026-05-19** ("Phase 7 shipped") for the full scope. Highlights:
 
-- **58 topics** in a 4-branch tier-organised skill tree (NOT the spec's 16 flat tracks — see DECISIONS.md):
-  - `operating-camera` (23 topics, 4 tiers): camera fundamentals, exposure, focus, motion, gear mastery
+- **59 topics** in a 4-branch tier-organised skill tree (NOT the spec's 16 flat tracks — see DECISIONS.md; count was 58 until `camera-orientation` was added 2026-07):
+  - `operating-camera` (24 topics, 4 tiers): camera fundamentals, exposure, focus, motion, gear mastery
   - `seeing` (11 topics, 3 tiers): composition fundamentals + 5 genre recipes
   - `editing` (12 topics, 4 tiers): Lightroom Classic workflow
   - `printing` (12 topics, 4 tiers): Epson ET-8550 workflow
@@ -720,6 +720,7 @@ The second-domain build. Photography is a full curriculum + grading + agent plat
 - **Photography agent** (`domains/photography/agent.ts`) — free-form Q&A, photography tools (get_sun_times, list_topics, get_active_assignment, get_topic_theory) + shared tools (weather, trails, web_search)
 - **Onboarding** — 3-question intake for fresh users (manual-mode confidence / start preference / cadence), agent-driven via system prompt
 - **Web UI**: `/photography` Skills grid (collapsible branches), `/photography/[topicId]` topic detail, `/photography/assignments` history
+- **Photo Brain web chat** (added 2026-07-20): slide-over chat drawer with the photography agent, opened from a floating bottom-right chat button in the photography section; `GET/POST/DELETE /api/photography/chat`, page-context-aware, converse-only, in-memory history. Same shared agent as Telegram (`surface: 'telegram' | 'web'`) plus prompt-cache cost controls. See DECISIONS.md 2026-07-20.
 - **Sheet tabs**: `Photography Assignments` + `Photography Progress`
 - **Submission flow**: compressed Photo is the first-class default (reversal of original Document-only spec — see DECISIONS.md)
 
