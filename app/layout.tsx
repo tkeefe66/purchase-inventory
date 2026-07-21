@@ -3,6 +3,7 @@ import { Suspense } from 'react';
 import { Inter } from 'next/font/google';
 import type { Metadata, Viewport } from 'next';
 import { Sidebar } from './components/sidebar';
+import { PhotoBrainFab } from './components/photo-brain-drawer';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -30,6 +31,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </Suspense>
           <main className="flex-1 min-w-0">{children}</main>
         </div>
+        <Suspense fallback={null}>
+          <PhotoBrainFab />
+        </Suspense>
       </body>
     </html>
   );

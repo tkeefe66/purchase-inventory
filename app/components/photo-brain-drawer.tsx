@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { Markdown } from './markdown';
 
 type ChatMsg = { role: 'user' | 'assistant'; content: string };
@@ -24,17 +24,39 @@ function topicIdFromPath(pathname: string): string | undefined {
   return decodeURIComponent(seg);
 }
 
-export function PhotoBrainNavItem({ onNavigate }: { onNavigate: () => void }) {
+export function PhotoBrainFab() {
+  const pathname = usePathname();
+  const search = useSearchParams();
   const [open, setOpen] = useState(false);
+
+  const inPhotography = pathname.startsWith('/photography')
+    || (pathname === '/' && search.get('domain') === 'photography');
+
+  if (!inPhotography) return null;
+
   return (
     <>
-      <button
-        type="button"
-        onClick={() => { setOpen(true); onNavigate(); }}
-        className="block w-full rounded-chip px-2 py-1 text-left text-[12px] text-text-secondary hover:text-text-primary"
-      >
-        Photo Brain
-      </button>
+      {!open && (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label="Open Photo Brain chat"
+          className="fixed bottom-5 right-5 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-accent-gradient text-white shadow-accent-glow transition-transform hover:scale-105"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-6 w-6"
+          >
+            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+          </svg>
+        </button>
+      )}
       {open && <PhotoBrainDrawer onClose={() => setOpen(false)} />}
     </>
   );
