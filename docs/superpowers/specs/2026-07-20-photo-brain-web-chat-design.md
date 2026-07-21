@@ -58,6 +58,7 @@ Architectural rules respected: `domains/photography/` imports only from `lib/`; 
 
 - **History trim:** when building the request, use only the last 30 messages from `ConversationStore`. Store keeps everything within TTL; the trim happens at request-build time.
 - **Message cache breakpoint:** `cache_control: { type: 'ephemeral' }` on the last message block of each API call, so tool-loop iterations 2..N read the prior prefix (system + history + earlier tool turns) at 0.1× input price instead of full $15/MTok. Anthropic ratios already documented in `lib/models.ts`.
+- **System breakpoint placement:** the system cache breakpoint moves from the inventory block (block 2 of 5) to the last static block (block 5), so all five system blocks ride the cache instead of two — the three static guidance blocks were previously re-billed at full input price on every call. The per-turn page-context block is appended after the breakpoint, so it never invalidates the cached prefix.
 
 Tool registry, model fallback chain, retry logic, `MAX_TOKENS = 1024`, `MAX_TOOL_LOOPS = 8`: unchanged.
 
