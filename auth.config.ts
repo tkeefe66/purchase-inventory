@@ -20,7 +20,9 @@ export const authConfig = {
   callbacks: {
     // Runs at sign-in: reject any email not on the allowlist.
     signIn({ profile }) {
-      return isAllowedEmail(profile?.email, process.env['AUTH_ALLOWED_EMAILS']);
+      return (
+        !!profile?.email_verified && isAllowedEmail(profile?.email, process.env['AUTH_ALLOWED_EMAILS'])
+      );
     },
     // Runs in middleware for every gated request: require a session.
     authorized({ auth }) {
