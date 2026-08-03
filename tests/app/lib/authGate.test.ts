@@ -44,4 +44,12 @@ describe('evaluateAuth', () => {
     const other = evaluateAuth({ authHeader: 'Basic wrong', ip: '8.8.8.8', nodeEnv: 'production', user: 'u', password: 'p' });
     if (other.action === 'reject') expect(other.status).toBe(401);
   });
+
+  it('still passes a correct header and rejects a same-length wrong one', () => {
+    __resetAuthGateForTest();
+    const ok = `Basic ${btoa('u:p')}`;
+    expect(evaluateAuth({ authHeader: ok, ip: '1.2.3.4', nodeEnv: 'production', user: 'u', password: 'p' }).action).toBe('pass');
+    const wrongSameLen = ok.slice(0, -1) + (ok.at(-1) === 'A' ? 'B' : 'A');
+    expect(evaluateAuth({ authHeader: wrongSameLen, ip: '1.2.3.4', nodeEnv: 'production', user: 'u', password: 'p' }).action).toBe('reject');
+  });
 });

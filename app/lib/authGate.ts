@@ -12,6 +12,13 @@ export interface AuthInput {
 
 const authFails = new Map<string, number[]>();
 
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 export function evaluateAuth(input: AuthInput): AuthDecision {
   const { authHeader, nodeEnv, user, password } = input;
   if (!user || !password) {
@@ -20,7 +27,7 @@ export function evaluateAuth(input: AuthInput): AuthDecision {
     return { action: 'pass' };
   }
   const expected = `Basic ${btoa(`${user}:${password}`)}`;
-  if (authHeader !== null && authHeader === expected) return { action: 'pass' };
+  if (authHeader !== null && timingSafeEqual(authHeader, expected)) return { action: 'pass' };
 
   const now = Date.now();
   const recent = (authFails.get(input.ip) ?? []).filter((t) => now - t < 60_000);
