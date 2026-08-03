@@ -24,6 +24,14 @@
     },
     "plugins": [{ "name": "next" }]
   },
-  "include": ["next-env.d.ts", "app/**/*.ts", "app/**/*.tsx", "middleware.ts", ".next/types/**/*.ts"],
+  "include": [
+    "next-env.d.ts",
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "middleware.ts",
+    "auth.config.ts",
+    "auth.ts",
+    ".next/types/**/*.ts"
+  ],
   "exclude": ["node_modules"]
 }
