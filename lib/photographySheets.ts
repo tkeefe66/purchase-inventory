@@ -305,13 +305,23 @@ export async function updateAssignment(
     ['skippedReason', 'skipped_reason'],
   ]);
 
+  // Free-text fields that can carry user- or LLM-derived strings (as opposed
+  // to URLs, enums, numeric, timestamp, or ID fields) get formula-injection
+  // neutralized before a USER_ENTERED write.
+  const FREE_TEXT_FIELDS: ReadonlySet<keyof Omit<AssignmentRow, 'rowIndex'>> = new Set([
+    'userNotes',
+    'camera',
+    'lens',
+    'aiCritique',
+  ]);
+
   const data: Array<{ range: string; values: Array<Array<string | number>> }> = [];
   for (const [field, header] of FIELD_TO_HEADER) {
     const value = patch[field];
     if (value === undefined) continue;
     const col = map.get(header);
     if (col === undefined) continue;
-    const safeValue = field === 'userNotes' ? neutralizeFormula(value as string) : value;
+    const safeValue = FREE_TEXT_FIELDS.has(field) ? neutralizeFormula(value as string) : value;
     data.push({
       range: `'${ASSIGNMENTS_TAB}'!${colLetter(col)}${rowIndex}`,
       values: [[safeValue as string | number]],

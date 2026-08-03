@@ -1,6 +1,8 @@
 import { lookup } from 'node:dns/promises';
 
 export function isPrivateAddress(ip: string): boolean {
+  const mapped = ip.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
+  if (mapped) ip = mapped[1]!;
   if (ip === '::1' || ip.startsWith('fc') || ip.startsWith('fd') || ip.startsWith('fe80')) return true;
   const m = ip.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
   if (!m) return false;

@@ -10,8 +10,13 @@ const DEFAULT_WINDOW_MS = 60_000;
 
 export function clientKey(req: Request): string {
   const xff = req.headers.get('x-forwarded-for') ?? '';
-  const first = xff.split(',')[0]?.trim();
-  return first || 'unknown';
+  // Rightmost entry = the IP Railway's edge proxy appended for this hop, which
+  // the client cannot forge past. The leftmost entry is client-supplied and
+  // trivially spoofable, so using it would let an attacker bypass the rate
+  // limiter or pin another IP into a 429 lockout.
+  const parts = xff.split(',').map((p) => p.trim()).filter(Boolean);
+  const last = parts[parts.length - 1];
+  return last || 'unknown';
 }
 
 export function checkRateLimit(

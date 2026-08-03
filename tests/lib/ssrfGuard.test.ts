@@ -10,4 +10,11 @@ describe('isPrivateAddress', () => {
     for (const ip of ['8.8.8.8', '1.1.1.1', '93.184.216.34'])
       expect(isPrivateAddress(ip)).toBe(false);
   });
+  it('flags IPv4-mapped IPv6 private addresses', () => {
+    for (const ip of ['::ffff:169.254.169.254', '::ffff:10.0.0.1', '::FFFF:127.0.0.1'])
+      expect(isPrivateAddress(ip)).toBe(true);
+  });
+  it('allows IPv4-mapped IPv6 public addresses', () => {
+    expect(isPrivateAddress('::ffff:8.8.8.8')).toBe(false);
+  });
 });
