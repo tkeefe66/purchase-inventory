@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
+import { assertPublicHttpUrl } from './ssrfGuard.js';
 
 export type SupportedMediaType = 'image/jpeg' | 'image/png' | 'image/webp';
 export type ImageStorageError = 'fetch_failed' | 'bad_type' | 'too_large';
@@ -65,6 +66,9 @@ export async function downloadAndSave(
   url: string,
   root: string = DEFAULT_STORAGE_ROOT,
 ): Promise<ImageStorageResult> {
+  const guard = await assertPublicHttpUrl(url);
+  if (!guard.ok) return { ok: false, error: 'fetch_failed' };
+
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
   let resp: Response;
