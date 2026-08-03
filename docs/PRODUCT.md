@@ -37,7 +37,7 @@ Build an automated purchase tracking system that monitors Gmail for REI and Amaz
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 GOOGLE_REFRESH_TOKEN=
-GOOGLE_SHEET_ID=1lwCUsi5P74ekPYxgwjbOATGBLy-_Pqpg2j0Z4e4vdTQ
+GOOGLE_SHEET_ID=<your-sheet-id>
 GMAIL_USER=tkeefe66@gmail.com
 PROCESSED_LABEL=inventory-processed   # Gmail label applied after processing
 ```
@@ -86,7 +86,7 @@ Gmail Inbox
 
 ## Google Sheet Target
 
-**Sheet ID:** `1lwCUsi5P74ekPYxgwjbOATGBLy-_Pqpg2j0Z4e4vdTQ`
+**Sheet ID:** `<your-sheet-id>`
 **Tab:** All Purchases
 
 **Column order** (must match exactly):

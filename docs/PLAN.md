@@ -117,7 +117,7 @@ ledger/                              # current name: outdoor-inventory; rename o
 
 ## Sheet schema (Google Sheets)
 
-**Sheet ID:** `1lwCUsi5P74ekPYxgwjbOATGBLy-_Pqpg2j0Z4e4vdTQ`
+**Sheet ID:** `<your-sheet-id>`
 **Tabs:** `All Purchases` (existing), `Needs Review` (new in Phase 0)
 
 ### `All Purchases` columns
@@ -168,7 +168,7 @@ ledger/                              # current name: outdoor-inventory; rename o
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 GOOGLE_REFRESH_TOKEN=
-GOOGLE_SHEET_ID=1lwCUsi5P74ekPYxgwjbOATGBLy-_Pqpg2j0Z4e4vdTQ
+GOOGLE_SHEET_ID=<your-sheet-id>
 GMAIL_USER=tkeefe66@gmail.com
 PROCESSED_LABEL=inventory-processed
 
