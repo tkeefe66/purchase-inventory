@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
+import { signOutAction } from '../actions/auth';
 
 type SubNavItem = { href: string; label: string };
 
@@ -19,7 +20,7 @@ const DOMAINS: Array<{ slug: string; label: string; active: boolean; subNav?: Su
   { slug: 'kitchen', label: 'Kitchen', active: false },
 ];
 
-export function Sidebar() {
+export function Sidebar({ userEmail }: { userEmail?: string | null | undefined }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -61,8 +62,16 @@ export function Sidebar() {
           Chat <span className="ml-1 text-[9px] uppercase tracking-wide">soon</span>
         </span>
 
-        <div className="absolute inset-x-3 bottom-3 border-t border-border-divider pt-2.5 text-[10px] text-text-muted">
-          tkeefe66 · v1.4
+        <div className="absolute inset-x-3 bottom-3 flex items-center justify-between gap-2 border-t border-border-divider pt-2.5 text-[10px] text-text-muted">
+          <span className="truncate">{userEmail ?? 'Signed in'}</span>
+          <form action={signOutAction}>
+            <button
+              type="submit"
+              className="shrink-0 rounded-chip px-1.5 py-0.5 text-[10px] font-semibold text-text-secondary hover:text-text-primary"
+            >
+              Sign out
+            </button>
+          </form>
         </div>
       </aside>
     </>
