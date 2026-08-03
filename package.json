@@ -48,7 +48,8 @@
     "backfill-images": "tsx scripts/backfill-images.ts",
     "backfill-entry-method": "tsx scripts/backfill-entry-method.ts",
     "reclassify-photography": "tsx scripts/reclassify-photography.ts",
-    "export-curriculum": "tsx scripts/export-curriculum.ts"
+    "export-curriculum": "tsx scripts/export-curriculum.ts",
+    "backup-sheet": "tsx scripts/backup-sheet.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.92.0",

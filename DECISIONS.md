@@ -1547,6 +1547,16 @@ If a future change extends the photography surface (e.g. `/next`, `/track`), pre
 
 ---
 
+## 2026-08-03 — Daily whole-sheet backup to the Railway volume
+
+**Decision:** The cron piggybacks its hourly tick to take a daily whole-sheet JSON snapshot at 03:00 Mountain time, written to `/data/backups/sheet-YYYY-MM-DD.json` on the CRON service's volume, retained for 30 days (`SHEET_BACKUP_KEEP_DAYS`, default 30) and then pruned. The gate is `shouldRunDailyBackup`, mirroring the existing `shouldRunWeeklyAudit`/`shouldRunDailyDigest` hour-gate pattern. A manual `npm run backup-sheet` script runs the same enumerate+dump+prune path on demand, outside the cron schedule.
+
+**Why:** The sheet is the v1 source of truth with no separate DB — a bad write, an accidental bulk edit, or a runaway script has no undo path today. A cheap, automatic daily snapshot gives Tom a restore point without adding any new infrastructure (just files on the volume the cron service already has for camping/image state). Piggybacking the existing hourly cron avoids a second scheduled process; the hour-gate keeps it to one run per day the same way the weekly audit and daily digest already do.
+
+**How to apply:** This protects against **bad writes or deletes to the sheet**, not against **loss of the Railway volume itself** — Railway does not separately snapshot volumes, so a volume-level failure takes the backups with it. A Railway object-storage bucket (or other off-volume target) is a future enhancement, not covered here. Requires the `/data` volume to be mounted on the **CRON** service (already true — see the camping/image-storage volume setup). Env vars: `SHEET_BACKUP_ROOT` (default `/data`) and `SHEET_BACKUP_KEEP_DAYS` (default `30`) — see `.env.example`.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale
