@@ -8,6 +8,8 @@ import { appendCronLogRow, readCronLogToday, pruneCronLog, createSheetsClient, r
 import { formatDailySummary, formatErrorAlert, shouldSendDailyDigestAt } from './digest.js';
 import { runMaintenanceNudge } from './maintenance-nudge.js';
 import { shouldRunMaintenanceNudge } from './maintenance-schedule.js';
+import { shouldRunDailyBackup } from './backup-schedule.js';
+import { runSheetBackup } from '../../lib/sheetBackup.js';
 
 interface CliFlags {
   dryRun: boolean;
@@ -214,6 +216,42 @@ async function main(): Promise<void> {
       }
     } catch (err) {
       console.warn('[cron] maintenance-nudge failed (non-fatal):', err instanceof Error ? err.message : err);
+    }
+  }
+
+  // Daily whole-sheet backup snapshot (Phase 5.6). Piggybacks on the hourly
+  // cron — fires only at 3 AM Mountain.
+  if (!flags.dryRun && shouldRunDailyBackup(new Date())) {
+    try {
+      console.log('\n=== Running daily sheet backup ===');
+      const sheets = createSheetsClient({
+        clientId: env.clientId, clientSecret: env.clientSecret, refreshToken: env.refreshToken,
+      });
+      const root = process.env['SHEET_BACKUP_ROOT'] ?? '/data';
+      const keepDays = Number(process.env['SHEET_BACKUP_KEEP_DAYS'] ?? '30');
+      const now = new Date();
+      const dateStamp = formatInTimeZone(now, 'America/Denver', 'yyyy-MM-dd');
+      const res = await runSheetBackup(sheets, env.spreadsheetId, {
+        root, keepDays, takenAtIso: now.toISOString(), dateStamp,
+      });
+      console.log(`✓ Sheet backup written: ${res.path}${res.deleted.length ? ` (pruned ${res.deleted.length})` : ''}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('[cron] sheet backup failed:', message);
+      if (env.telegramBotToken && env.telegramChatId) {
+        try {
+          await sendMessage(
+            { botToken: env.telegramBotToken },
+            {
+              chat_id: env.telegramChatId,
+              text: `❌ Sheet backup failed @ ${formatInTimeZone(new Date(), 'America/Denver', 'EEE MMM d h:mm a zzz')}\n${message}`,
+              disable_notification: false,
+            },
+          );
+        } catch (sendErr) {
+          console.warn('[cron] sheet-backup error-alert send failed:', sendErr instanceof Error ? sendErr.message : sendErr);
+        }
+      }
     }
   }
 
