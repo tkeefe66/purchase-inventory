@@ -55,7 +55,7 @@ In **Variables** tab, add each one. **Copy values from your local `.env`**:
 | `GOOGLE_CLIENT_SECRET` | from `.env` |
 | `GOOGLE_REFRESH_TOKEN` | from `.env` |
 | `GOOGLE_SHEET_ID` | from `.env` (or the canonical: `<your-sheet-id>`) |
-| `GMAIL_USER` | `tkeefe66@gmail.com` |
+| `GMAIL_USER` | `<owner-email>` |
 | `PROCESSED_LABEL` | `inventory-processed` |
 | `ANTHROPIC_API_KEY` | from `.env` |
 | `TELEGRAM_BOT_TOKEN` | from `.env` |

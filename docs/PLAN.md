@@ -169,7 +169,7 @@ GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 GOOGLE_REFRESH_TOKEN=
 GOOGLE_SHEET_ID=<your-sheet-id>
-GMAIL_USER=tkeefe66@gmail.com
+GMAIL_USER=<owner-email>
 PROCESSED_LABEL=inventory-processed
 
 # Anthropic (Phase 1+ for parser fallback, Phase 2+ for agents)
