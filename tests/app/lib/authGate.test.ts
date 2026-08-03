@@ -27,4 +27,21 @@ describe('evaluateAuth', () => {
     const d = evaluateAuth({ ...base, authHeader: okHeader, nodeEnv: 'production' });
     expect(d).toEqual({ action: 'pass' });
   });
+
+  it('rejects 429 after >10 failures from the same IP within the window', () => {
+    __resetAuthGateForTest();
+    let last;
+    for (let i = 0; i < 12; i++) {
+      last = evaluateAuth({ authHeader: 'Basic wrong', ip: '9.9.9.9', nodeEnv: 'production', user: 'u', password: 'p' });
+    }
+    expect(last?.action).toBe('reject');
+    if (last?.action === 'reject') expect(last.status).toBe(429);
+  });
+
+  it('does not throttle a different IP', () => {
+    __resetAuthGateForTest();
+    for (let i = 0; i < 12; i++) evaluateAuth({ authHeader: 'Basic wrong', ip: '9.9.9.9', nodeEnv: 'production', user: 'u', password: 'p' });
+    const other = evaluateAuth({ authHeader: 'Basic wrong', ip: '8.8.8.8', nodeEnv: 'production', user: 'u', password: 'p' });
+    if (other.action === 'reject') expect(other.status).toBe(401);
+  });
 });

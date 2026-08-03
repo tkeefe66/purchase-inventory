@@ -10,6 +10,8 @@ export interface AuthInput {
   password: string | undefined;
 }
 
+const authFails = new Map<string, number[]>();
+
 export function evaluateAuth(input: AuthInput): AuthDecision {
   const { authHeader, nodeEnv, user, password } = input;
   if (!user || !password) {
@@ -19,6 +21,14 @@ export function evaluateAuth(input: AuthInput): AuthDecision {
   }
   const expected = `Basic ${btoa(`${user}:${password}`)}`;
   if (authHeader !== null && authHeader === expected) return { action: 'pass' };
+
+  const now = Date.now();
+  const recent = (authFails.get(input.ip) ?? []).filter((t) => now - t < 60_000);
+  recent.push(now);
+  authFails.set(input.ip, recent);
+  if (recent.length > 10) {
+    return { action: 'reject', status: 429, headers: { 'retry-after': '60' } };
+  }
   return {
     action: 'reject',
     status: 401,
@@ -27,5 +37,5 @@ export function evaluateAuth(input: AuthInput): AuthDecision {
 }
 
 export function __resetAuthGateForTest(): void {
-  // no state yet; Task 8 adds the failure-throttle Map cleared here.
+  authFails.clear();
 }
