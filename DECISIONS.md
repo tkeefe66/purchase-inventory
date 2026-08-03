@@ -1527,6 +1527,16 @@ If a future change extends the photography surface (e.g. `/next`, `/track`), pre
 
 ---
 
+## 2026-08-03 — Next.js pinned on 14.x — known security debt (audit #11)
+
+**Decision:** Stay on `next@14.2.35` for now rather than emergency-bumping to 15.x.
+
+**Why:** The 2026-08-03 security audit (`SECURITY-AUDIT.md`) found `next@14.2.35` carries core SSRF/DoS advisories that are fixed only in 15.5.x — there is no 14.x fix. The app's feature surface narrows real-world applicability: no `next/image`, no Server Actions, no i18n config, all of which are common vectors for these advisories. The app IS patched against the middleware-bypass CVE (CVE-2025-29927), which is the one most directly relevant to this project's HTTP Basic Auth middleware. A 15.x migration is a real migration — App Router, middleware, and build config all need a regression pass — not a same-day version bump.
+
+**How to apply:** Track the 14→15 migration as its own planned piece of work (its own plan doc + regression pass across `/`, `/spending`, `/needs-review`, `/photography/*`, and `middleware.ts` auth), not as an urgent patch. Re-check `next`'s advisory list whenever touching `app/` or `middleware.ts` in the meantime.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale
