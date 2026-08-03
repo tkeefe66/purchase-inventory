@@ -1,5 +1,6 @@
 import type { sheets_v4 } from 'googleapis';
 import { buildHeaderMap, colLetter } from './sheets.js';
+import { neutralizeFormula } from './sheetSafe.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -310,9 +311,10 @@ export async function updateAssignment(
     if (value === undefined) continue;
     const col = map.get(header);
     if (col === undefined) continue;
+    const safeValue = field === 'userNotes' ? neutralizeFormula(value as string) : value;
     data.push({
       range: `'${ASSIGNMENTS_TAB}'!${colLetter(col)}${rowIndex}`,
-      values: [[value as string | number]],
+      values: [[safeValue as string | number]],
     });
   }
   if (data.length === 0) return;
