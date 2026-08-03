@@ -68,3 +68,14 @@ export async function pruneBackups(
   }
   return deleted;
 }
+
+export async function runSheetBackup(
+  sheets: SheetsClient,
+  spreadsheetId: string,
+  opts: { root: string; keepDays: number; takenAtIso: string; dateStamp: string },
+): Promise<{ path: string; deleted: string[] }> {
+  const backup = await backupAllTabs(sheets, spreadsheetId, opts.takenAtIso);
+  const path = await writeBackup(opts.root, backup, opts.dateStamp);
+  const deleted = await pruneBackups(opts.root, opts.keepDays, opts.dateStamp);
+  return { path, deleted };
+}

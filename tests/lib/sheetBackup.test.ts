@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtemp, readFile, readdir, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { backupAllTabs, writeBackup, pruneBackups } from '../../lib/sheetBackup.js';
+import { backupAllTabs, writeBackup, pruneBackups, runSheetBackup } from '../../lib/sheetBackup.js';
 
 function mockSheets(tabs: Record<string, string[][]>) {
   return {
@@ -61,5 +61,17 @@ describe('pruneBackups', () => {
     expect(deleted).toContain('sheet-2026-07-01.json');
     const left = await readdir(dir);
     expect(left.sort()).toEqual(['sheet-2026-07-30.json', 'sheet-2026-08-03.json']);
+  });
+});
+
+describe('runSheetBackup', () => {
+  it('writes today and returns the path + prune result', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'bk-'));
+    const sheets = mockSheets({ 'All Purchases': [['h'], ['v']] });
+    const res = await runSheetBackup(sheets, 's', {
+      root, keepDays: 30, takenAtIso: '2026-08-03T09:00:00Z', dateStamp: '2026-08-03',
+    });
+    expect(res.path).toBe(join(root, 'backups', 'sheet-2026-08-03.json'));
+    expect(res.deleted).toEqual([]);
   });
 });
