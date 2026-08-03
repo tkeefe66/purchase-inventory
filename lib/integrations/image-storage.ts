@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
+import { assertPublicHttpUrl } from './ssrfGuard.js';
 
 export type SupportedMediaType = 'image/jpeg' | 'image/png' | 'image/webp';
 export type ImageStorageError = 'fetch_failed' | 'bad_type' | 'too_large';
@@ -60,21 +61,51 @@ export async function saveItemImage(
   return { ok: true, path: `/images/${id}.${ext}` };
 }
 
+const MAX_REDIRECT_HOPS = 3;
+
 export async function downloadAndSave(
   itemId: string,
   url: string,
   root: string = DEFAULT_STORAGE_ROOT,
 ): Promise<ImageStorageResult> {
+  const guard = await assertPublicHttpUrl(url);
+  if (!guard.ok) return { ok: false, error: 'fetch_failed' };
+
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
+
   let resp: Response;
+  let currentUrl = url;
   try {
-    resp = await fetch(url, { signal: ac.signal });
+    let hop = 0;
+    for (;;) {
+      const candidate = await fetch(currentUrl, { signal: ac.signal, redirect: 'manual' });
+
+      if (candidate.status >= 300 && candidate.status < 400) {
+        const location = candidate.headers.get('location');
+        if (!location) return { ok: false, error: 'fetch_failed' };
+        hop += 1;
+        if (hop > MAX_REDIRECT_HOPS) return { ok: false, error: 'fetch_failed' };
+        let nextUrl: string;
+        try {
+          nextUrl = new URL(location, currentUrl).toString();
+        } catch {
+          return { ok: false, error: 'fetch_failed' };
+        }
+        const hopGuard = await assertPublicHttpUrl(nextUrl);
+        if (!hopGuard.ok) return { ok: false, error: 'fetch_failed' };
+        currentUrl = nextUrl;
+        continue;
+      }
+
+      resp = candidate;
+      break;
+    }
   } catch {
-    clearTimeout(timer);
     return { ok: false, error: 'fetch_failed' };
+  } finally {
+    clearTimeout(timer);
   }
-  clearTimeout(timer);
 
   if (!resp.ok) return { ok: false, error: 'fetch_failed' };
 

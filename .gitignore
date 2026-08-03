@@ -18,6 +18,7 @@ next-env.d.ts
 # Kept local until reviewed/sanitized. Tests should reference these by relative path.
 tests/fixtures/rei/*.html
 tests/fixtures/amazon/*.html
+tests/fixtures/*.html
 
 # Local snapshots written by smoke / seed scripts when DISPERSED_SNAPSHOT_PATH
 # or CAMPING_INDEX_PATH defaults are used outside Railway (/data isn't mounted).

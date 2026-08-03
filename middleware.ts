@@ -1,32 +1,34 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { evaluateAuth } from './app/lib/authGate';
 
-/**
- * HTTP Basic Auth gate for the read-only dashboard. Required env vars:
- *
- *   WEB_USER       — username
- *   WEB_PASSWORD   — password
- *
- * Falls open (no auth) if either is unset — useful for local development.
- * In production both should be set in Railway.
- *
- * Runs on Edge runtime so we use `btoa` instead of Buffer.
- */
+// Rightmost x-forwarded-for entry = the IP Railway's edge proxy appended for
+// this hop, which the client cannot forge past. The leftmost entry is
+// client-supplied and trivially spoofable.
+function trustedClientIp(req: NextRequest): string {
+  const xff = req.headers.get('x-forwarded-for') ?? '';
+  const parts = xff.split(',').map((p) => p.trim()).filter(Boolean);
+  return parts[parts.length - 1] || 'unknown';
+}
+
 export function middleware(req: NextRequest): NextResponse | undefined {
-  const user = process.env['WEB_USER'];
-  const password = process.env['WEB_PASSWORD'];
-  if (!user || !password) return undefined;
-
-  const auth = req.headers.get('authorization');
-  const expected = `Basic ${btoa(`${user}:${password}`)}`;
-  if (auth === expected) return undefined;
-
-  return new NextResponse('Unauthorized', {
-    status: 401,
-    headers: { 'WWW-Authenticate': 'Basic realm="Outdoor Inventory Dashboard"' },
+  const decision = evaluateAuth({
+    authHeader: req.headers.get('authorization'),
+    ip: trustedClientIp(req),
+    nodeEnv: process.env['NODE_ENV'],
+    user: process.env['WEB_USER'],
+    password: process.env['WEB_PASSWORD'],
   });
+  if (decision.action === 'pass') return undefined;
+  if (decision.action === 'reject') {
+    const ip = trustedClientIp(req);
+    console.warn(`[auth] ${decision.status} ip=${ip} path=${req.nextUrl.pathname}`);
+  }
+  const body = decision.status === 500 ? 'Server misconfigured' : decision.status === 429 ? 'Too Many Requests' : 'Unauthorized';
+  const init: ResponseInit = { status: decision.status };
+  if (decision.headers) init.headers = decision.headers;
+  return new NextResponse(body, init);
 }
 
 export const config = {
-  // Apply to everything except Next.js internals and static assets.
   matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 };

@@ -1527,6 +1527,26 @@ If a future change extends the photography surface (e.g. `/next`, `/track`), pre
 
 ---
 
+## 2026-08-03 — Next.js pinned on 14.x — known security debt (audit #11)
+
+**Decision:** Stay on `next@14.2.35` for now rather than emergency-bumping to 15.x.
+
+**Why:** The 2026-08-03 security audit (`SECURITY-AUDIT.md`) found `next@14.2.35` carries core SSRF/DoS advisories that are fixed only in 15.5.x — there is no 14.x fix. The app's feature surface narrows real-world applicability: no `next/image`, no Server Actions, no i18n config, all of which are common vectors for these advisories. The app IS patched against the middleware-bypass CVE (CVE-2025-29927), which is the one most directly relevant to this project's HTTP Basic Auth middleware. A 15.x migration is a real migration — App Router, middleware, and build config all need a regression pass — not a same-day version bump.
+
+**How to apply:** Track the 14→15 migration as its own planned piece of work (its own plan doc + regression pass across `/`, `/spending`, `/needs-review`, `/photography/*`, and `middleware.ts` auth), not as an urgent patch. Re-check `next`'s advisory list whenever touching `app/` or `middleware.ts` in the meantime.
+
+---
+
+## 2026-08-03 — node-telegram-bot-api dependency-health debt (audit #12)
+
+**Decision:** Keep `node-telegram-bot-api@0.66.0` in `apps/bot` for now; track a future swap to a maintained library as its own plan rather than doing it inline with this audit.
+
+**Why:** The 2026-08-03 security audit found `node-telegram-bot-api@0.66.0` pulls in the deprecated `request`/`form-data` dependency chain, which carries 2 critical advisories. Exploitability is low here because the bot's outbound fetch targets are Telegram-controlled URLs (the Bot API endpoints), not attacker-controlled input — the vulnerable code path isn't reachable the way it would be in a general-purpose HTTP client use case. That lowers urgency but doesn't erase the debt.
+
+**How to apply:** Planned follow-up: evaluate migrating `apps/bot` to a maintained library (`telegraf` or `grammy`), porting the long-polling loop, the `authorizedChatIds` allowlist gate, and photo download handling. Scope this as its own plan before starting — don't do a partial/ad-hoc swap.
+
+---
+
 ## How to use this file
 
 - **Append** new decisions with a date stamp and "Why" rationale

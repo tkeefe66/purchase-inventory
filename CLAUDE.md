@@ -138,7 +138,7 @@ ledger/                     # current folder name: outdoor-inventory
 - Beginner-to-intermediate engineer. Explain decisions, flag tradeoffs, don't assume framework knowledge.
 - Asks Claude to act as PM when product framing is needed — be honest about scope risk.
 - Mountain time zone (`America/Denver`).
-- Email: `tkeefe66@gmail.com`.
+- Email: `<owner-email>`.
 - Has Gmail, Google Calendar, Google Drive, AllTrails (newly added) connected to Claude.ai.
 
 ---
