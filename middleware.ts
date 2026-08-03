@@ -1,33 +1,15 @@
-import { NextResponse, type NextRequest } from 'next/server';
-import { evaluateAuth } from './app/lib/authGate';
+import { auth } from './auth';
 
-// Rightmost x-forwarded-for entry = the IP Railway's edge proxy appended for
-// this hop, which the client cannot forge past. The leftmost entry is
-// client-supplied and trivially spoofable.
-function trustedClientIp(req: NextRequest): string {
-  const xff = req.headers.get('x-forwarded-for') ?? '';
-  const parts = xff.split(',').map((p) => p.trim()).filter(Boolean);
-  return parts[parts.length - 1] || 'unknown';
-}
-
-export function middleware(req: NextRequest): NextResponse | undefined {
-  const decision = evaluateAuth({
-    authHeader: req.headers.get('authorization'),
-    ip: trustedClientIp(req),
-    nodeEnv: process.env['NODE_ENV'],
-    user: process.env['WEB_USER'],
-    password: process.env['WEB_PASSWORD'],
-  });
-  if (decision.action === 'pass') return undefined;
-  if (decision.action === 'reject') {
-    const ip = trustedClientIp(req);
-    console.warn(`[auth] ${decision.status} ip=${ip} path=${req.nextUrl.pathname}`);
+export default auth((req) => {
+  const { pathname } = req.nextUrl;
+  // Auth endpoints and the login page must be reachable unauthenticated.
+  if (pathname.startsWith('/api/auth/') || pathname === '/login') return;
+  if (!req.auth) {
+    const url = new URL('/login', req.nextUrl.origin);
+    return Response.redirect(url);
   }
-  const body = decision.status === 500 ? 'Server misconfigured' : decision.status === 429 ? 'Too Many Requests' : 'Unauthorized';
-  const init: ResponseInit = { status: decision.status };
-  if (decision.headers) init.headers = decision.headers;
-  return new NextResponse(body, init);
-}
+  return;
+});
 
 export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
