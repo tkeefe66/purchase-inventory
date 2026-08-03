@@ -11,11 +11,27 @@ import { getTopicById } from '../../../../domains/photography/skillTree.js';
 import { expandAssignment } from '../../../../domains/photography/expander.js';
 import { filterToActivePhotography } from '../../../../domains/photography/inventory.js';
 import { serializeCompact } from '../../../../domains/photography/serialize.js';
+import { checkRateLimit, clientKey, overDailyBudget, recordSpend } from '../../../lib/apiGuards';
+import { tooLargeByContentLength } from '../../../lib/httpGuards';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  if (tooLargeByContentLength(req, 64 * 1024)) {
+    return NextResponse.json({ error: 'payload_too_large' }, { status: 413 });
+  }
+  const rl = checkRateLimit(clientKey(req));
+  if (!rl.ok) {
+    return NextResponse.json({ error: 'rate_limited' }, {
+      status: 429,
+      headers: { 'retry-after': String(Math.ceil(rl.retryAfterMs / 1000)) },
+    });
+  }
+  if (overDailyBudget()) {
+    return NextResponse.json({ error: 'daily_budget_exceeded' }, { status: 429 });
+  }
+
   let body: { topicId?: string };
   try {
     body = (await req.json()) as { topicId?: string };
@@ -91,6 +107,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     lastActivityAt: now,
   });
 
+  recordSpend(0.02);
   return NextResponse.json({
     assignmentId,
     topicId: topic.id,

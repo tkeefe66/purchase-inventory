@@ -4,6 +4,8 @@ import {
   ChatBusyError,
   InvalidMessageError,
 } from '../../../../domains/photography/chatService.js';
+import { checkRateLimit, clientKey, overDailyBudget, recordSpend } from '../../../lib/apiGuards';
+import { tooLargeByContentLength } from '../../../lib/httpGuards';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,6 +15,20 @@ export async function GET(): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  if (tooLargeByContentLength(req, 64 * 1024)) {
+    return NextResponse.json({ error: 'payload_too_large' }, { status: 413 });
+  }
+  const rl = checkRateLimit(clientKey(req));
+  if (!rl.ok) {
+    return NextResponse.json({ error: 'rate_limited' }, {
+      status: 429,
+      headers: { 'retry-after': String(Math.ceil(rl.retryAfterMs / 1000)) },
+    });
+  }
+  if (overDailyBudget()) {
+    return NextResponse.json({ error: 'daily_budget_exceeded' }, { status: 429 });
+  }
+
   let body: { message?: string; topicId?: string };
   try {
     body = (await req.json()) as { message?: string; topicId?: string };
@@ -27,6 +43,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   );
   try {
     const reply = await getPhotoBrain().send(body.message, body.topicId);
+    recordSpend(0.05); // rough Opus-turn estimate; refine once real usage is known
     return NextResponse.json({ reply });
   } catch (err) {
     if (err instanceof InvalidMessageError) {

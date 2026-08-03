@@ -16,6 +16,8 @@ import {
 import { applyProgressUpdate, type ProgressEntry } from '../../../../domains/photography/curriculum.js';
 import { getTopicById } from '../../../../domains/photography/skillTree.js';
 import type { RubricCriterion } from '../../../../domains/photography/expander.js';
+import { checkRateLimit, clientKey, overDailyBudget, recordSpend } from '../../../lib/apiGuards';
+import { tooLargeByContentLength } from '../../../lib/httpGuards';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,6 +27,20 @@ const ARW_RE = /image\/x-(sony-)?arw|image\/arw|\.arw$/i;
 const MAX_BYTES = 20 * 1024 * 1024; // 20MB matches Anthropic vision cap
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  if (tooLargeByContentLength(req, 20 * 1024 * 1024)) {
+    return NextResponse.json({ error: 'payload_too_large' }, { status: 413 });
+  }
+  const rl = checkRateLimit(clientKey(req));
+  if (!rl.ok) {
+    return NextResponse.json({ error: 'rate_limited' }, {
+      status: 429,
+      headers: { 'retry-after': String(Math.ceil(rl.retryAfterMs / 1000)) },
+    });
+  }
+  if (overDailyBudget()) {
+    return NextResponse.json({ error: 'daily_budget_exceeded' }, { status: 429 });
+  }
+
   let form: FormData;
   try {
     form = await req.formData();
@@ -65,6 +81,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const active = await getActiveAssignment(sheets, spreadsheetId);
   if (!active) {
     return NextResponse.json({ error: 'no_active_assignment' }, { status: 409 });
+  }
+  if (active.retryCount >= 5) {
+    return NextResponse.json({ error: 'retry_limit' }, { status: 429 });
   }
 
   let rubric: RubricCriterion[];
@@ -126,6 +145,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     console.error('[api/photography/submit] gradePhoto failed:', err);
     return NextResponse.json({ error: 'grader_failed' }, { status: 502 });
   }
+  recordSpend(0.05);
 
   await updateAssignment(sheets, spreadsheetId, active.rowIndex, {
     status: result.verdict === 'pass' ? 'passed' : 'did_not_pass',
