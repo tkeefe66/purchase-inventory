@@ -8,7 +8,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && cp lib/usage.js dist/lib/usage.js",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc --noEmit",
     "web:dev": "next dev",
     "web:build": "next build",
